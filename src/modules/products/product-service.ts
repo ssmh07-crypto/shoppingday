@@ -39,7 +39,7 @@ export class ProductImportService {
     private readonly supplier: SupplierAdapter,
   ) {}
 
-  async importByExternalId(goodsno: string): Promise<ImportProductResult> {
+  async importByExternalId(goodsno: string, actorId: string): Promise<ImportProductResult> {
     const existing = await this.products.findImported(this.supplier.code, goodsno)
     if (existing) {
       return {
@@ -52,16 +52,16 @@ export class ProductImportService {
     }
 
     await this.assertDailyLimit()
-    return this.fetchAndSave(goodsno, null)
+    return this.fetchAndSave(goodsno, null, actorId)
   }
 
-  async refreshByExternalId(goodsno: string): Promise<ImportProductResult> {
+  async refreshByExternalId(goodsno: string, actorId: string): Promise<ImportProductResult> {
     const existing = await this.products.findImported(this.supplier.code, goodsno)
     if (!existing) {
       throw new SupplierError('supplier_product_not_found', '먼저 상품을 가져와 주세요.')
     }
     await this.assertDailyLimit()
-    return this.fetchAndSave(goodsno, existing)
+    return this.fetchAndSave(goodsno, existing, actorId)
   }
 
   private async assertDailyLimit() {
@@ -71,7 +71,7 @@ export class ProductImportService {
     }
   }
 
-  private async fetchAndSave(goodsno: string, existing: Awaited<ReturnType<ProductRepository['findImported']>>): Promise<ImportProductResult> {
+  private async fetchAndSave(goodsno: string, existing: Awaited<ReturnType<ProductRepository['findImported']>>, actorId: string): Promise<ImportProductResult> {
     const requestId = randomUUID()
     const requestedAt = new Date()
     const started = performance.now()
@@ -88,7 +88,7 @@ export class ProductImportService {
       // The unique constraint is the final guard against concurrent imports.
       const saved = existing
         ? await this.products.updateSupplierProduct(existing.supplierProductId, exact)
-        : await this.products.importSupplierProduct(exact)
+        : await this.products.importSupplierProduct(exact, actorId)
       await this.saveLog({
         requestId,
         requestType: existing ? 'product_refresh' : 'product_import',

@@ -19,7 +19,7 @@ export interface ImportedProductRecord {
 
 export interface ProductRepository {
   findImported(supplierCode: string, externalProductId: string): Promise<ImportedProductRecord | null>
-  importSupplierProduct(product: SupplierProduct): Promise<ImportedProductRecord>
+  importSupplierProduct(product: SupplierProduct, ownerId: string): Promise<ImportedProductRecord>
   updateSupplierProduct(supplierProductId: string, product: SupplierProduct): Promise<ImportedProductRecord>
   findDetail(productId: string): Promise<ProductDetail | null>
 }
@@ -81,7 +81,7 @@ export class DrizzleProductRepository implements ProductRepository {
     return row ?? null
   }
 
-  async importSupplierProduct(product: SupplierProduct) {
+  async importSupplierProduct(product: SupplierProduct, ownerId: string) {
     try {
       return await getDb().transaction(async (tx) => {
       const [supplier] = await tx
@@ -110,7 +110,7 @@ export class DrizzleProductRepository implements ProductRepository {
         .returning()
 
       const [draft] = await tx.insert(products).values({
-        status: 'draft', title: product.originalName ?? '', description: sanitizeDescription(product.rawDescription ?? ''),
+        ownerId, status: 'draft', title: product.originalName ?? '', description: sanitizeDescription(product.rawDescription ?? ''),
         selectedImages: imagesFromSupplier(product.images), editedOptions: optionsFromSupplier(product.options),
       }).returning({ id: products.id })
       await tx.insert(productSupplierLinks).values({

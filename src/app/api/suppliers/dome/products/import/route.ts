@@ -22,7 +22,7 @@ const statusByCode: Record<string, number> = {
 
 export async function POST(request: Request) {
   try {
-    await requireAdmin()
+    const user = await requireAdmin()
     const body: unknown = await request.json().catch(() => null)
     const input = importProductInputSchema.safeParse(body)
     if (!input.success) {
@@ -31,7 +31,7 @@ export async function POST(request: Request) {
         { status: 400 },
       )
     }
-    return NextResponse.json(await createDomeImportService().importByExternalId(input.data.goodsno))
+    return NextResponse.json(await createDomeImportService().importByExternalId(input.data.goodsno, user.id))
   } catch (error) {
     const code = error instanceof AuthenticationError
       ? error.code

@@ -36,4 +36,14 @@ describe('친구도매 import Route Handler', () => {
     expect(await response.json()).toMatchObject({ error: { code: 'validation_error' } })
     expect(importByExternalId).not.toHaveBeenCalled()
   })
+
+  it('가져온 상품의 소유자로 현재 관리자를 전달한다', async () => {
+    requireAdmin.mockResolvedValue({ id: 'admin' })
+    importByExternalId.mockResolvedValue({ success: true })
+    const response = await POST(new Request('http://localhost/api/suppliers/dome/products/import', {
+      method: 'POST', body: JSON.stringify({ goodsno: '434379' }), headers: { 'content-type': 'application/json' },
+    }))
+    expect(response.status).toBe(200)
+    expect(importByExternalId).toHaveBeenCalledWith('434379', 'admin')
+  })
 })

@@ -22,12 +22,12 @@ const statusByCode: Record<string, number> = {
 
 export async function POST(request: Request) {
   try {
-    await requireAdmin()
+    const user = await requireAdmin()
     const input = importProductInputSchema.safeParse(await request.json().catch(() => null))
     if (!input.success) {
       return NextResponse.json({ success: false, error: { code: 'validation_error', message: input.error.issues[0]?.message ?? '입력값을 확인해 주세요.' } }, { status: 400 })
     }
-    return NextResponse.json(await createDomeImportService().refreshByExternalId(input.data.goodsno))
+    return NextResponse.json(await createDomeImportService().refreshByExternalId(input.data.goodsno, user.id))
   } catch (error) {
     const known = error instanceof AuthenticationError || error instanceof SupplierError || error instanceof ProductImportError
     const code = known ? error.code : 'internal_error'

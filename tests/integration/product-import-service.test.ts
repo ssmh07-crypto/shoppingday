@@ -21,25 +21,25 @@ function setup(existing: ImportedProductRecord | null = null) {
 describe('상품 import 통합 흐름', () => {
   it('mock 공급처 상품을 저장하고 민감정보 없는 성공 로그를 남긴다', async () => {
     const context = setup()
-    const result = await context.service.importByExternalId('434379')
+    const result = await context.service.importByExternalId('434379', 'u1')
     expect(result).toMatchObject({ productId: 'p1', alreadyExists: false })
     expect(context.calls[0].sanitizedParameters).toEqual({ goodsno: '434379' })
     expect(JSON.stringify(context.calls[0])).not.toMatch(/apiKey|secret-id|secret-key/)
   })
   it('중복 상품이면 공급처를 호출하지 않는다', async () => {
     const context = setup(saved)
-    expect(await context.service.importByExternalId('434379')).toMatchObject({ alreadyExists: true })
+    expect(await context.service.importByExternalId('434379', 'u1')).toMatchObject({ alreadyExists: true })
     expect(context.adapter.fetchProduct).not.toHaveBeenCalled()
   })
   it('한국 시간 기준 오늘 5회를 사용했으면 공급처를 호출하지 않는다', async () => {
     const context = setup()
     vi.mocked(context.logs.countSince).mockResolvedValueOnce(5)
-    await expect(context.service.importByExternalId('434379')).rejects.toMatchObject({ code: 'supplier_rate_limit' })
+    await expect(context.service.importByExternalId('434379', 'u1')).rejects.toMatchObject({ code: 'supplier_rate_limit' })
     expect(context.adapter.fetchProduct).not.toHaveBeenCalled()
   })
   it('명시적 갱신만 공급처를 호출하고 기존 행을 업데이트한다', async () => {
     const context = setup(saved)
-    const result = await context.service.refreshByExternalId('434379')
+    const result = await context.service.refreshByExternalId('434379', 'u1')
     expect(context.adapter.fetchProduct).toHaveBeenCalledOnce()
     expect(context.repository.updateSupplierProduct).toHaveBeenCalledWith('sp1', product)
     expect(context.calls[0].requestType).toBe('product_refresh')
@@ -49,14 +49,14 @@ describe('상품 import 통합 흐름', () => {
     for (const code of ['supplier_http_error', 'supplier_invalid_xml'] as const) {
       const context = setup()
       vi.mocked(context.adapter.fetchProduct).mockRejectedValueOnce(new SupplierError(code, '안전한 오류'))
-      await expect(context.service.importByExternalId('434379')).rejects.toMatchObject({ code })
+      await expect(context.service.importByExternalId('434379', 'u1')).rejects.toMatchObject({ code })
       expect(context.calls[0]).toMatchObject({ success: false, errorCode: code })
     }
   })
   it('DB 저장 실패를 database_error로 기록한다', async () => {
     const context = setup()
     vi.mocked(context.repository.importSupplierProduct).mockRejectedValueOnce(new Error('transaction rolled back'))
-    await expect(context.service.importByExternalId('434379')).rejects.toMatchObject({ code: 'database_error' })
+    await expect(context.service.importByExternalId('434379', 'u1')).rejects.toMatchObject({ code: 'database_error' })
     expect(context.calls[0]).toMatchObject({ success: false, errorCode: 'database_error' })
   })
 })
