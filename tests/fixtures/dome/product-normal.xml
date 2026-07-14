@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<upitkr version="79DM XML 1.0" datetime="2022-11-16 15:21:21">
+  <product goodsno="434379">
+    <status>정상</status><category>취미/캠핑</category><goodscd>79DMUPMD22110807</goodscd>
+    <goodsnm>잔디엣지</goodsnm><madein>기타|국내산</madein><option_value>20cm,15cm,10cm</option_value>
+    <goods_price>4500</goods_price><goods_consumer>0</goods_consumer><goods_minPrice>0</goods_minPrice>
+    <img_l><img_1><![CDATA[ http://79image.com/sample/main1.jpg]]></img_1><img_2><![CDATA[ https://79image.com/sample/main2.jpg]]></img_2></img_l>
+    <options><![CDATA[ 15cm^|^6800||10cm^|^4500||20cm^|^8200|| ]]></options>
+    <detailed_source><![CDATA[ <P align=center><IMG src="https://79image.com/sample/detail.jpg"></p>]]></detailed_source>
+    <regdate>2022-11-14 16:43:20</regdate><lastmodidate></lastmodidate>
+  </product>
+</upitkr>
