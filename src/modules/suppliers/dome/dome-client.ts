@@ -8,7 +8,7 @@ export interface DomeHttpResponse {
 }
 
 export interface DomeClient {
-  fetchProduct(goodsno: string): Promise<DomeHttpResponse>
+  fetchProduct(goodsno?: string): Promise<DomeHttpResponse>
 }
 
 async function readLimitedBody(response: Response, maxBytes: number): Promise<Buffer> {
@@ -39,14 +39,14 @@ function decodeXml(buffer: Buffer, contentType: string): string {
 export class LiveDomeClient implements DomeClient {
   constructor(private readonly env: ServerEnv, private readonly fetcher: typeof fetch = fetch) {}
 
-  async fetchProduct(goodsno: string): Promise<DomeHttpResponse> {
+  async fetchProduct(goodsno?: string): Promise<DomeHttpResponse> {
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), this.env.DOME_API_TIMEOUT_MS)
     const body = new URLSearchParams({
       id: this.env.DOME_API_ID ?? '',
       apiKey: this.env.DOME_API_KEY ?? '',
-      goodsno,
     })
+    if (goodsno) body.set('goodsno', goodsno)
 
     try {
       const response = await this.fetcher(this.env.DOME_API_URL, {

@@ -4,7 +4,7 @@
 
 ## 요청
 
-`POST https://79dome.com/Api/ProductSelect_Api_UTF8.php`, form-urlencoded 방식입니다. `id`, `apiKey`는 필수이고 이번 단계에서는 `goodsno`만 선택 파라미터로 전송합니다. 문서상 향후 확장 후보는 `runout`, `opendate_s/e`, `modidate_s/e`입니다.
+`POST https://79dome.com/Api/ProductSelect_Api_UTF8.php`, form-urlencoded 방식입니다. `id`, `apiKey`는 필수입니다. 단건 가져오기는 `goodsno`를 전송하고, 관리자가 명시적으로 실행하는 전체 가져오기는 `goodsno`를 생략해 다중 상품 XML을 API 1회로 조회합니다. 향후 증분 동기화 후보는 `runout`, `opendate_s/e`, `modidate_s/e`입니다.
 
 ## 확인된 매핑
 

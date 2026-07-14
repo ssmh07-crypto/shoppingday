@@ -14,7 +14,7 @@ function setup(existing: ImportedProductRecord | null = null) {
   const repository: ProductRepository = { findImported: vi.fn(async () => existing), importSupplierProduct: vi.fn(async () => saved), updateSupplierProduct: vi.fn(async () => saved), findDetail: vi.fn(async () => null) }
   const calls: ApiCallLogInput[] = []
   const logs: ApiCallLogRepository = { save: vi.fn(async (input) => { calls.push(input) }), countSince: vi.fn(async () => 0) }
-  const adapter: SupplierAdapter = { code: 'dome', fetchProduct: vi.fn(async () => ({ products: [product], responseStatus: 200 })) }
+  const adapter: SupplierAdapter = { code: 'dome', fetchProduct: vi.fn(async () => ({ products: [product], responseStatus: 200 })), fetchProducts: vi.fn(async () => ({ products: [product], responseStatus: 200 })) }
   return { service: new ProductImportService(repository, logs, adapter), repository, logs, adapter, calls }
 }
 
@@ -58,5 +58,13 @@ describe('상품 import 통합 흐름', () => {
     vi.mocked(context.repository.importSupplierProduct).mockRejectedValueOnce(new Error('transaction rolled back'))
     await expect(context.service.importByExternalId('434379', 'u1')).rejects.toMatchObject({ code: 'database_error' })
     expect(context.calls[0]).toMatchObject({ success: false, errorCode: 'database_error' })
+  })
+  it('전체 가져오기는 API 1회로 상품을 처리한다', async () => {
+    const context=setup()
+    const result=await context.service.importAll('u1')
+    expect(context.adapter.fetchProducts).toHaveBeenCalledOnce()
+    expect(context.repository.importSupplierProduct).toHaveBeenCalledWith(product,'u1')
+    expect(result).toEqual({success:true,total:1,created:1,updated:0})
+    expect(context.calls[0].requestType).toBe('product_import_all')
   })
 })

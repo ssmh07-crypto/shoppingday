@@ -13,6 +13,13 @@ export interface ImportProductResult {
   preview: ImportProductPreview
 }
 
+export interface ImportAllProductsResult {
+  success: true
+  total: number
+  created: number
+  updated: number
+}
+
 export class ProductImportError extends Error {
   readonly code = 'database_error'
   constructor() { super('상품 저장 중 오류가 발생했습니다.'); this.name = 'ProductImportError' }
@@ -62,6 +69,39 @@ export class ProductImportService {
     }
     await this.assertDailyLimit()
     return this.fetchAndSave(goodsno, existing, actorId)
+  }
+
+  async importAll(actorId: string): Promise<ImportAllProductsResult> {
+    await this.assertDailyLimit()
+    const requestId = randomUUID()
+    const requestedAt = new Date()
+    const started = performance.now()
+    let responseStatus: number | null = null
+    let responseCount: number | null = null
+    try {
+      const fetched = await this.supplier.fetchProducts()
+      responseStatus = fetched.responseStatus
+      responseCount = fetched.products.length
+      let created = 0
+      let updated = 0
+      for (const product of fetched.products) {
+        const existing = await this.products.findImported(this.supplier.code, product.externalProductId)
+        if (existing) {
+          await this.products.updateSupplierProduct(existing.supplierProductId, product)
+          updated += 1
+        } else {
+          await this.products.importSupplierProduct(product, actorId)
+          created += 1
+        }
+      }
+      await this.saveLog({ requestId, requestType:'product_import_all', goodsno:'all', requestedAt, started, success:true, responseStatus, responseCount })
+      return { success:true, total:fetched.products.length, created, updated }
+    } catch (error) {
+      const code = error instanceof SupplierError ? error.code : 'database_error'
+      await this.saveLog({ requestId, requestType:'product_import_all', goodsno:'all', requestedAt, started, success:false, responseStatus, responseCount, errorCode:code, errorMessage:error instanceof SupplierError ? error.message : '전체 상품 저장 중 오류가 발생했습니다.' })
+      if (error instanceof SupplierError) throw error
+      throw new ProductImportError()
+    }
   }
 
   private async assertDailyLimit() {
@@ -145,7 +185,7 @@ export class ProductImportService {
 
   private async saveLog(input: {
     requestId: string
-    requestType: 'product_import' | 'product_refresh'
+    requestType: 'product_import' | 'product_refresh' | 'product_import_all'
     goodsno: string
     requestedAt: Date
     started: number

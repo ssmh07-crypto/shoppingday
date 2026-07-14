@@ -1,19 +1,410 @@
-'use client'
+"use client";
 /* eslint-disable @next/next/no-img-element -- supplier URLs are intentionally loaded directly; no image storage/optimizer proxy */
-import { useEffect,useMemo,useState } from 'react'
-import type { EditedOptions,SelectedImage } from '@/lib/db/schema'
-type Initial={product:{id:string;status:string;title:string;searchTags:string[];sellingPrice:number|null;currency:string;description:string;categoryId:string|null;selectedImages:SelectedImage[];editedOptions:EditedOptions;draftVersion:number;updatedAt:string};supplier:{name:string;externalProductId:string;originalName:string|null;supplierPrice:string|null;currency:string;availability:string;originalImages:string[];originalOptions:Array<{name:string;price:number|null}>;rawDescription:string|null;lastSyncedAt:string}}
-export function ProductEditor({initial,categories}:{initial:Initial;categories:Array<{id:string;name:string}>}){const [form,setForm]=useState(()=>fromInitial(initial));const [baseline,setBaseline]=useState(()=>JSON.stringify(fromInitial(initial)));const [status,setStatus]=useState(initial.product.status);const [saving,setSaving]=useState(false);const [message,setMessage]=useState('저장됨');const [errors,setErrors]=useState<Record<string,string>>({});const dirty=JSON.stringify(form)!==baseline
-  useEffect(()=>{const listener=(e:BeforeUnloadEvent)=>{if(dirty)e.preventDefault()};addEventListener('beforeunload',listener);return()=>removeEventListener('beforeunload',listener)},[dirty])
-  const margin=useMemo(()=>form.sellingPrice&&initial.supplier.supplierPrice?form.sellingPrice-Number(initial.supplier.supplierPrice):null,[form.sellingPrice,initial.supplier.supplierPrice])
-  async function submit(action:'draft'|'ready'|'revert-to-draft'){setSaving(true);setErrors({});setMessage('저장 중…');try{const response=await fetch(`/api/products/${initial.product.id}/${action}`,{method:action==='draft'?'PATCH':'POST',headers:{'content-type':'application/json'},body:JSON.stringify(form)});const body=await response.json();if(!response.ok){setErrors(body.error?.errors??{});throw new Error(body.error?.message??'저장에 실패했습니다.')}const product=body.data.product;const next={...form,draftVersion:product.draftVersion};setForm(next);setBaseline(JSON.stringify(next));setStatus(product.status);setMessage(`저장 완료 ${new Date().toLocaleTimeString('ko-KR')}`)}catch(e){setMessage(e instanceof Error?e.message:'저장 실패')}finally{setSaving(false)}}
-  async function reset(kind:'images'|'options'){if(!confirm(`공급처 원본 ${kind==='images'?'이미지':'옵션'}로 초기화할까요? 현재 편집 내용이 덮어써집니다.`))return;setSaving(true);try{const response=await fetch(`/api/products/${initial.product.id}/reset-${kind}`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({draftVersion:form.draftVersion})});const body=await response.json();if(!response.ok)throw new Error(body.error?.message);const product=body.data.product;const next={...form,draftVersion:product.draftVersion,[kind==='images'?'selectedImages':'editedOptions']:product[kind==='images'?'selectedImages':'editedOptions']};setForm(next);setBaseline(JSON.stringify(next));setStatus(product.status);setMessage('원본에서 초기화했습니다.')}catch(e){setMessage(e instanceof Error?e.message:'초기화 실패')}finally{setSaving(false)}}
-  function imageChange(index:number,patch:Partial<SelectedImage>){setForm((old)=>({...old,selectedImages:old.selectedImages.map((img,i)=>i===index?{...img,...patch}:patch.isPrimary?{...img,isPrimary:false}:img)}))}function move(index:number,delta:number){setForm((old)=>{const images=[...old.selectedImages];const target=index+delta;if(target<0||target>=images.length)return old;[images[index],images[target]]=[images[target]!,images[index]!];return{...old,selectedImages:images}})}
-  return <><div className="savebar"><span className={`badge ${status}`}>{status}</span><strong>{dirty?'저장되지 않은 변경사항':message}</strong><button className="secondary" disabled={!dirty||saving} onClick={()=>setForm(JSON.parse(baseline))}>변경 취소</button><button disabled={!dirty||saving} onClick={()=>submit('draft')}>임시저장</button><button disabled={saving} onClick={()=>submit('ready')}>등록 준비 완료</button>{status==='ready'&&<button className="secondary" onClick={()=>submit('revert-to-draft')}>초안으로 되돌리기</button>}</div>{Object.keys(errors).length>0&&<div className="notice error"><strong>검토 필요</strong><ul>{Object.values(errors).map((e)=><li key={e}>{e}</li>)}</ul></div>}
-    <div className="editor-grid"><aside><section className="card sticky"><h2>공급처 원본 (읽기 전용)</h2><dl><dt>공급처</dt><dd>{initial.supplier.name}</dd><dt>상품번호</dt><dd>{initial.supplier.externalProductId}</dd><dt>상품명</dt><dd>{initial.supplier.originalName}</dd><dt>공급가</dt><dd>{initial.supplier.supplierPrice} {initial.supplier.currency}</dd><dt>상태</dt><dd>{initial.supplier.availability}</dd><dt>동기화</dt><dd>{new Date(initial.supplier.lastSyncedAt).toLocaleString('ko-KR')}</dd></dl><h3>원본 이미지</h3><div className="source-images">{initial.supplier.originalImages.map((url)=><img key={url} src={url} alt="원본"/>)}</div><h3>원본 옵션</h3><ul>{initial.supplier.originalOptions.map((o,i)=><li key={i}>{o.name} ({o.price??0})</li>)}</ul><h3>원본 상세설명</h3><iframe sandbox="" srcDoc={initial.supplier.rawDescription??''} title="원본 설명"/></section></aside>
-    <div><section className="card form-section"><h2>기본정보</h2><label>판매용 상품명<input value={form.title} maxLength={200} onChange={(e)=>setForm({...form,title:e.target.value})}/></label><label>검색 태그 <small>쉼표로 구분, 최대 20개</small><input value={form.searchTags.join(', ')} onChange={(e)=>setForm({...form,searchTags:e.target.value.split(',')})}/></label><label>판매가<input inputMode="numeric" value={form.sellingPrice??''} onChange={(e)=>setForm({...form,sellingPrice:e.target.value?Number(e.target.value.replace(/\D/g,'')):null})}/></label>{margin!==null&&<p>단순 차액: {margin.toLocaleString()}원 <small>(수수료·배송비·세금 미반영)</small></p>}<label>내부 카테고리<select value={form.categoryId??''} onChange={(e)=>setForm({...form,categoryId:e.target.value||null})}><option value="">미지정</option>{categories.map((c)=><option key={c.id} value={c.id}>{c.name}</option>)}</select></label></section>
-    <section className="card"><div className="page-head"><h2>판매 이미지</h2><button className="secondary" onClick={()=>reset('images')}>원본 이미지로 초기화</button></div><div className="editable-images">{form.selectedImages.map((img,i)=><article key={img.id} className={!img.enabled?'disabled-image':''}><img src={img.storedUrl??img.sourceUrl} alt={img.altText}/><label><input type="checkbox" checked={img.enabled} onChange={(e)=>imageChange(i,{enabled:e.target.checked})}/> 사용</label><label><input type="radio" name="primary" checked={img.isPrimary} onChange={()=>imageChange(i,{isPrimary:true,enabled:true})}/> 대표</label><input placeholder="대체 텍스트" value={img.altText} onChange={(e)=>imageChange(i,{altText:e.target.value})}/><div><button className="secondary" onClick={()=>move(i,-1)}>←</button><button className="secondary" onClick={()=>move(i,1)}>→</button></div></article>)}</div></section>
-    <section className="card form-section"><div className="page-head"><h2>판매 옵션</h2><button className="secondary" onClick={()=>reset('options')}>원본 옵션으로 초기화</button></div><p>구조화된 옵션 JSON을 편집합니다. 그룹명·값 중복·조합·추가금·재고는 저장 시 검증됩니다.</p><textarea rows={14} value={JSON.stringify(form.editedOptions,null,2)} onChange={(e)=>{try{setForm({...form,editedOptions:JSON.parse(e.target.value)});setErrors((old)=>({...old,editedOptions:''}))}catch{setErrors((old)=>({...old,editedOptions:'올바른 JSON 형식이 아닙니다.'}))}}}/></section>
-    <section className="card form-section"><h2>상세설명 HTML</h2><textarea rows={18} value={form.description} onChange={(e)=>setForm({...form,description:e.target.value})}/><h3>안전한 미리보기</h3><iframe sandbox="" srcDoc={form.description} title="판매 상세설명 미리보기"/></section><section className="card"><h2>검토</h2><p>필수: 상품명, 판매가, 대표 이미지, 상세설명, 옵션이 있는 경우 활성 조합</p><p>게시 기능은 다음 단계에서 제공됩니다.</p></section></div></div></>
+import { useEffect, useMemo, useState } from "react";
+import type { EditedOptions, SelectedImage } from "@/lib/db/schema";
+import { OptionEditor } from "./option-editor";
+type Initial = {
+  product: {
+    id: string;
+    status: string;
+    title: string;
+    searchTags: string[];
+    sellingPrice: number | null;
+    currency: string;
+    description: string;
+    categoryId: string | null;
+    selectedImages: SelectedImage[];
+    editedOptions: EditedOptions;
+    draftVersion: number;
+    updatedAt: string;
+  };
+  supplier: {
+    name: string;
+    externalProductId: string;
+    originalName: string | null;
+    supplierPrice: string | null;
+    currency: string;
+    availability: string;
+    originalImages: string[];
+    originalOptions: Array<{ name: string; price: number | null }>;
+    rawDescription: string | null;
+    lastSyncedAt: string;
+  };
+};
+export function ProductEditor({
+  initial,
+  categories,
+}: {
+  initial: Initial;
+  categories: Array<{ id: string; name: string }>;
+}) {
+  const [form, setForm] = useState(() => fromInitial(initial));
+  const [baseline, setBaseline] = useState(() =>
+    JSON.stringify(fromInitial(initial)),
+  );
+  const [status, setStatus] = useState(initial.product.status);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState("저장됨");
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const dirty = JSON.stringify(form) !== baseline;
+  useEffect(() => {
+    const listener = (e: BeforeUnloadEvent) => {
+      if (dirty) e.preventDefault();
+    };
+    addEventListener("beforeunload", listener);
+    return () => removeEventListener("beforeunload", listener);
+  }, [dirty]);
+  const margin = useMemo(
+    () =>
+      form.sellingPrice && initial.supplier.supplierPrice
+        ? form.sellingPrice - Number(initial.supplier.supplierPrice)
+        : null,
+    [form.sellingPrice, initial.supplier.supplierPrice],
+  );
+  async function submit(action: "draft" | "ready" | "revert-to-draft") {
+    setSaving(true);
+    setErrors({});
+    setMessage("저장 중…");
+    try {
+      const response = await fetch(
+        `/api/products/${initial.product.id}/${action}`,
+        {
+          method: action === "draft" ? "PATCH" : "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(form),
+        },
+      );
+      const body = await response.json();
+      if (!response.ok) {
+        setErrors(body.error?.errors ?? {});
+        throw new Error(body.error?.message ?? "저장에 실패했습니다.");
+      }
+      const product = body.data.product;
+      const next = { ...form, draftVersion: product.draftVersion };
+      setForm(next);
+      setBaseline(JSON.stringify(next));
+      setStatus(product.status);
+      setMessage(`저장 완료 ${new Date().toLocaleTimeString("ko-KR")}`);
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : "저장 실패");
+    } finally {
+      setSaving(false);
+    }
+  }
+  async function reset(kind: "images" | "options") {
+    if (
+      !confirm(
+        `공급처 원본 ${kind === "images" ? "이미지" : "옵션"}로 초기화할까요? 현재 편집 내용이 덮어써집니다.`,
+      )
+    )
+      return;
+    setSaving(true);
+    try {
+      const response = await fetch(
+        `/api/products/${initial.product.id}/reset-${kind}`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ draftVersion: form.draftVersion }),
+        },
+      );
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error?.message);
+      const product = body.data.product;
+      const next = {
+        ...form,
+        draftVersion: product.draftVersion,
+        [kind === "images" ? "selectedImages" : "editedOptions"]:
+          product[kind === "images" ? "selectedImages" : "editedOptions"],
+      };
+      setForm(next);
+      setBaseline(JSON.stringify(next));
+      setStatus(product.status);
+      setMessage("원본에서 초기화했습니다.");
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : "초기화 실패");
+    } finally {
+      setSaving(false);
+    }
+  }
+  function imageChange(index: number, patch: Partial<SelectedImage>) {
+    setForm((old) => ({
+      ...old,
+      selectedImages: old.selectedImages.map((img, i) =>
+        i === index
+          ? { ...img, ...patch }
+          : patch.isPrimary
+            ? { ...img, isPrimary: false }
+            : img,
+      ),
+    }));
+  }
+  function move(index: number, delta: number) {
+    setForm((old) => {
+      const images = [...old.selectedImages];
+      const target = index + delta;
+      if (target < 0 || target >= images.length) return old;
+      [images[index], images[target]] = [images[target]!, images[index]!];
+      return { ...old, selectedImages: images };
+    });
+  }
+  return (
+    <>
+      <div className="savebar">
+        <span className={`badge ${status}`}>{status}</span>
+        <strong>{dirty ? "저장되지 않은 변경사항" : message}</strong>
+        <button
+          className="secondary"
+          disabled={!dirty || saving}
+          onClick={() => setForm(JSON.parse(baseline))}
+        >
+          변경 취소
+        </button>
+        <button disabled={!dirty || saving} onClick={() => submit("draft")}>
+          임시저장
+        </button>
+        <button disabled={saving} onClick={() => submit("ready")}>
+          등록 준비 완료
+        </button>
+        {status === "ready" && (
+          <button
+            className="secondary"
+            onClick={() => submit("revert-to-draft")}
+          >
+            초안으로 되돌리기
+          </button>
+        )}
+      </div>
+      {Object.keys(errors).length > 0 && (
+        <div className="notice error">
+          <strong>검토 필요</strong>
+          <ul>
+            {Object.values(errors).map((e) => (
+              <li key={e}>{e}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+      <div className="editor-grid">
+        <aside>
+          <section className="card sticky">
+            <h2>공급처 원본 (읽기 전용)</h2>
+            <dl>
+              <dt>공급처</dt>
+              <dd>{initial.supplier.name}</dd>
+              <dt>상품번호</dt>
+              <dd>{initial.supplier.externalProductId}</dd>
+              <dt>상품명</dt>
+              <dd>{initial.supplier.originalName}</dd>
+              <dt>공급가</dt>
+              <dd>
+                {initial.supplier.supplierPrice} {initial.supplier.currency}
+              </dd>
+              <dt>판매 상태</dt>
+              <dd>
+                {initial.supplier.availability === 'sold_out'
+                  ? '품절'
+                  : initial.supplier.availability === 'active'
+                    ? '판매'
+                    : '미확인'}
+              </dd>
+              <dt>동기화</dt>
+              <dd>
+                {new Date(initial.supplier.lastSyncedAt).toLocaleString(
+                  "ko-KR",
+                )}
+              </dd>
+            </dl>
+            <h3>원본 이미지</h3>
+            <div className="source-images">
+              {initial.supplier.originalImages.map((url) => (
+                <img key={url} src={url} alt="원본" />
+              ))}
+            </div>
+            <h3>원본 옵션</h3>
+            <ul>
+              {initial.supplier.originalOptions.map((o, i) => (
+                <li key={i}>
+                  {o.name} ({o.price ?? 0})
+                </li>
+              ))}
+            </ul>
+            <h3>원본 상세설명</h3>
+            <iframe
+              sandbox=""
+              srcDoc={initial.supplier.rawDescription ?? ""}
+              title="원본 설명"
+            />
+          </section>
+        </aside>
+        <div>
+          <section className="card form-section">
+            <h2>기본정보</h2>
+            <label>
+              판매용 상품명
+              <input
+                value={form.title}
+                maxLength={200}
+                onChange={(e) => setForm({ ...form, title: e.target.value })}
+              />
+            </label>
+            <label>
+              검색 태그 <small>쉼표로 구분, 최대 20개</small>
+              <input
+                value={form.searchTags.join(", ")}
+                onChange={(e) =>
+                  setForm({ ...form, searchTags: e.target.value.split(",") })
+                }
+              />
+            </label>
+            <label>
+              판매가
+              <input
+                inputMode="numeric"
+                value={form.sellingPrice ?? ""}
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    sellingPrice: e.target.value
+                      ? Number(e.target.value.replace(/\D/g, ""))
+                      : null,
+                  })
+                }
+              />
+            </label>
+            {margin !== null && (
+              <p>
+                단순 차액: {margin.toLocaleString()}원{" "}
+                <small>(수수료·배송비·세금 미반영)</small>
+              </p>
+            )}
+            <label>
+              내부 카테고리
+              <select
+                value={form.categoryId ?? ""}
+                onChange={(e) =>
+                  setForm({ ...form, categoryId: e.target.value || null })
+                }
+              >
+                <option value="">미지정</option>
+                {categories.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </section>
+          <section className="card">
+            <div className="page-head">
+              <h2>판매 이미지</h2>
+              <button className="secondary" onClick={() => reset("images")}>
+                원본 이미지로 초기화
+              </button>
+            </div>
+            <div className="editable-images">
+              {form.selectedImages.map((img, i) => (
+                <article
+                  key={img.id}
+                  className={!img.enabled ? "disabled-image" : ""}
+                >
+                  <img src={img.storedUrl ?? img.sourceUrl} alt={img.altText} />
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={img.enabled}
+                      onChange={(e) =>
+                        imageChange(i, { enabled: e.target.checked })
+                      }
+                    />{" "}
+                    사용
+                  </label>
+                  <label>
+                    <input
+                      type="radio"
+                      name="primary"
+                      checked={img.isPrimary}
+                      onChange={() =>
+                        imageChange(i, { isPrimary: true, enabled: true })
+                      }
+                    />{" "}
+                    대표
+                  </label>
+                  <input
+                    placeholder="대체 텍스트"
+                    value={img.altText}
+                    onChange={(e) =>
+                      imageChange(i, { altText: e.target.value })
+                    }
+                  />
+                  <div>
+                    <button className="secondary" onClick={() => move(i, -1)}>
+                      ←
+                    </button>
+                    <button className="secondary" onClick={() => move(i, 1)}>
+                      →
+                    </button>
+                  </div>
+                </article>
+              ))}
+            </div>
+          </section>
+          <section className="card form-section">
+            <div className="page-head">
+              <h2>판매 옵션</h2>
+              <button className="secondary" onClick={() => reset("options")}>
+                원본 옵션으로 초기화
+              </button>
+            </div>
+            <p>
+              그룹명, 옵션값, 조합별 추가금·재고·판매 여부를 직접 편집할 수
+              있습니다.
+            </p>
+            <OptionEditor
+              value={form.editedOptions}
+              onChange={(editedOptions) => setForm({ ...form, editedOptions })}
+            />
+          </section>
+          <section className="card form-section">
+            <h2>상세설명 HTML</h2>
+            <textarea
+              rows={18}
+              value={form.description}
+              onChange={(e) =>
+                setForm({ ...form, description: e.target.value })
+              }
+            />
+            <h3>안전한 미리보기</h3>
+            <iframe
+              sandbox=""
+              srcDoc={form.description}
+              title="판매 상세설명 미리보기"
+            />
+          </section>
+          <section className="card">
+            <h2>검토</h2>
+            <p>
+              필수: 상품명, 판매가, 대표 이미지, 상세설명, 옵션이 있는 경우 활성
+              조합
+            </p>
+            <p>게시 기능은 다음 단계에서 제공됩니다.</p>
+          </section>
+        </div>
+      </div>
+    </>
+  );
 }
-function fromInitial(initial:Initial){const p=initial.product;return{draftVersion:p.draftVersion,title:p.title,searchTags:p.searchTags,sellingPrice:p.sellingPrice,currency:'KRW' as const,description:p.description,categoryId:p.categoryId,selectedImages:p.selectedImages,editedOptions:p.editedOptions}}
+function fromInitial(initial: Initial) {
+  const p = initial.product;
+  return {
+    draftVersion: p.draftVersion,
+    title: p.title,
+    searchTags: p.searchTags,
+    sellingPrice: p.sellingPrice,
+    currency: "KRW" as const,
+    description: p.description,
+    categoryId: p.categoryId,
+    selectedImages: p.selectedImages,
+    editedOptions: p.editedOptions,
+  };
+}

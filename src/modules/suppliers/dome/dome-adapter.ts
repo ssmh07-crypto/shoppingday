@@ -19,4 +19,10 @@ export class DomeAdapter implements SupplierAdapter {
     }
     return { products: exact, responseStatus: response.status }
   }
+
+  async fetchProducts(): Promise<SupplierFetchResult> {
+    const response = await this.client.fetchProduct()
+    const envelope = parseDomeXml(response.xml)
+    return { products: envelope.products.map(mapDomeProduct), responseStatus: response.status }
+  }
 }
