@@ -60,7 +60,20 @@ npm run typecheck
 npm test
 npm run test:e2e
 npm run build
+npm run cf:build
 ```
+
+## Cloudflare Workers 배포
+
+Next.js 풀스택 기능을 Cloudflare `workerd`에서 실행하기 위해 `@opennextjs/cloudflare`를 사용합니다. OpenNext는 Next.js 빌드 결과를 `.open-next/worker.js`와 정적 assets로 변환하며, Supabase는 계속 Auth와 PostgreSQL을 담당합니다. 이미지 R2 저장은 설정하지 않습니다.
+
+```bash
+npm run cf:build   # OpenNext 번들 검증
+npm run preview    # 로컬 Workers 런타임 미리보기
+npm run deploy     # Cloudflare 배포
+```
+
+Cloudflare Workers Builds의 Build Variables and secrets에 `.env.local`의 필수 값을 동일하게 등록합니다. `DATABASE_URL`, `DOME_API_ID`, `DOME_API_KEY`는 secret으로 관리하고 코드나 빌드 로그에 노출하지 않습니다. 운영 DB 연결은 Postgres.js와 Drizzle을 유지하되, 전역 연결 풀링을 위해 Cloudflare Hyperdrive 연결을 권장합니다.
 
 ## 실제 API 적용 전 주의사항
 

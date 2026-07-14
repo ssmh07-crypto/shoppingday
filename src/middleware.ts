@@ -1,7 +1,9 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
-export async function proxy(request: NextRequest) {
+// OpenNext executes Middleware in the Edge runtime. Keep this layer limited to
+// cookie/session refresh; authorization is still enforced in server handlers.
+export async function middleware(request: NextRequest) {
   let response = NextResponse.next({ request })
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
   const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
@@ -13,7 +15,9 @@ export async function proxy(request: NextRequest) {
       setAll(cookiesToSet) {
         cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value))
         response = NextResponse.next({ request })
-        cookiesToSet.forEach(({ name, value, options }) => response.cookies.set(name, value, options))
+        cookiesToSet.forEach(({ name, value, options }) =>
+          response.cookies.set(name, value, options),
+        )
       },
     },
   })
@@ -21,4 +25,6 @@ export async function proxy(request: NextRequest) {
   return response
 }
 
-export const config = { matcher: ['/login', '/admin/:path*', '/api/suppliers/:path*', '/api/products/:path*'] }
+export const config = {
+  matcher: ['/login', '/admin/:path*', '/api/suppliers/:path*', '/api/products/:path*'],
+}

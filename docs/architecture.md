@@ -47,3 +47,9 @@ products → (next phase) product_publications → marketplace adapters
 - XML의 DTD/ENTITY를 선제 거부하고 entity processing을 비활성화합니다.
 - 원본 XML과 인증 파라미터는 로그에 저장하지 않습니다.
 - 외부 HTML 설명은 DOM에 직접 주입하지 않고 sandbox iframe에서 표시합니다.
+
+## Cloudflare runtime
+
+OpenNext는 Next.js App Router·Server Components·Route Handlers의 산출물을 Cloudflare Workers 모듈과 정적 assets로 변환하는 배포 adapter입니다. `wrangler.jsonc`는 `nodejs_compat`을 활성화해 Postgres.js와 기존 서버 모듈을 실행합니다. Supabase는 인증과 PostgreSQL system of record로 유지되며, Cloudflare에는 이미지 저장소를 추가하지 않습니다.
+
+Next.js 16 `proxy.ts`는 Node middleware로 빌드되어 현재 OpenNext에서 지원되지 않으므로, 세션 쿠키 갱신만 Edge `middleware.ts`가 담당합니다. 실제 관리자 인증·인가는 기존처럼 Route Handler와 서버 페이지에서 다시 검증합니다.
