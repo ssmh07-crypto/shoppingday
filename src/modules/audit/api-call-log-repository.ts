@@ -1,5 +1,5 @@
 import 'server-only'
-import { eq } from 'drizzle-orm'
+import { and, eq, gte, sql } from 'drizzle-orm'
 import { getDb } from '@/lib/db'
 import { supplierApiCallLogs, suppliers } from '@/lib/db/schema'
 
@@ -20,9 +20,19 @@ export interface ApiCallLogInput {
 
 export interface ApiCallLogRepository {
   save(input: ApiCallLogInput): Promise<void>
+  countSince(supplierCode: string, since: Date): Promise<number>
 }
 
 export class DrizzleApiCallLogRepository implements ApiCallLogRepository {
+  async countSince(supplierCode: string, since: Date) {
+    const [row] = await getDb()
+      .select({ count: sql<number>`count(*)::int` })
+      .from(supplierApiCallLogs)
+      .innerJoin(suppliers, eq(suppliers.id, supplierApiCallLogs.supplierId))
+      .where(and(eq(suppliers.code, supplierCode), gte(supplierApiCallLogs.requestedAt, since)))
+    return row?.count ?? 0
+  }
+
   async save(input: ApiCallLogInput) {
     const [supplier] = await getDb()
       .select({ id: suppliers.id })

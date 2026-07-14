@@ -9,6 +9,7 @@ import {
   type SupplierProductRow,
 } from '@/lib/db/schema'
 import type { SupplierProduct } from '@/modules/suppliers/core/types'
+import { imagesFromSupplier, optionsFromSupplier, sanitizeDescription } from './product-domain'
 
 export interface ImportedProductRecord {
   productId: string
@@ -19,6 +20,7 @@ export interface ImportedProductRecord {
 export interface ProductRepository {
   findImported(supplierCode: string, externalProductId: string): Promise<ImportedProductRecord | null>
   importSupplierProduct(product: SupplierProduct): Promise<ImportedProductRecord>
+  updateSupplierProduct(supplierProductId: string, product: SupplierProduct): Promise<ImportedProductRecord>
   findDetail(productId: string): Promise<ProductDetail | null>
 }
 
@@ -31,6 +33,31 @@ export interface ProductDetail {
 }
 
 export class DrizzleProductRepository implements ProductRepository {
+  async updateSupplierProduct(supplierProductId: string, product: SupplierProduct) {
+    const [supplierProduct] = await getDb()
+      .update(supplierProducts)
+      .set({
+        originalName: product.originalName,
+        supplierPrice: product.supplierPrice === null ? null : String(product.supplierPrice),
+        currency: product.currency,
+        availability: product.availability,
+        originalImages: product.images,
+        originalOptions: product.options,
+        rawDescription: product.rawDescription,
+        rawPayload: product.rawPayload,
+        supplierCreatedAt: product.supplierCreatedAt,
+        supplierUpdatedAt: product.supplierUpdatedAt,
+        lastSyncedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(supplierProducts.id, supplierProductId))
+      .returning()
+    if (!supplierProduct) throw new Error('supplier_product_not_found')
+    const existing = await this.findImported(product.supplierCode, product.externalProductId)
+    if (!existing) throw new Error('product_link_not_found')
+    return { ...existing, supplierProduct }
+  }
+
   async findImported(supplierCode: string, externalProductId: string) {
     const [row] = await getDb()
       .select({
@@ -82,7 +109,10 @@ export class DrizzleProductRepository implements ProductRepository {
         })
         .returning()
 
-      const [draft] = await tx.insert(products).values({ status: 'draft' }).returning({ id: products.id })
+      const [draft] = await tx.insert(products).values({
+        status: 'draft', title: product.originalName ?? '', description: sanitizeDescription(product.rawDescription ?? ''),
+        selectedImages: imagesFromSupplier(product.images), editedOptions: optionsFromSupplier(product.options),
+      }).returning({ id: products.id })
       await tx.insert(productSupplierLinks).values({
         productId: draft.id,
         supplierProductId: supplierProduct.id,

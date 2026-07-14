@@ -11,11 +11,11 @@ const row = { id: 'sp1', supplierId: 's1', externalProductId: '434379', original
 const saved: ImportedProductRecord = { productId: 'p1', supplierProductId: 'sp1', supplierProduct: row }
 
 function setup(existing: ImportedProductRecord | null = null) {
-  const repository: ProductRepository = { findImported: vi.fn(async () => existing), importSupplierProduct: vi.fn(async () => saved), findDetail: vi.fn(async () => null) }
+  const repository: ProductRepository = { findImported: vi.fn(async () => existing), importSupplierProduct: vi.fn(async () => saved), updateSupplierProduct: vi.fn(async () => saved), findDetail: vi.fn(async () => null) }
   const calls: ApiCallLogInput[] = []
-  const logs: ApiCallLogRepository = { save: vi.fn(async (input) => { calls.push(input) }) }
+  const logs: ApiCallLogRepository = { save: vi.fn(async (input) => { calls.push(input) }), countSince: vi.fn(async () => 0) }
   const adapter: SupplierAdapter = { code: 'dome', fetchProduct: vi.fn(async () => ({ products: [product], responseStatus: 200 })) }
-  return { service: new ProductImportService(repository, logs, adapter), repository, adapter, calls }
+  return { service: new ProductImportService(repository, logs, adapter), repository, logs, adapter, calls }
 }
 
 describe('상품 import 통합 흐름', () => {
@@ -30,6 +30,20 @@ describe('상품 import 통합 흐름', () => {
     const context = setup(saved)
     expect(await context.service.importByExternalId('434379')).toMatchObject({ alreadyExists: true })
     expect(context.adapter.fetchProduct).not.toHaveBeenCalled()
+  })
+  it('한국 시간 기준 오늘 5회를 사용했으면 공급처를 호출하지 않는다', async () => {
+    const context = setup()
+    vi.mocked(context.logs.countSince).mockResolvedValueOnce(5)
+    await expect(context.service.importByExternalId('434379')).rejects.toMatchObject({ code: 'supplier_rate_limit' })
+    expect(context.adapter.fetchProduct).not.toHaveBeenCalled()
+  })
+  it('명시적 갱신만 공급처를 호출하고 기존 행을 업데이트한다', async () => {
+    const context = setup(saved)
+    const result = await context.service.refreshByExternalId('434379')
+    expect(context.adapter.fetchProduct).toHaveBeenCalledOnce()
+    expect(context.repository.updateSupplierProduct).toHaveBeenCalledWith('sp1', product)
+    expect(context.calls[0].requestType).toBe('product_refresh')
+    expect(result.alreadyExists).toBe(true)
   })
   it('공급처 오류와 파싱 오류를 기록하고 전달한다', async () => {
     for (const code of ['supplier_http_error', 'supplier_invalid_xml'] as const) {

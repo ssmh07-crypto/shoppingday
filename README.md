@@ -2,6 +2,8 @@
 
 Next.js App Router, Supabase Auth/PostgreSQL, Drizzle ORM 기반의 모듈형 PIM입니다. 현재 구현 범위는 친구도매 원본 상품을 상품번호로 가져와 조회하는 기능입니다. 스마트스토어 및 네이버 커머스 연동은 포함하지 않습니다.
 
+세션이 초기화된 뒤 작업을 재개할 때는 먼저 [`docs/ARCHITECTURE_DECISIONS.md`](docs/ARCHITECTURE_DECISIONS.md)를 확인합니다.
+
 ## 환경 변수
 
 `.env.example`을 `.env.local`로 복사해 설정합니다. 실제 인증값은 저장소에 커밋하지 않습니다.
@@ -35,6 +37,18 @@ DOME_API_MOCK_MODE=true
 mock 모드에서 `goodsno=434379`는 `tests/fixtures/dome/product-normal.xml`을 반환하고, 다른 번호는 상품 없음 fixture를 반환합니다. 실제 API ID와 Key는 필요하지 않습니다. `/admin/products/import`에서 버튼을 눌렀을 때만 import가 실행됩니다.
 
 흐름은 관리자 인증 → goodsno 검증 → DB 중복 확인 → 공급처 호출 → 크기/Content-Type/XML 검증 → 표준 공급처 상품 매핑 → 트랜잭션 저장 → 민감정보가 제거된 호출 로그 저장 순서입니다.
+
+## 판매 상품 편집
+
+`/admin/products`에서 DB에 저장된 상품을 검색·필터·정렬하고 `/admin/products/:id/edit`에서 공급처 원본과 분리된 판매 정보를 편집합니다. 상품명, 태그, 판매가, 내부 카테고리, 설명 HTML, 이미지 선택/대표/순서, 옵션 JSON을 수동 임시저장할 수 있습니다.
+
+저장에는 `draft_version` 낙관적 잠금을 적용하며 변경 여부, 저장 중, 저장 완료 시각을 표시합니다. 등록 준비 완료는 필수값을 검토해 내부 `ready` 상태로 바꾸는 기능일 뿐 스마트스토어 게시가 아닙니다. 편집 화면과 목록은 외부 API를 호출하지 않습니다. 이미지 파일도 저장하지 않고 공급사 URL 메타데이터만 사용합니다.
+
+DB 변경 적용:
+
+```bash
+npm run db:migrate
+```
 
 ## 검증 명령
 

@@ -6,6 +6,7 @@ import {
   numeric,
   pgEnum,
   pgTable,
+  index,
   text,
   timestamp,
   uniqueIndex,
@@ -20,7 +21,7 @@ export const availabilityEnum = pgEnum('supplier_availability', [
   'sold_out',
   'unknown',
 ])
-export const productStatusEnum = pgEnum('product_status', ['draft'])
+export const productStatusEnum = pgEnum('product_status', ['draft', 'editing', 'ready', 'archived'])
 
 export const userProfiles = pgTable('user_profiles', {
   userId: uuid('user_id').primaryKey(),
@@ -76,12 +77,37 @@ export const supplierProducts = pgTable(
   ],
 )
 
-export const products = pgTable('products', {
+export interface SelectedImage { id: string; source: 'supplier' | 'upload'; sourceUrl: string; storedUrl: string | null; altText: string; sortOrder: number; isPrimary: boolean; enabled: boolean }
+export interface EditedOptions { groups: Array<{ id: string; name: string; values: Array<{ id: string; name: string; enabled: boolean }> }>; combinations: Array<{ id: string; valueIds: string[]; additionalPrice: number; stock: number; enabled: boolean; supplierOptionReference: string | null }> }
+
+export const productCategories = pgTable('product_categories', {
   id: uuid('id').primaryKey().defaultRandom(),
-  status: productStatusEnum('status').notNull().default('draft'),
+  name: text('name').notNull(),
+  parentId: uuid('parent_id'),
+  sortOrder: integer('sort_order').notNull().default(0),
+  active: boolean('active').notNull().default(true),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 })
+
+export const products = pgTable('products', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  ownerId: uuid('owner_id').references(() => userProfiles.userId),
+  status: productStatusEnum('status').notNull().default('draft'),
+  title: text('title').notNull().default(''),
+  searchTags: jsonb('search_tags').$type<string[]>().notNull().default([]),
+  sellingPrice: integer('selling_price'),
+  currency: text('currency').notNull().default('KRW'),
+  description: text('description').notNull().default(''),
+  categoryId: uuid('category_id').references(() => productCategories.id, { onDelete: 'set null' }),
+  selectedImages: jsonb('selected_images').$type<SelectedImage[]>().notNull().default([]),
+  editedOptions: jsonb('edited_options').$type<EditedOptions>().notNull().default({ groups: [], combinations: [] }),
+  draftVersion: integer('draft_version').notNull().default(1),
+  validationErrors: jsonb('validation_errors').$type<Record<string, string>>().notNull().default({}),
+  readyAt: timestamp('ready_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [check('products_selling_price_positive', sql`${table.sellingPrice} is null or ${table.sellingPrice} > 0`), index('products_owner_updated_idx').on(table.ownerId, table.updatedAt)])
 
 export const productSupplierLinks = pgTable(
   'product_supplier_links',
@@ -125,5 +151,20 @@ export const supplierApiCallLogs = pgTable('supplier_api_call_logs', {
   errorMessage: text('error_message'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 })
+
+export const productAuditLogs = pgTable('product_audit_logs', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  actorId: uuid('actor_id').notNull().references(() => userProfiles.userId),
+  entityType: text('entity_type').notNull().default('product'),
+  entityId: uuid('entity_id').notNull().references(() => products.id, { onDelete: 'cascade' }),
+  action: text('action').notNull(),
+  changedFields: jsonb('changed_fields').$type<string[]>().notNull().default([]),
+  oldValues: jsonb('old_values').$type<Record<string, unknown>>().notNull().default({}),
+  newValues: jsonb('new_values').$type<Record<string, unknown>>().notNull().default({}),
+  requestId: uuid('request_id').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [index('product_audit_entity_idx').on(table.entityId, table.createdAt)])
+
+export type ProductRow = typeof products.$inferSelect
 
 export type SupplierProductRow = typeof supplierProducts.$inferSelect

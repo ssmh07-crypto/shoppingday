@@ -18,6 +18,8 @@ export class ProductImportError extends Error {
   constructor() { super('상품 저장 중 오류가 발생했습니다.'); this.name = 'ProductImportError' }
 }
 
+const DAILY_API_LIMIT = 5
+
 export interface ImportProductPreview {
   externalProductId: string
   originalName: string | null
@@ -49,6 +51,27 @@ export class ProductImportService {
       }
     }
 
+    await this.assertDailyLimit()
+    return this.fetchAndSave(goodsno, null)
+  }
+
+  async refreshByExternalId(goodsno: string): Promise<ImportProductResult> {
+    const existing = await this.products.findImported(this.supplier.code, goodsno)
+    if (!existing) {
+      throw new SupplierError('supplier_product_not_found', '먼저 상품을 가져와 주세요.')
+    }
+    await this.assertDailyLimit()
+    return this.fetchAndSave(goodsno, existing)
+  }
+
+  private async assertDailyLimit() {
+    const used = await this.logs.countSince(this.supplier.code, startOfTodayInKorea())
+    if (used >= DAILY_API_LIMIT) {
+      throw new SupplierError('supplier_rate_limit', '오늘 사용할 수 있는 공급사 API 5회를 모두 사용했습니다.')
+    }
+  }
+
+  private async fetchAndSave(goodsno: string, existing: Awaited<ReturnType<ProductRepository['findImported']>>): Promise<ImportProductResult> {
     const requestId = randomUUID()
     const requestedAt = new Date()
     const started = performance.now()
@@ -63,9 +86,12 @@ export class ProductImportService {
       if (!exact) throw new SupplierError('supplier_product_not_found', '상품을 찾지 못했습니다.')
 
       // The unique constraint is the final guard against concurrent imports.
-      const saved = await this.products.importSupplierProduct(exact)
+      const saved = existing
+        ? await this.products.updateSupplierProduct(existing.supplierProductId, exact)
+        : await this.products.importSupplierProduct(exact)
       await this.saveLog({
         requestId,
+        requestType: existing ? 'product_refresh' : 'product_import',
         goodsno,
         requestedAt,
         started,
@@ -76,7 +102,7 @@ export class ProductImportService {
       logger.info('supplier_api_call_completed', {
         requestId,
         supplierCode: this.supplier.code,
-        requestType: 'product_import',
+        requestType: existing ? 'product_refresh' : 'product_import',
         goodsno,
         durationMs: Math.round(performance.now() - started),
         success: true,
@@ -85,7 +111,7 @@ export class ProductImportService {
         success: true,
         productId: saved.productId,
         supplierProductId: saved.supplierProductId,
-        alreadyExists: false,
+        alreadyExists: Boolean(existing),
         preview: toPreview(saved.supplierProduct),
       }
     } catch (error) {
@@ -93,6 +119,7 @@ export class ProductImportService {
       if (error instanceof SupplierError) responseStatus = error.responseStatus
       await this.saveLog({
         requestId,
+        requestType: existing ? 'product_refresh' : 'product_import',
         goodsno,
         requestedAt,
         started,
@@ -118,6 +145,7 @@ export class ProductImportService {
 
   private async saveLog(input: {
     requestId: string
+    requestType: 'product_import' | 'product_refresh'
     goodsno: string
     requestedAt: Date
     started: number
@@ -131,7 +159,7 @@ export class ProductImportService {
       await this.logs.save({
         requestId: input.requestId,
         supplierCode: this.supplier.code,
-        requestType: 'product_import',
+        requestType: input.requestType,
         sanitizedParameters: { goodsno: input.goodsno },
         requestedAt: input.requestedAt,
         completedAt: new Date(),
@@ -150,6 +178,12 @@ export class ProductImportService {
       })
     }
   }
+}
+
+function startOfTodayInKorea(now = new Date()): Date {
+  const koreaOffsetMs = 9 * 60 * 60 * 1000
+  const koreaNow = new Date(now.getTime() + koreaOffsetMs)
+  return new Date(Date.UTC(koreaNow.getUTCFullYear(), koreaNow.getUTCMonth(), koreaNow.getUTCDate()) - koreaOffsetMs)
 }
 
 function toPreview(row: {
