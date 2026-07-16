@@ -138,9 +138,11 @@ export class ProductEditRepository {
       getDb()
         .select({
           total: sql<number>`count(*)::int`,
-          active: sql<number>`count(*) filter (where ${supplierProducts.availability} = 'active')::int`,
-          ready: sql<number>`count(*) filter (where ${products.status} = 'ready')::int`,
-          missingPrice: sql<number>`count(*) filter (where ${products.sellingPrice} is null)::int`,
+          available: sql<number>`count(*) filter (where ${supplierProducts.availability} <> 'sold_out')::int`,
+          soldOut: sql<number>`count(*) filter (where ${supplierProducts.availability} = 'sold_out')::int`,
+          // Marketplace publication tracking will be connected in the next phase.
+          // Until then every local product is, accurately, unregistered.
+          unregistered: sql<number>`count(*)::int`,
         })
         .from(products)
         .innerJoin(
@@ -158,7 +160,12 @@ export class ProductEditRepository {
       total: countRows[0]?.count ?? 0,
       page: query.page,
       pageSize: query.pageSize,
-      stats: statsRows[0] ?? { total: 0, active: 0, ready: 0, missingPrice: 0 },
+      stats: statsRows[0] ?? {
+        total: 0,
+        available: 0,
+        soldOut: 0,
+        unregistered: 0,
+      },
     };
   }
 
@@ -261,17 +268,15 @@ export class ProductEditRepository {
         )
         .returning();
       if (!product) return { kind: "conflict" as const };
-      await tx
-        .insert(productAuditLogs)
-        .values({
-          actorId: ownerId,
-          entityId: id,
-          action,
-          changedFields,
-          oldValues: summarize(old, changedFields),
-          newValues: summarize(product, changedFields),
-          requestId: randomUUID(),
-        });
+      await tx.insert(productAuditLogs).values({
+        actorId: ownerId,
+        entityId: id,
+        action,
+        changedFields,
+        oldValues: summarize(old, changedFields),
+        newValues: summarize(product, changedFields),
+        requestId: randomUUID(),
+      });
       return { kind: "ok" as const, product };
     });
   }
@@ -307,20 +312,14 @@ export class ProductEditRepository {
         )
         .returning();
       if (!product) return { kind: "conflict" as const };
-      await tx
-        .insert(productAuditLogs)
-        .values({
-          actorId: ownerId,
-          entityId: id,
-          action:
-            kind === "images"
-              ? "product_images_reset"
-              : "product_options_reset",
-          changedFields: [
-            kind === "images" ? "selectedImages" : "editedOptions",
-          ],
-          requestId: randomUUID(),
-        });
+      await tx.insert(productAuditLogs).values({
+        actorId: ownerId,
+        entityId: id,
+        action:
+          kind === "images" ? "product_images_reset" : "product_options_reset",
+        changedFields: [kind === "images" ? "selectedImages" : "editedOptions"],
+        requestId: randomUUID(),
+      });
       return { kind: "ok" as const, product };
     });
   }

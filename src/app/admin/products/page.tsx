@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 /* eslint-disable @next/next/no-img-element -- supplier URLs are intentionally loaded directly; no image storage/optimizer proxy */
 import { requireAdminPage } from "@/lib/auth/admin";
 import { createProductEditService } from "@/modules/products/product-edit-factory";
+import { ProductEditor } from "./[id]/edit/product-editor";
 
 type SearchParams = Record<string, string | undefined>;
 
@@ -13,7 +14,8 @@ export default async function ProductsPage({
 }) {
   const user = await requireAdminPage();
   const params = await searchParams;
-  const result = await createProductEditService().list(user.id, {
+  const service = createProductEditService();
+  const result = await service.list(user.id, {
     search: params.search,
     filter: params.filter,
     sort: params.sort,
@@ -22,6 +24,12 @@ export default async function ProductsPage({
   const totalPages = Math.max(1, Math.ceil(result.total / result.pageSize));
   const firstItem = result.total ? (result.page - 1) * result.pageSize + 1 : 0;
   const lastItem = Math.min(result.page * result.pageSize, result.total);
+  const editor = params.edit
+    ? await Promise.all([
+        service.get(params.edit, user.id),
+        service.categories(),
+      ])
+    : null;
 
   return (
     <div className="inventory-app">
@@ -87,13 +95,22 @@ export default async function ProductsPage({
               <h1>상품 관리</h1>
               <p>친구도매에서 가져온 상품을 확인하고 판매 정보를 편집하세요.</p>
             </div>
-            <Link
-              className="inventory-primary-button"
-              href="/admin/products/import"
-            >
-              <Icon name="plus" />
-              상품 가져오기
-            </Link>
+            <details className="inventory-sync-menu">
+              <summary className="inventory-primary-button">
+                <Icon name="refresh" />
+                상품 변동처리
+              </summary>
+              <div>
+                <strong>상품 변동처리</strong>
+                <p>
+                  품절·단종·공급가·상세페이지 변경사항을 반영하는 기능입니다.
+                </p>
+                <span>
+                  현재는 화면만 제공되며 자동 동기화는 다음 연동 단계에서
+                  활성화됩니다.
+                </span>
+              </div>
+            </details>
           </section>
 
           <section className="inventory-stats" aria-label="상품 현황">
@@ -103,22 +120,22 @@ export default async function ProductsPage({
               note="저장된 전체 상품"
             />
             <StatCard
-              label="판매 가능 원본"
-              value={result.stats.active}
-              note="공급처 판매 상태 기준"
+              label="판매 가능"
+              value={result.stats.available}
+              note="품절·단종이 아닌 상품"
               tone="blue"
             />
             <StatCard
-              label="등록 준비 완료"
-              value={result.stats.ready}
-              note="필수 정보 검토 완료"
-              tone="green"
+              label="품절"
+              value={result.stats.soldOut}
+              note="품절·단종 상태 상품"
+              tone="red"
             />
             <StatCard
-              label="판매가 미입력"
-              value={result.stats.missingPrice}
-              note="가격 입력이 필요합니다"
-              tone="red"
+              label="미등록 상품"
+              value={result.stats.unregistered}
+              note="마켓에 등록되지 않은 상품"
+              tone="amber"
             />
           </section>
 
@@ -208,7 +225,10 @@ export default async function ProductsPage({
                           </div>
                         </td>
                         <td className="inventory-product-name">
-                          <Link href={`/admin/products/${item.id}/edit`}>
+                          <Link
+                            href={editorHref(params, item.id)}
+                            scroll={false}
+                          >
                             {item.title || "상품명 미입력"}
                           </Link>
                           <span>{item.originalName || "원본 상품명 없음"}</span>
@@ -238,7 +258,10 @@ export default async function ProductsPage({
                           <span>{formatTime(item.updatedAt)}</span>
                         </td>
                         <td className="inventory-actions">
-                          <Link href={`/admin/products/${item.id}/edit`}>
+                          <Link
+                            href={editorHref(params, item.id)}
+                            scroll={false}
+                          >
                             편집
                           </Link>
                         </td>
@@ -294,6 +317,38 @@ export default async function ProductsPage({
           </section>
         </main>
       </div>
+      {editor && (
+        <>
+          <Link
+            className="inventory-drawer-backdrop"
+            href={closeEditorHref(params)}
+            scroll={false}
+            aria-label="편집창 닫기"
+          />
+          <aside className="inventory-drawer" aria-label="상품 편집">
+            <header className="inventory-drawer-head">
+              <div>
+                <span>상품 편집</span>
+                <strong>
+                  {editor[0].product.title || editor[0].supplier.originalName}
+                </strong>
+              </div>
+              <Link
+                href={closeEditorHref(params)}
+                scroll={false}
+                aria-label="닫기"
+              >
+                ×
+              </Link>
+            </header>
+            <ProductEditor
+              key={editor[0].product.id}
+              initial={JSON.parse(JSON.stringify(editor[0]))}
+              categories={editor[1]}
+            />
+          </aside>
+        </>
+      )}
     </div>
   );
 }
@@ -380,9 +435,25 @@ function pageNumbers(current: number, total: number) {
 function query(params: SearchParams, page: number) {
   const queryString = new URLSearchParams();
   for (const [key, value] of Object.entries(params))
-    if (value && key !== "page") queryString.set(key, value);
+    if (value && key !== "page" && key !== "edit") queryString.set(key, value);
   queryString.set("page", String(page));
   return `/admin/products?${queryString}`;
+}
+
+function editorHref(params: SearchParams, id: string) {
+  const queryString = new URLSearchParams();
+  for (const [key, value] of Object.entries(params))
+    if (value && key !== "edit") queryString.set(key, value);
+  queryString.set("edit", id);
+  return `/admin/products?${queryString}`;
+}
+
+function closeEditorHref(params: SearchParams) {
+  const queryString = new URLSearchParams();
+  for (const [key, value] of Object.entries(params))
+    if (value && key !== "edit") queryString.set(key, value);
+  const suffix = queryString.toString();
+  return suffix ? `/admin/products?${suffix}` : "/admin/products";
 }
 
 function Icon({ name }: { name: string }) {
@@ -425,6 +496,12 @@ function Icon({ name }: { name: string }) {
     plus: (
       <>
         <path d="M12 5v14M5 12h14" />
+      </>
+    ),
+    refresh: (
+      <>
+        <path d="M20 7h-5V2" />
+        <path d="M20 2a9 9 0 1 0 2 10" />
       </>
     ),
     filter: (
