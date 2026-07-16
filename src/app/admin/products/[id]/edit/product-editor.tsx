@@ -197,16 +197,14 @@ export function ProductEditor({
               <dt>상품명</dt>
               <dd>{initial.supplier.originalName}</dd>
               <dt>공급가</dt>
-              <dd>
-                {initial.supplier.supplierPrice} {initial.supplier.currency}
-              </dd>
+              <dd>{formatWon(initial.supplier.supplierPrice)}</dd>
               <dt>판매 상태</dt>
               <dd>
-                {initial.supplier.availability === 'sold_out'
-                  ? '품절'
-                  : initial.supplier.availability === 'active'
-                    ? '판매'
-                    : '미확인'}
+                {initial.supplier.availability === "sold_out"
+                  ? "품절"
+                  : initial.supplier.availability === "active"
+                    ? "판매"
+                    : "미확인"}
               </dd>
               <dt>동기화</dt>
               <dd>
@@ -407,4 +405,12 @@ function fromInitial(initial: Initial) {
     selectedImages: p.selectedImages,
     editedOptions: p.editedOptions,
   };
+}
+
+function formatWon(value: string | null) {
+  if (value == null) return "-";
+  const number = Number(value);
+  return Number.isFinite(number)
+    ? `${Math.round(number).toLocaleString("ko-KR")}원`
+    : "-";
 }

@@ -1,11 +1,11 @@
-import { redirect } from 'next/navigation'
-import { createSupabaseServerClient } from '@/lib/supabase/server'
-import { LoginForm } from './login-form'
+import { redirect } from "next/navigation";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { LoginForm } from "./login-form";
 
 export default async function LoginPage() {
-  const supabase = await createSupabaseServerClient()
-  const { data } = await supabase.auth.getUser()
-  if (data.user) redirect('/admin/products/import')
+  const supabase = await createSupabaseServerClient();
+  const { data } = await supabase.auth.getUser();
+  if (data.user) redirect("/admin/products");
 
   return (
     <main className="container login-container">
@@ -13,5 +13,5 @@ export default async function LoginPage() {
       <p>Supabase에 등록한 관리자 계정으로 로그인하세요.</p>
       <LoginForm />
     </main>
-  )
+  );
 }

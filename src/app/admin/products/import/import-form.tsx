@@ -54,7 +54,8 @@ export function ImportForm() {
           </button>
         </div>
         <p className="notice">
-          최초 전체 상품 가져오기는 Cloudflare CPU 제한을 피하기 위해 서버 관리 명령으로 실행합니다.
+          최초 전체 상품 가져오기는 Cloudflare CPU 제한을 피하기 위해 서버 관리
+          명령으로 실행합니다.
         </p>
         {error && (
           <p className="notice error" role="alert">
@@ -84,7 +85,7 @@ export function ImportForm() {
               <dt>공급가</dt>
               <dd>
                 {result.preview.supplierPrice
-                  ? `${result.preview.supplierPrice} ${result.preview.currency}`
+                  ? formatWon(result.preview.supplierPrice)
                   : "-"}
               </dd>
               <dt>판매 상태</dt>
@@ -119,4 +120,11 @@ function availabilityLabel(value: string) {
     : value === "active"
       ? "판매"
       : "판매 상태 미확인";
+}
+
+function formatWon(value: string) {
+  const number = Number(value);
+  return Number.isFinite(number)
+    ? `${Math.round(number).toLocaleString("ko-KR")}원`
+    : "-";
 }
