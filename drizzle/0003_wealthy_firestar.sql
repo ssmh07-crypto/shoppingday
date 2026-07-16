@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "supplier_sync_jobs_one_active_uidx" ON "supplier_sync_jobs" USING btree ("supplier_id") WHERE "supplier_sync_jobs"."status" in ('queued', 'running');

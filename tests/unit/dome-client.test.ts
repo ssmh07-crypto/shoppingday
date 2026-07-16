@@ -1,62 +1,129 @@
-import { describe, expect, it, vi } from 'vitest'
-import type { ServerEnv } from '@/lib/env/server'
-import { LiveDomeClient } from '@/modules/suppliers/dome/dome-client'
+import { describe, expect, it, vi } from "vitest";
+import type { ServerEnv } from "@/lib/env/server";
+import { LiveDomeClient } from "@/modules/suppliers/dome/dome-client";
 
 const env = {
-  DOME_API_URL: 'https://example.test/api', DOME_API_ID: 'secret-id', DOME_API_KEY: 'secret-key',
-  DOME_API_MOCK_MODE: false, DOME_API_TIMEOUT_MS: 10, DOME_API_MAX_RESPONSE_BYTES: 20,
-} as ServerEnv
+  DOME_API_URL: "https://example.test/api",
+  DOME_API_ID: "secret-id",
+  DOME_API_KEY: "secret-key",
+  DOME_API_MOCK_MODE: false,
+  DOME_API_TIMEOUT_MS: 10,
+  DOME_API_MAX_RESPONSE_BYTES: 20,
+} as ServerEnv;
 
-describe('친구도매 HTTP 클라이언트', () => {
-  it('인증정보를 URL이나 헤더에 넣지 않고 POST body로만 보낸다', async () => {
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const fetcher = vi.fn(async (..._args: Parameters<typeof fetch>) => new Response('<upitkr/>', { status: 200, headers: { 'content-type': 'application/xml' } }))
-    await new LiveDomeClient(env, fetcher as typeof fetch).fetchProduct('434379')
-    const [url, init] = fetcher.mock.calls[0]
-    expect(String(url)).not.toContain('secret')
-    expect(JSON.stringify(init?.headers)).not.toContain('secret')
-    expect(String(init?.body)).toContain('id=secret-id')
-    expect(init?.redirect).toBe('manual')
-  })
-  it('timeout을 공급처 timeout 오류로 변환한다', async () => {
-    const fetcher = vi.fn((...args: Parameters<typeof fetch>) => new Promise<Response>((_resolve, reject) => {
-      const init = args[1]
-      init?.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')))
-    }))
-    await expect(new LiveDomeClient(env, fetcher as typeof fetch).fetchProduct('434379')).rejects.toMatchObject({ code: 'supplier_timeout' })
-  })
-  it('최대 응답 크기를 제한한다', async () => {
-    const fetcher = vi.fn(async () => new Response('x'.repeat(21), { headers: { 'content-type': 'text/xml' } }))
-    await expect(new LiveDomeClient(env, fetcher as typeof fetch).fetchProduct('434379')).rejects.toMatchObject({ code: 'supplier_response_too_large' })
-  })
-  it('비정상 content-type을 거부한다', async () => {
-    const fetcher = vi.fn(async () => new Response('{}', { headers: { 'content-type': 'application/json' } }))
-    await expect(new LiveDomeClient(env, fetcher as typeof fetch).fetchProduct('434379')).rejects.toMatchObject({ code: 'supplier_invalid_content_type' })
-  })
-  it('리디렉션 응답을 따라가지 않고 공급처 오류로 변환한다', async () => {
-    const fetcher = vi.fn(async () => new Response(null, {
-      status: 302,
-      headers: { location: 'https://unexpected.example.test' },
-    }))
-    await expect(new LiveDomeClient(env, fetcher as typeof fetch).fetchProduct('434379'))
-      .rejects.toMatchObject({ code: 'supplier_http_error', responseStatus: 302 })
-  })
-  it('예상 밖 오류는 단계와 원인만 기록하고 인증정보를 제거한다', async () => {
-    const cause = Object.assign(new Error('socket failed'), { code: 'ECONNRESET' })
+describe("친구도매 HTTP 클라이언트", () => {
+  it("인증정보를 URL이나 헤더에 넣지 않고 POST body로만 보낸다", async () => {
+    const fetcher = vi.fn(async (...args: Parameters<typeof fetch>) => {
+      void args;
+      return new Response("<upitkr/>", {
+        status: 200,
+        headers: { "content-type": "application/xml" },
+      });
+    });
+    await new LiveDomeClient(env, fetcher as typeof fetch).fetchProduct(
+      "434379",
+    );
+    const [url, init] = fetcher.mock.calls[0];
+    expect(String(url)).not.toContain("secret");
+    expect(JSON.stringify(init?.headers)).not.toContain("secret");
+    expect(String(init?.body)).toContain("id=secret-id");
+    expect(init?.redirect).toBe("manual");
+  });
+  it("등록일·변경일·품절 검색 조건을 친구도매 요청 변수로 전달한다", async () => {
+    const fetcher = vi.fn(async (...args: Parameters<typeof fetch>) => {
+      void args;
+      return new Response("<upitkr/>", {
+        status: 200,
+        headers: { "content-type": "application/xml" },
+      });
+    });
+    await new LiveDomeClient(env, fetcher as typeof fetch).fetchProduct(
+      undefined,
+      {
+        runout: 1,
+        opened: { from: "2026-07-14", to: "2026-07-16" },
+        modified: { from: "2026-07-15", to: "2026-07-16" },
+      },
+    );
+    const body = new URLSearchParams(String(fetcher.mock.calls[0]?.[1]?.body));
+    expect(Object.fromEntries(body)).toMatchObject({
+      runout: "1",
+      opendate_s: "2026-07-14",
+      opendate_e: "2026-07-16",
+      modidate_s: "2026-07-15",
+      modidate_e: "2026-07-16",
+    });
+  });
+  it("timeout을 공급처 timeout 오류로 변환한다", async () => {
+    const fetcher = vi.fn(
+      (...args: Parameters<typeof fetch>) =>
+        new Promise<Response>((_resolve, reject) => {
+          const init = args[1];
+          init?.signal?.addEventListener("abort", () =>
+            reject(new DOMException("aborted", "AbortError")),
+          );
+        }),
+    );
+    await expect(
+      new LiveDomeClient(env, fetcher as typeof fetch).fetchProduct("434379"),
+    ).rejects.toMatchObject({ code: "supplier_timeout" });
+  });
+  it("최대 응답 크기를 제한한다", async () => {
+    const fetcher = vi.fn(
+      async () =>
+        new Response("x".repeat(21), {
+          headers: { "content-type": "text/xml" },
+        }),
+    );
+    await expect(
+      new LiveDomeClient(env, fetcher as typeof fetch).fetchProduct("434379"),
+    ).rejects.toMatchObject({ code: "supplier_response_too_large" });
+  });
+  it("비정상 content-type을 거부한다", async () => {
+    const fetcher = vi.fn(
+      async () =>
+        new Response("{}", { headers: { "content-type": "application/json" } }),
+    );
+    await expect(
+      new LiveDomeClient(env, fetcher as typeof fetch).fetchProduct("434379"),
+    ).rejects.toMatchObject({ code: "supplier_invalid_content_type" });
+  });
+  it("리디렉션 응답을 따라가지 않고 공급처 오류로 변환한다", async () => {
+    const fetcher = vi.fn(
+      async () =>
+        new Response(null, {
+          status: 302,
+          headers: { location: "https://unexpected.example.test" },
+        }),
+    );
+    await expect(
+      new LiveDomeClient(env, fetcher as typeof fetch).fetchProduct("434379"),
+    ).rejects.toMatchObject({
+      code: "supplier_http_error",
+      responseStatus: 302,
+    });
+  });
+  it("예상 밖 오류는 단계와 원인만 기록하고 인증정보를 제거한다", async () => {
+    const cause = Object.assign(new Error("socket failed"), {
+      code: "ECONNRESET",
+    });
     const fetcher = vi.fn(async () => {
-      throw new TypeError('request failed for secret-id?apiKey=secret-key', { cause })
-    })
-    const log = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+      throw new TypeError("request failed for secret-id?apiKey=secret-key", {
+        cause,
+      });
+    });
+    const log = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
-    await expect(new LiveDomeClient(env, fetcher as typeof fetch).fetchProduct('434379'))
-      .rejects.toMatchObject({ code: 'supplier_http_error' })
+    await expect(
+      new LiveDomeClient(env, fetcher as typeof fetch).fetchProduct("434379"),
+    ).rejects.toMatchObject({ code: "supplier_http_error" });
 
-    const entry = String(log.mock.calls[0]?.[0])
-    expect(entry).toContain('dome_client_unexpected_error')
-    expect(entry).toContain('ECONNRESET')
-    expect(entry).toContain('"phase":"fetch"')
-    expect(entry).not.toContain('secret-id')
-    expect(entry).not.toContain('secret-key')
-    log.mockRestore()
-  })
-})
+    const entry = String(log.mock.calls[0]?.[0]);
+    expect(entry).toContain("dome_client_unexpected_error");
+    expect(entry).toContain("ECONNRESET");
+    expect(entry).toContain('"phase":"fetch"');
+    expect(entry).not.toContain("secret-id");
+    expect(entry).not.toContain("secret-key");
+    log.mockRestore();
+  });
+});

@@ -581,48 +581,66 @@ td small {
   background: #0f317f;
   color: #fff;
 }
-.inventory-sync-menu {
+.product-sync-control {
   position: relative;
 }
-.inventory-sync-menu summary {
-  list-style: none;
-  cursor: pointer;
+.product-sync-control > button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
 }
-.inventory-sync-menu summary::-webkit-details-marker {
-  display: none;
+.product-sync-control > button svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
-.inventory-sync-menu > div {
-  position: absolute;
-  top: calc(100% + 10px);
-  right: 0;
-  z-index: 25;
-  width: 320px;
-  padding: 17px;
+.product-sync-status {
+  display: grid;
+  gap: 7px;
+  min-width: 320px;
+  padding: 15px;
   border: 1px solid var(--inv-line);
   border-radius: 9px;
   background: #fff;
   box-shadow: 0 16px 40px #18233c2b;
-}
-.inventory-sync-menu > div strong,
-.inventory-sync-menu > div span {
-  display: block;
-}
-.inventory-sync-menu > div strong {
-  font-size: 14px;
-}
-.inventory-sync-menu > div p {
-  margin: 7px 0 10px;
   color: #4f5a6c;
   font-size: 12px;
-  line-height: 1.5;
 }
-.inventory-sync-menu > div span {
-  padding: 9px;
-  border-radius: 6px;
-  background: #fff7df;
-  color: #795500;
-  font-size: 11px;
-  line-height: 1.45;
+.product-sync-control.inventory .product-sync-status {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  z-index: 25;
+}
+.product-sync-control.card .product-sync-status {
+  margin-top: 12px;
+  box-shadow: none;
+}
+.product-sync-status strong,
+.product-sync-status span,
+.product-sync-status small {
+  display: block;
+}
+.product-sync-status strong {
+  color: var(--inv-text, #172033);
+  font-size: 13px;
+}
+.product-sync-status progress {
+  width: 100%;
+  height: 8px;
+  accent-color: var(--inv-primary, #2457d6);
+}
+.product-sync-status a {
+  width: fit-content;
+  font-weight: 700;
+}
+.product-sync-status .error {
+  margin: 0;
+  padding: 8px;
 }
 .inventory-stats {
   display: grid;

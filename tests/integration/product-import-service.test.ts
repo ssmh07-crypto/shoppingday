@@ -1,92 +1,247 @@
-import { describe, expect, it, vi } from 'vitest'
-import { ProductImportService } from '@/modules/products/product-service'
-import type { ProductRepository, ImportedProductRecord } from '@/modules/products/product-repository'
-import type { ApiCallLogRepository, ApiCallLogInput } from '@/modules/audit/api-call-log-repository'
-import type { SupplierAdapter } from '@/modules/suppliers/core/supplier-adapter'
-import type { SupplierProduct } from '@/modules/suppliers/core/types'
-import { SupplierError } from '@/modules/suppliers/core/supplier-errors'
+import { describe, expect, it, vi } from "vitest";
+import { ProductImportService } from "@/modules/products/product-service";
+import type {
+  ProductRepository,
+  ImportedProductRecord,
+} from "@/modules/products/product-repository";
+import type {
+  ApiCallLogRepository,
+  ApiCallLogInput,
+} from "@/modules/audit/api-call-log-repository";
+import type { SupplierAdapter } from "@/modules/suppliers/core/supplier-adapter";
+import type { SupplierProduct } from "@/modules/suppliers/core/types";
+import { SupplierError } from "@/modules/suppliers/core/supplier-errors";
 
-const product: SupplierProduct = { supplierCode: 'dome', externalProductId: '434379', originalName: '잔디엣지', supplierPrice: 4500, currency: 'KRW', availability: 'active', images: ['https://example.test/a.jpg'], options: [], rawDescription: null, supplierCreatedAt: null, supplierUpdatedAt: null, rawPayload: {} }
-const row = { id: 'sp1', supplierId: 's1', externalProductId: '434379', originalName: '잔디엣지', supplierPrice: '4500.00', currency: 'KRW', availability: 'active' as const, originalImages: product.images, originalOptions: [], rawDescription: null, rawPayload: {}, supplierCreatedAt: null, supplierUpdatedAt: null, firstImportedAt: new Date(), lastSyncedAt: new Date(), createdAt: new Date(), updatedAt: new Date() }
-const saved: ImportedProductRecord = { productId: 'p1', supplierProductId: 'sp1', supplierProduct: row }
+const product: SupplierProduct = {
+  supplierCode: "dome",
+  externalProductId: "434379",
+  originalName: "잔디엣지",
+  supplierPrice: 4500,
+  currency: "KRW",
+  availability: "active",
+  images: ["https://example.test/a.jpg"],
+  options: [],
+  rawDescription: null,
+  supplierCreatedAt: null,
+  supplierUpdatedAt: null,
+  rawPayload: {},
+};
+const row = {
+  id: "sp1",
+  supplierId: "s1",
+  externalProductId: "434379",
+  originalName: "잔디엣지",
+  supplierPrice: "4500.00",
+  currency: "KRW",
+  availability: "active" as const,
+  originalImages: product.images,
+  originalOptions: [],
+  rawDescription: null,
+  rawPayload: {},
+  supplierCreatedAt: null,
+  supplierUpdatedAt: null,
+  firstImportedAt: new Date(),
+  lastSyncedAt: new Date(),
+  createdAt: new Date(),
+  updatedAt: new Date(),
+};
+const saved: ImportedProductRecord = {
+  productId: "p1",
+  supplierProductId: "sp1",
+  supplierProduct: row,
+};
 
 function setup(existing: ImportedProductRecord | null = null) {
-  const repository: ProductRepository = { findImported: vi.fn(async () => existing), importSupplierProduct: vi.fn(async () => saved), updateSupplierProduct: vi.fn(async () => saved), findDetail: vi.fn(async () => null) }
-  const calls: ApiCallLogInput[] = []
-  const logs: ApiCallLogRepository = { save: vi.fn(async (input) => { calls.push(input) }), countSince: vi.fn(async () => 0) }
-  const adapter: SupplierAdapter = { code: 'dome', fetchProduct: vi.fn(async () => ({ products: [product], responseStatus: 200 })), fetchProducts: vi.fn(async () => ({ products: [product], responseStatus: 200 })) }
-  return { service: new ProductImportService(repository, logs, adapter), repository, logs, adapter, calls }
+  const repository: ProductRepository = {
+    findImported: vi.fn(async () => existing),
+    listImported: vi.fn(async () => (existing ? [existing] : [])),
+    importSupplierProduct: vi.fn(async () => saved),
+    updateSupplierProduct: vi.fn(async () => saved),
+    findDetail: vi.fn(async () => null),
+  };
+  const calls: ApiCallLogInput[] = [];
+  const logs: ApiCallLogRepository = {
+    save: vi.fn(async (input) => {
+      calls.push(input);
+    }),
+    countSince: vi.fn(async () => 0),
+  };
+  const adapter: SupplierAdapter = {
+    code: "dome",
+    fetchProduct: vi.fn(async () => ({
+      products: [product],
+      responseStatus: 200,
+    })),
+    fetchProducts: vi.fn(async () => ({
+      products: [product],
+      responseStatus: 200,
+    })),
+  };
+  return {
+    service: new ProductImportService(repository, logs, adapter),
+    repository,
+    logs,
+    adapter,
+    calls,
+  };
 }
 
-describe('상품 import 통합 흐름', () => {
-  it('mock 공급처 상품을 저장하고 민감정보 없는 성공 로그를 남긴다', async () => {
-    const context = setup()
-    const result = await context.service.importByExternalId('434379', 'u1')
-    expect(result).toMatchObject({ productId: 'p1', alreadyExists: false })
-    expect(context.calls[0].sanitizedParameters).toEqual({ goodsno: '434379' })
-    expect(JSON.stringify(context.calls[0])).not.toMatch(/apiKey|secret-id|secret-key/)
-  })
-  it('중복 상품이면 공급처를 호출하지 않는다', async () => {
-    const context = setup(saved)
-    expect(await context.service.importByExternalId('434379', 'u1')).toMatchObject({ alreadyExists: true })
-    expect(context.adapter.fetchProduct).not.toHaveBeenCalled()
-  })
-  it('한국 시간 기준 오늘 5회를 사용했으면 공급처를 호출하지 않는다', async () => {
-    const context = setup()
-    vi.mocked(context.logs.countSince).mockResolvedValueOnce(5)
-    await expect(context.service.importByExternalId('434379', 'u1')).rejects.toMatchObject({ code: 'supplier_rate_limit' })
-    expect(context.adapter.fetchProduct).not.toHaveBeenCalled()
-  })
-  it('명시적 갱신만 공급처를 호출하고 기존 행을 업데이트한다', async () => {
-    const context = setup(saved)
-    const result = await context.service.refreshByExternalId('434379', 'u1')
-    expect(context.adapter.fetchProduct).toHaveBeenCalledOnce()
-    expect(context.repository.updateSupplierProduct).toHaveBeenCalledWith('sp1', product)
-    expect(context.calls[0].requestType).toBe('product_refresh')
-    expect(result.alreadyExists).toBe(true)
-  })
-  it('공급처 오류와 파싱 오류를 기록하고 전달한다', async () => {
-    for (const code of ['supplier_http_error', 'supplier_invalid_xml'] as const) {
-      const context = setup()
-      vi.mocked(context.adapter.fetchProduct).mockRejectedValueOnce(new SupplierError(code, '안전한 오류'))
-      await expect(context.service.importByExternalId('434379', 'u1')).rejects.toMatchObject({ code })
-      expect(context.calls[0]).toMatchObject({ success: false, errorCode: code })
+describe("상품 import 통합 흐름", () => {
+  it("mock 공급처 상품을 저장하고 민감정보 없는 성공 로그를 남긴다", async () => {
+    const context = setup();
+    const result = await context.service.importByExternalId("434379", "u1");
+    expect(result).toMatchObject({ productId: "p1", alreadyExists: false });
+    expect(context.calls[0].sanitizedParameters).toEqual({ goodsno: "434379" });
+    expect(JSON.stringify(context.calls[0])).not.toMatch(
+      /apiKey|secret-id|secret-key/,
+    );
+  });
+  it("중복 상품이면 공급처를 호출하지 않는다", async () => {
+    const context = setup(saved);
+    expect(
+      await context.service.importByExternalId("434379", "u1"),
+    ).toMatchObject({ alreadyExists: true });
+    expect(context.adapter.fetchProduct).not.toHaveBeenCalled();
+  });
+  it("한국 시간 기준 오늘 5회를 사용했으면 공급처를 호출하지 않는다", async () => {
+    const context = setup();
+    vi.mocked(context.logs.countSince).mockResolvedValueOnce(5);
+    await expect(
+      context.service.importByExternalId("434379", "u1"),
+    ).rejects.toMatchObject({ code: "supplier_rate_limit" });
+    expect(context.adapter.fetchProduct).not.toHaveBeenCalled();
+  });
+  it("명시적 갱신만 공급처를 호출하고 기존 행을 업데이트한다", async () => {
+    const context = setup(saved);
+    const result = await context.service.refreshByExternalId("434379", "u1");
+    expect(context.adapter.fetchProduct).toHaveBeenCalledOnce();
+    expect(context.repository.updateSupplierProduct).toHaveBeenCalledWith(
+      "sp1",
+      product,
+      saved,
+    );
+    expect(context.calls[0].requestType).toBe("product_refresh");
+    expect(result.alreadyExists).toBe(true);
+  });
+  it("공급처 오류와 파싱 오류를 기록하고 전달한다", async () => {
+    for (const code of [
+      "supplier_http_error",
+      "supplier_invalid_xml",
+    ] as const) {
+      const context = setup();
+      vi.mocked(context.adapter.fetchProduct).mockRejectedValueOnce(
+        new SupplierError(code, "안전한 오류"),
+      );
+      await expect(
+        context.service.importByExternalId("434379", "u1"),
+      ).rejects.toMatchObject({ code });
+      expect(context.calls[0]).toMatchObject({
+        success: false,
+        errorCode: code,
+      });
     }
-  })
-  it('DB 저장 실패를 database_error로 기록한다', async () => {
-    const context = setup()
-    vi.mocked(context.repository.importSupplierProduct).mockRejectedValueOnce(new Error('transaction rolled back'))
-    await expect(context.service.importByExternalId('434379', 'u1')).rejects.toMatchObject({ code: 'database_error' })
-    expect(context.calls[0]).toMatchObject({ success: false, errorCode: 'database_error' })
-  })
-  it('전체 가져오기는 API 1회로 상품을 처리한다', async () => {
-    const context=setup()
-    const progress = vi.fn()
-    const result=await context.service.importAll('u1', progress)
-    expect(context.adapter.fetchProducts).toHaveBeenCalledOnce()
-    expect(context.repository.importSupplierProduct).toHaveBeenCalledWith(product,'u1')
-    expect(result).toEqual({success:true,total:1,created:1,updated:0})
+  });
+  it("DB 저장 실패를 database_error로 기록한다", async () => {
+    const context = setup();
+    vi.mocked(context.repository.importSupplierProduct).mockRejectedValueOnce(
+      new Error("transaction rolled back"),
+    );
+    await expect(
+      context.service.importByExternalId("434379", "u1"),
+    ).rejects.toMatchObject({ code: "database_error" });
+    expect(context.calls[0]).toMatchObject({
+      success: false,
+      errorCode: "database_error",
+    });
+  });
+  it("전체 가져오기는 API 1회로 상품을 처리한다", async () => {
+    const context = setup();
+    const progress = vi.fn();
+    const result = await context.service.importAll("u1", progress);
+    expect(context.adapter.fetchProducts).toHaveBeenCalledOnce();
+    expect(context.repository.importSupplierProduct).toHaveBeenCalledWith(
+      product,
+      "u1",
+    );
+    expect(result).toEqual({
+      success: true,
+      total: 1,
+      created: 1,
+      updated: 0,
+      unchanged: 0,
+    });
     expect(progress).toHaveBeenCalledWith({
       success: true,
       total: 1,
       processed: 1,
       created: 1,
       updated: 0,
-    })
-    expect(context.calls[0].requestType).toBe('product_import_all')
-  })
-  it('전체 가져오기 공급처 오류의 HTTP 상태를 로그에 보존한다', async () => {
-    const context = setup()
+      unchanged: 0,
+    });
+    expect(context.calls[0].requestType).toBe("product_import_all");
+  });
+  it("전체 가져오기 공급처 오류의 HTTP 상태를 로그에 보존한다", async () => {
+    const context = setup();
     vi.mocked(context.adapter.fetchProducts).mockRejectedValueOnce(
-      new SupplierError('supplier_http_error', '안전한 오류', 502),
-    )
+      new SupplierError("supplier_http_error", "안전한 오류", 502),
+    );
 
-    await expect(context.service.importAll('u1'))
-      .rejects.toMatchObject({ code: 'supplier_http_error', responseStatus: 502 })
+    await expect(context.service.importAll("u1")).rejects.toMatchObject({
+      code: "supplier_http_error",
+      responseStatus: 502,
+    });
     expect(context.calls[0]).toMatchObject({
       success: false,
-      errorCode: 'supplier_http_error',
+      errorCode: "supplier_http_error",
       responseStatus: 502,
-    })
-  })
-})
+    });
+  });
+  it("등록일과 변경일을 두 번 조회하고 중복 상품의 실제 변경만 반영한다", async () => {
+    const context = setup(saved);
+    const soldOut = { ...product, availability: "sold_out" as const };
+    vi.mocked(context.adapter.fetchProducts)
+      .mockResolvedValueOnce({ products: [product], responseStatus: 200 })
+      .mockResolvedValueOnce({ products: [soldOut], responseStatus: 200 });
+
+    const result = await context.service.syncChanges("u1", {
+      from: "2026-07-15",
+      to: "2026-07-16",
+    });
+
+    expect(context.adapter.fetchProducts).toHaveBeenNthCalledWith(1, {
+      opened: { from: "2026-07-15", to: "2026-07-16" },
+    });
+    expect(context.adapter.fetchProducts).toHaveBeenNthCalledWith(2, {
+      modified: { from: "2026-07-15", to: "2026-07-16" },
+    });
+    expect(context.repository.updateSupplierProduct).toHaveBeenCalledWith(
+      "sp1",
+      soldOut,
+      saved,
+    );
+    expect(result).toEqual({
+      success: true,
+      total: 1,
+      created: 0,
+      updated: 1,
+      unchanged: 0,
+    });
+    expect(context.calls).toHaveLength(2);
+  });
+  it("전체 가져오기는 기존 상품을 한 번에 읽고 동일 상품의 DB 쓰기를 생략한다", async () => {
+    const context = setup(saved);
+
+    const result = await context.service.importAll("u1");
+
+    expect(context.repository.listImported).toHaveBeenCalledOnce();
+    expect(context.repository.findImported).not.toHaveBeenCalled();
+    expect(context.repository.updateSupplierProduct).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      success: true,
+      total: 1,
+      created: 0,
+      updated: 0,
+      unchanged: 1,
+    });
+  });
+});

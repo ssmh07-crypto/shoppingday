@@ -5,6 +5,7 @@ import { requireAdminPage } from "@/lib/auth/admin";
 import { withDbReadRecovery, type Database } from "@/lib/db";
 import { createProductEditService } from "@/modules/products/product-edit-factory";
 import { ProductEditorDrawer } from "./[id]/edit/product-editor-drawer";
+import { ProductSyncControl } from "./product-sync-control";
 
 type SearchParams = Record<string, string | undefined>;
 
@@ -105,22 +106,7 @@ async function renderProductsPage(
               <h1>상품 관리</h1>
               <p>친구도매에서 가져온 상품을 확인하고 판매 정보를 편집하세요.</p>
             </div>
-            <details className="inventory-sync-menu">
-              <summary className="inventory-primary-button">
-                <Icon name="refresh" />
-                상품 변동처리
-              </summary>
-              <div>
-                <strong>상품 변동처리</strong>
-                <p>
-                  품절·단종·공급가·상세페이지 변경사항을 반영하는 기능입니다.
-                </p>
-                <span>
-                  현재는 화면만 제공되며 자동 동기화는 다음 연동 단계에서
-                  활성화됩니다.
-                </span>
-              </div>
-            </details>
+            <ProductSyncControl mode="changes" />
           </section>
 
           <section className="inventory-stats" aria-label="상품 현황">

@@ -1,0 +1,167 @@
+"use client";
+
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+
+type SyncMode = "all" | "changes";
+type SyncJob = {
+  id: string;
+  type: SyncMode;
+  status: "queued" | "running" | "succeeded" | "failed";
+  dateFrom: string | null;
+  dateTo: string | null;
+  total: number;
+  processed: number;
+  created: number;
+  updated: number;
+  unchanged: number;
+  errorMessage: string | null;
+  githubRunUrl: string | null;
+  requestedAt: string;
+  completedAt: string | null;
+};
+
+export function ProductSyncControl({
+  mode,
+  variant = "inventory",
+}: {
+  mode: SyncMode;
+  variant?: "inventory" | "card";
+}) {
+  const router = useRouter();
+  const [job, setJob] = useState<SyncJob | null>(null);
+  const [requesting, setRequesting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const wasActive = useRef(false);
+
+  const refresh = useCallback(async () => {
+    const response = await fetch("/api/suppliers/dome/products/sync", {
+      cache: "no-store",
+      headers: { accept: "application/json" },
+    });
+    const body = await response.json().catch(() => null);
+    if (!response.ok) return;
+    const next = (body.job ?? null) as SyncJob | null;
+    const active = next?.status === "queued" || next?.status === "running";
+    if (wasActive.current && next?.status === "succeeded") router.refresh();
+    wasActive.current = active;
+    setJob(next);
+  }, [router]);
+
+  useEffect(() => {
+    const initial = window.setTimeout(() => void refresh(), 0);
+    const interval = window.setInterval(() => void refresh(), 5_000);
+    return () => {
+      window.clearTimeout(initial);
+      window.clearInterval(interval);
+    };
+  }, [refresh]);
+
+  async function start() {
+    const label = mode === "all" ? "전체 상품 가져오기" : "상품 변동처리";
+    if (!confirm(`${label} 작업을 시작할까요?`)) return;
+    setRequesting(true);
+    setError(null);
+    try {
+      const response = await fetch("/api/suppliers/dome/products/sync", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ mode }),
+      });
+      const body = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(body?.error?.message ?? "작업을 시작하지 못했습니다.");
+      }
+      setJob(body.job);
+      wasActive.current = true;
+    } catch (caught) {
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : "작업을 시작하지 못했습니다.",
+      );
+    } finally {
+      setRequesting(false);
+    }
+  }
+
+  const active = job?.status === "queued" || job?.status === "running";
+  const buttonLabel =
+    mode === "all"
+      ? active
+        ? "전체 상품 처리 중…"
+        : "전체 상품 가져오기"
+      : active
+        ? "상품 변동처리 중…"
+        : "상품 변동처리";
+
+  return (
+    <div className={`product-sync-control ${variant}`}>
+      <button
+        type="button"
+        className={variant === "inventory" ? "inventory-primary-button" : ""}
+        onClick={start}
+        disabled={requesting || active}
+      >
+        <SyncIcon />
+        {requesting ? "작업 요청 중…" : buttonLabel}
+      </button>
+      {(job || error) && (
+        <div className="product-sync-status" aria-live="polite">
+          {error ? (
+            <p className="error">{error}</p>
+          ) : job ? (
+            <>
+              <strong>{jobTitle(job)}</strong>
+              <span>{jobStatus(job)}</span>
+              {job.status === "running" && job.total > 0 && (
+                <progress value={job.processed} max={job.total} />
+              )}
+              {job.status === "succeeded" && (
+                <small>
+                  조회 {job.total.toLocaleString("ko-KR")}개 · 신규{" "}
+                  {job.created.toLocaleString("ko-KR")}개 · 변경{" "}
+                  {job.updated.toLocaleString("ko-KR")}개 · 동일{" "}
+                  {job.unchanged.toLocaleString("ko-KR")}개
+                </small>
+              )}
+              {job.errorMessage && (
+                <small className="error">{job.errorMessage}</small>
+              )}
+              {job.githubRunUrl && (
+                <a href={job.githubRunUrl} target="_blank" rel="noreferrer">
+                  실행 로그 보기
+                </a>
+              )}
+            </>
+          ) : null}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function jobTitle(job: SyncJob) {
+  return job.type === "all" ? "전체 상품 가져오기" : "상품 변동처리";
+}
+
+function jobStatus(job: SyncJob) {
+  if (job.status === "queued")
+    return "GitHub Actions 실행을 기다리고 있습니다.";
+  if (job.status === "running") {
+    return job.total
+      ? `${job.processed.toLocaleString("ko-KR")} / ${job.total.toLocaleString("ko-KR")} 처리 중`
+      : "친구도매 상품을 조회하고 있습니다.";
+  }
+  if (job.status === "succeeded") return "작업이 완료되었습니다.";
+  return "작업에 실패했습니다.";
+}
+
+function SyncIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M20 7h-5V2" />
+      <path d="M20 2a9 9 0 1 0 2 10" />
+    </svg>
+  );
+}

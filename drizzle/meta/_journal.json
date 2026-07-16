@@ -15,6 +15,20 @@
       "when": 1784039359198,
       "tag": "0001_slimy_arclight",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1784211112583,
+      "tag": "0002_huge_invaders",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1784211132446,
+      "tag": "0003_wealthy_firestar",
+      "breakpoints": true
     }
   ]
 }

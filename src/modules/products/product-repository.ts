@@ -26,6 +26,7 @@ export interface ProductRepository {
     supplierCode: string,
     externalProductId: string,
   ): Promise<ImportedProductRecord | null>;
+  listImported(supplierCode: string): Promise<ImportedProductRecord[]>;
   importSupplierProduct(
     product: SupplierProduct,
     ownerId: string,
@@ -33,6 +34,7 @@ export interface ProductRepository {
   updateSupplierProduct(
     supplierProductId: string,
     product: SupplierProduct,
+    existing?: ImportedProductRecord,
   ): Promise<ImportedProductRecord>;
   findDetail(productId: string): Promise<ProductDetail | null>;
 }
@@ -51,6 +53,7 @@ export class DrizzleProductRepository implements ProductRepository {
   async updateSupplierProduct(
     supplierProductId: string,
     product: SupplierProduct,
+    existing?: ImportedProductRecord,
   ) {
     const [supplierProduct] = await this.database
       .update(supplierProducts)
@@ -72,12 +75,14 @@ export class DrizzleProductRepository implements ProductRepository {
       .where(eq(supplierProducts.id, supplierProductId))
       .returning();
     if (!supplierProduct) throw new Error("supplier_product_not_found");
-    const existing = await this.findImported(
-      product.supplierCode,
-      product.externalProductId,
-    );
-    if (!existing) throw new Error("product_link_not_found");
-    return { ...existing, supplierProduct };
+    const imported =
+      existing ??
+      (await this.findImported(
+        product.supplierCode,
+        product.externalProductId,
+      ));
+    if (!imported) throw new Error("product_link_not_found");
+    return { ...imported, supplierProduct };
   }
 
   async findImported(supplierCode: string, externalProductId: string) {
@@ -101,6 +106,22 @@ export class DrizzleProductRepository implements ProductRepository {
       )
       .limit(1);
     return row ?? null;
+  }
+
+  async listImported(supplierCode: string) {
+    return this.database
+      .select({
+        productId: productSupplierLinks.productId,
+        supplierProductId: supplierProducts.id,
+        supplierProduct: supplierProducts,
+      })
+      .from(supplierProducts)
+      .innerJoin(suppliers, eq(suppliers.id, supplierProducts.supplierId))
+      .innerJoin(
+        productSupplierLinks,
+        eq(productSupplierLinks.supplierProductId, supplierProducts.id),
+      )
+      .where(eq(suppliers.code, supplierCode));
   }
 
   async importSupplierProduct(product: SupplierProduct, ownerId: string) {

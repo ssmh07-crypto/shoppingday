@@ -1,0 +1,55 @@
+name: 친구도매 상품 동기화
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 동기화 방식
+        required: true
+        type: choice
+        options:
+          - changes
+          - all
+      job_id:
+        description: 관리자 화면에서 생성한 작업 ID
+        required: true
+        type: string
+
+concurrency:
+  group: dome-product-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    name: 상품 동기화 실행
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    env:
+      SYNC_MODE: ${{ inputs.mode }}
+      SYNC_JOB_ID: ${{ inputs.job_id }}
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+      DOME_API_ID: ${{ secrets.DOME_API_ID }}
+      DOME_API_KEY: ${{ secrets.DOME_API_KEY }}
+      DOME_API_MOCK_MODE: "false"
+      DOME_API_TIMEOUT_MS: "60000"
+      DOME_API_MAX_RESPONSE_BYTES: "20971520"
+
+    steps:
+      - name: 저장소 가져오기
+        uses: actions/checkout@v4
+
+      - name: Node.js 설정
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: 의존성 설치
+        run: npm clean-install --progress=false
+
+      - name: 상품 동기화
+        run: npm run sync:products

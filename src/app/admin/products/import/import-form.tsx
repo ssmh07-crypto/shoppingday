@@ -54,8 +54,8 @@ export function ImportForm() {
           </button>
         </div>
         <p className="notice">
-          최초 전체 상품 가져오기는 Cloudflare CPU 제한을 피하기 위해 서버 관리
-          명령으로 실행합니다.
+          개별 상품은 즉시 가져옵니다. 전체 상품은 위의 GitHub Actions 작업으로
+          안전하게 처리합니다.
         </p>
         {error && (
           <p className="notice error" role="alert">
