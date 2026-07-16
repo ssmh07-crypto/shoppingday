@@ -2,6 +2,7 @@ import "server-only";
 import { and, desc, eq, inArray, lt, sql } from "drizzle-orm";
 import type { Database } from "@/lib/db";
 import { supplierProducts, supplierSyncJobs, suppliers } from "@/lib/db/schema";
+import { parseDatabaseTimestamp } from "@/modules/suppliers/core/database-date";
 
 export type SupplierSyncMode = "all" | "changes";
 export type SupplierSyncProgress = {
@@ -164,12 +165,12 @@ export class SupplierSyncJobRepository {
   async firstImportedAt(supplierCode: string) {
     const [row] = await this.database
       .select({
-        value: sql<Date | null>`min(${supplierProducts.firstImportedAt})`,
+        value: sql<Date | string | null>`min(${supplierProducts.firstImportedAt})`,
       })
       .from(supplierProducts)
       .innerJoin(suppliers, eq(suppliers.id, supplierProducts.supplierId))
       .where(eq(suppliers.code, supplierCode));
-    return row?.value ?? null;
+    return parseDatabaseTimestamp(row?.value);
   }
 }
 
