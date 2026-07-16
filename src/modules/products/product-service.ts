@@ -98,6 +98,7 @@ export class ProductImportService {
       return { success:true, total:fetched.products.length, created, updated }
     } catch (error) {
       const code = error instanceof SupplierError ? error.code : 'database_error'
+      if (error instanceof SupplierError) responseStatus = error.responseStatus
       await this.saveLog({ requestId, requestType:'product_import_all', goodsno:'all', requestedAt, started, success:false, responseStatus, responseCount, errorCode:code, errorMessage:error instanceof SupplierError ? error.message : '전체 상품 저장 중 오류가 발생했습니다.' })
       if (error instanceof SupplierError) throw error
       throw new ProductImportError()

@@ -67,4 +67,18 @@ describe('상품 import 통합 흐름', () => {
     expect(result).toEqual({success:true,total:1,created:1,updated:0})
     expect(context.calls[0].requestType).toBe('product_import_all')
   })
+  it('전체 가져오기 공급처 오류의 HTTP 상태를 로그에 보존한다', async () => {
+    const context = setup()
+    vi.mocked(context.adapter.fetchProducts).mockRejectedValueOnce(
+      new SupplierError('supplier_http_error', '안전한 오류', 502),
+    )
+
+    await expect(context.service.importAll('u1'))
+      .rejects.toMatchObject({ code: 'supplier_http_error', responseStatus: 502 })
+    expect(context.calls[0]).toMatchObject({
+      success: false,
+      errorCode: 'supplier_http_error',
+      responseStatus: 502,
+    })
+  })
 })

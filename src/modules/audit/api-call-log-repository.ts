@@ -1,5 +1,5 @@
 import 'server-only'
-import { and, eq, gte, sql } from 'drizzle-orm'
+import { and, eq, gte, isNotNull, isNull, ne, or, sql } from 'drizzle-orm'
 import { getDb } from '@/lib/db'
 import { supplierApiCallLogs, suppliers } from '@/lib/db/schema'
 
@@ -29,7 +29,19 @@ export class DrizzleApiCallLogRepository implements ApiCallLogRepository {
       .select({ count: sql<number>`count(*)::int` })
       .from(supplierApiCallLogs)
       .innerJoin(suppliers, eq(suppliers.id, supplierApiCallLogs.supplierId))
-      .where(and(eq(suppliers.code, supplierCode), gte(supplierApiCallLogs.requestedAt, since)))
+      .where(and(
+        eq(suppliers.code, supplierCode),
+        gte(supplierApiCallLogs.requestedAt, since),
+        // A supplier_http_error without an HTTP status means the runtime failed
+        // before a supplier response was received (for example, invalid fetch
+        // options in workerd). Preserve the audit row, but do not consume the
+        // supplier-call allowance.
+        or(
+          isNull(supplierApiCallLogs.errorCode),
+          ne(supplierApiCallLogs.errorCode, 'supplier_http_error'),
+          isNotNull(supplierApiCallLogs.responseStatus),
+        ),
+      ))
     return row?.count ?? 0
   }
 
