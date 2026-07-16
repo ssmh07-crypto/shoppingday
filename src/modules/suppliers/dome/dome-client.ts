@@ -55,10 +55,17 @@ export class LiveDomeClient implements DomeClient {
         method: 'POST',
         body,
         headers: { 'content-type': 'application/x-www-form-urlencoded;charset=UTF-8' },
-        redirect: 'error',
+        redirect: 'manual',
         signal: controller.signal,
         cache: 'no-store',
       })
+      if (response.status >= 300 && response.status < 400) {
+        throw new SupplierError(
+          'supplier_http_error',
+          '친구도매가 예상하지 못한 리디렉션을 반환했습니다.',
+          response.status,
+        )
+      }
       const contentType = response.headers.get('content-type') ?? ''
       if (!/^(application|text)\/(xml|plain)(?:;|$)/i.test(contentType)) {
         throw new SupplierError(

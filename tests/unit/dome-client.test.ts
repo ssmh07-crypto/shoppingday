@@ -16,6 +16,7 @@ describe('친구도매 HTTP 클라이언트', () => {
     expect(String(url)).not.toContain('secret')
     expect(JSON.stringify(init?.headers)).not.toContain('secret')
     expect(String(init?.body)).toContain('id=secret-id')
+    expect(init?.redirect).toBe('manual')
   })
   it('timeout을 공급처 timeout 오류로 변환한다', async () => {
     const fetcher = vi.fn((...args: Parameters<typeof fetch>) => new Promise<Response>((_resolve, reject) => {
@@ -31,6 +32,14 @@ describe('친구도매 HTTP 클라이언트', () => {
   it('비정상 content-type을 거부한다', async () => {
     const fetcher = vi.fn(async () => new Response('{}', { headers: { 'content-type': 'application/json' } }))
     await expect(new LiveDomeClient(env, fetcher as typeof fetch).fetchProduct('434379')).rejects.toMatchObject({ code: 'supplier_invalid_content_type' })
+  })
+  it('리디렉션 응답을 따라가지 않고 공급처 오류로 변환한다', async () => {
+    const fetcher = vi.fn(async () => new Response(null, {
+      status: 302,
+      headers: { location: 'https://unexpected.example.test' },
+    }))
+    await expect(new LiveDomeClient(env, fetcher as typeof fetch).fetchProduct('434379'))
+      .rejects.toMatchObject({ code: 'supplier_http_error', responseStatus: 302 })
   })
   it('예상 밖 오류는 단계와 원인만 기록하고 인증정보를 제거한다', async () => {
     const cause = Object.assign(new Error('socket failed'), { code: 'ECONNRESET' })
