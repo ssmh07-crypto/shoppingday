@@ -11,17 +11,18 @@ export class AuthenticationError extends Error {
 
 export async function requireAdmin() {
   const supabase = await createSupabaseServerClient()
-  const { data, error } = await supabase.auth.getUser()
-  if (error || !data.user) throw new AuthenticationError('관리자 로그인이 필요합니다.')
+  const { data, error } = await supabase.auth.getClaims()
+  const userId = data?.claims.sub
+  if (error || !userId) throw new AuthenticationError('관리자 로그인이 필요합니다.')
 
   const [profile] = await getDb()
     .select({ role: userProfiles.role })
     .from(userProfiles)
-    .where(eq(userProfiles.userId, data.user.id))
+    .where(eq(userProfiles.userId, userId))
     .limit(1)
 
   if (profile?.role !== 'admin') throw new AuthenticationError('관리자 권한이 필요합니다.')
-  return data.user
+  return { id: userId }
 }
 
 export async function requireAdminPage() {

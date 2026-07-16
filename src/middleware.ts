@@ -21,7 +21,22 @@ export async function middleware(request: NextRequest) {
       },
     },
   })
-  await supabase.auth.getUser()
+  // Validate the JWT through the cached JWKS path when available. `getUser()`
+  // makes a remote Auth request on every navigation, which makes an otherwise
+  // healthy page render depend on an extra network round trip.
+  try {
+    await supabase.auth.getClaims()
+  } catch {
+    // Authorization is enforced again by the page/route handler. A transient
+    // Auth network failure here must not turn the whole RSC navigation into a
+    // generic "This page couldn't load" response.
+  }
+
+  // Session refreshes can attach Set-Cookie. Never let Cloudflare cache and
+  // replay an authenticated navigation response.
+  response.headers.set('Cache-Control', 'private, no-store')
+  response.headers.set('Pragma', 'no-cache')
+  response.headers.set('Expires', '0')
   return response
 }
 
