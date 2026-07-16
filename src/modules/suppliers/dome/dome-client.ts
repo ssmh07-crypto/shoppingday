@@ -1,5 +1,6 @@
 import iconv from 'iconv-lite'
 import type { ServerEnv } from '@/lib/env/server'
+import { logger } from '@/lib/logging/logger'
 import { SupplierError } from '../core/supplier-errors'
 
 export interface DomeHttpResponse {
@@ -42,6 +43,7 @@ export class LiveDomeClient implements DomeClient {
   async fetchProduct(goodsno?: string): Promise<DomeHttpResponse> {
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), this.env.DOME_API_TIMEOUT_MS)
+    let phase: 'fetch' | 'read_body' | 'decode' = 'fetch'
     const body = new URLSearchParams({
       id: this.env.DOME_API_ID ?? '',
       apiKey: this.env.DOME_API_KEY ?? '',
@@ -74,16 +76,26 @@ export class LiveDomeClient implements DomeClient {
       if (!response.ok) {
         throw new SupplierError('supplier_http_error', '친구도매 요청에 실패했습니다.', response.status)
       }
+      phase = 'read_body'
       const buffer = await readLimitedBody(response, this.env.DOME_API_MAX_RESPONSE_BYTES)
       if (buffer.length === 0) {
         throw new SupplierError('supplier_empty_response', '친구도매가 빈 응답을 반환했습니다.', response.status)
       }
+      phase = 'decode'
       return { xml: decodeXml(buffer, contentType), status: response.status }
     } catch (error) {
       if (error instanceof SupplierError) throw error
       if (error instanceof Error && error.name === 'AbortError') {
         throw new SupplierError('supplier_timeout', '친구도매 응답 시간이 초과되었습니다.')
       }
+      const diagnostic = toSafeDiagnostic(error, [this.env.DOME_API_ID, this.env.DOME_API_KEY])
+      logger.error('dome_client_unexpected_error', {
+        phase,
+        errorName: diagnostic.errorName,
+        errorMessage: diagnostic.errorMessage,
+        causeName: diagnostic.causeName,
+        causeCode: diagnostic.causeCode,
+      })
       throw new SupplierError('supplier_http_error', '친구도매에 연결할 수 없습니다.')
     } finally {
       clearTimeout(timeout)
@@ -91,4 +103,25 @@ export class LiveDomeClient implements DomeClient {
   }
 }
 
-export const domeClientInternals = { readLimitedBody, decodeXml }
+function toSafeDiagnostic(error: unknown, secrets: Array<string | undefined>) {
+  const cause = error instanceof Error && error.cause && typeof error.cause === 'object'
+    ? error.cause as { name?: unknown; code?: unknown }
+    : undefined
+  let errorMessage = error instanceof Error ? error.message : String(error)
+  for (const secret of secrets) {
+    if (secret) errorMessage = errorMessage.replaceAll(secret, '[redacted]')
+  }
+  errorMessage = errorMessage
+    .replace(/([?&](?:apiKey|id)=)[^&\s]+/gi, '$1[redacted]')
+    .slice(0, 300)
+  return {
+    errorName: error instanceof Error ? error.name : typeof error,
+    errorMessage,
+    causeName: typeof cause?.name === 'string' ? cause.name : undefined,
+    causeCode: typeof cause?.code === 'string' || typeof cause?.code === 'number'
+      ? String(cause.code)
+      : undefined,
+  }
+}
+
+export const domeClientInternals = { readLimitedBody, decodeXml, toSafeDiagnostic }

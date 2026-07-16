@@ -32,4 +32,22 @@ describe('친구도매 HTTP 클라이언트', () => {
     const fetcher = vi.fn(async () => new Response('{}', { headers: { 'content-type': 'application/json' } }))
     await expect(new LiveDomeClient(env, fetcher as typeof fetch).fetchProduct('434379')).rejects.toMatchObject({ code: 'supplier_invalid_content_type' })
   })
+  it('예상 밖 오류는 단계와 원인만 기록하고 인증정보를 제거한다', async () => {
+    const cause = Object.assign(new Error('socket failed'), { code: 'ECONNRESET' })
+    const fetcher = vi.fn(async () => {
+      throw new TypeError('request failed for secret-id?apiKey=secret-key', { cause })
+    })
+    const log = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+
+    await expect(new LiveDomeClient(env, fetcher as typeof fetch).fetchProduct('434379'))
+      .rejects.toMatchObject({ code: 'supplier_http_error' })
+
+    const entry = String(log.mock.calls[0]?.[0])
+    expect(entry).toContain('dome_client_unexpected_error')
+    expect(entry).toContain('ECONNRESET')
+    expect(entry).toContain('"phase":"fetch"')
+    expect(entry).not.toContain('secret-id')
+    expect(entry).not.toContain('secret-key')
+    log.mockRestore()
+  })
 })
