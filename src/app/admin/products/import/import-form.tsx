@@ -10,7 +10,6 @@ export function ImportForm() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<ImportProductResult | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [allResult, setAllResult] = useState<string | null>(null);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -37,39 +36,6 @@ export function ImportForm() {
     }
   }
 
-  async function importAll() {
-    if (
-      loading ||
-      !window.confirm(
-        "친구도매 API 1회를 사용해 전체 상품을 가져올까요? 기존 판매 편집값은 유지됩니다.",
-      )
-    )
-      return;
-    setLoading(true);
-    setError(null);
-    setResult(null);
-    setAllResult(null);
-    try {
-      const response = await fetch("/api/suppliers/dome/products/import-all", {
-        method: "POST",
-      });
-      const body = await response.json();
-      if (!response.ok || !body.success)
-        throw new Error(body.error?.message ?? "전체 가져오기에 실패했습니다.");
-      setAllResult(
-        `총 ${body.total}개 처리: 신규 ${body.created}개, 원본 갱신 ${body.updated}개`,
-      );
-    } catch (caught) {
-      setError(
-        caught instanceof Error
-          ? caught.message
-          : "전체 가져오기에 실패했습니다.",
-      );
-    } finally {
-      setLoading(false);
-    }
-  }
-
   return (
     <>
       <form className="card" onSubmit={submit}>
@@ -86,23 +52,13 @@ export function ImportForm() {
           <button disabled={loading}>
             {loading ? "가져오는 중…" : "상품 가져오기"}
           </button>
-          <button
-            type="button"
-            className="secondary"
-            disabled={loading}
-            onClick={importAll}
-          >
-            전체 상품 가져오기
-          </button>
         </div>
+        <p className="notice">
+          최초 전체 상품 가져오기는 Cloudflare CPU 제한을 피하기 위해 서버 관리 명령으로 실행합니다.
+        </p>
         {error && (
           <p className="notice error" role="alert">
             {error}
-          </p>
-        )}
-        {allResult && (
-          <p className="notice" role="status">
-            {allResult} <Link href="/admin/products">상품 목록 보기</Link>
           </p>
         )}
       </form>

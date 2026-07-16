@@ -61,10 +61,18 @@ describe('상품 import 통합 흐름', () => {
   })
   it('전체 가져오기는 API 1회로 상품을 처리한다', async () => {
     const context=setup()
-    const result=await context.service.importAll('u1')
+    const progress = vi.fn()
+    const result=await context.service.importAll('u1', progress)
     expect(context.adapter.fetchProducts).toHaveBeenCalledOnce()
     expect(context.repository.importSupplierProduct).toHaveBeenCalledWith(product,'u1')
     expect(result).toEqual({success:true,total:1,created:1,updated:0})
+    expect(progress).toHaveBeenCalledWith({
+      success: true,
+      total: 1,
+      processed: 1,
+      created: 1,
+      updated: 0,
+    })
     expect(context.calls[0].requestType).toBe('product_import_all')
   })
   it('전체 가져오기 공급처 오류의 HTTP 상태를 로그에 보존한다', async () => {

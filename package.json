@@ -15,7 +15,8 @@
     "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",
     "cf-typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "node --env-file=.env.local ./node_modules/drizzle-kit/bin.cjs migrate"
+    "db:migrate": "node --env-file=.env.local ./node_modules/drizzle-kit/bin.cjs migrate",
+    "import:all": "node --max-old-space-size=2048 --conditions=react-server --env-file=.env.local --import tsx scripts/import-dome-all.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1086.0",
@@ -54,6 +55,7 @@
     "playwright": "^1.61.1",
     "prettier": "^3.9.5",
     "tailwindcss": "^4.3.2",
+    "tsx": "^4.23.1",
     "typescript": "^6.0.3",
     "vitest": "^4.1.10",
     "wrangler": "^4.110.0"

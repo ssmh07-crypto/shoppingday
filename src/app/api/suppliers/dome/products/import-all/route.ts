@@ -1,17 +1,26 @@
 import { NextResponse } from 'next/server'
 import { AuthenticationError, requireAdmin } from '@/lib/auth/admin'
-import { createDomeImportService } from '@/modules/suppliers/dome/dome-service'
-import { SupplierError } from '@/modules/suppliers/core/supplier-errors'
-import { ProductImportError } from '@/modules/products/product-service'
 
 export async function POST() {
   try {
-    const user = await requireAdmin()
-    return NextResponse.json(await createDomeImportService().importAll(user.id))
+    await requireAdmin()
+    return NextResponse.json({
+      success: false,
+      error: {
+        code: 'local_import_required',
+        message: '전체 상품 가져오기는 npm run import:all -- --confirm 명령으로 실행해 주세요.',
+      },
+    }, { status: 409 })
   } catch (error) {
-    const known = error instanceof AuthenticationError || error instanceof SupplierError || error instanceof ProductImportError
-    const code = known ? error.code : 'internal_error'
-    const status = code === 'authentication_error' ? 401 : code === 'supplier_rate_limit' ? 429 : 500
-    return NextResponse.json({ success:false, error:{ code, message:known ? error.message : '전체 상품을 가져오는 중 오류가 발생했습니다.' } }, { status })
+    if (error instanceof AuthenticationError) {
+      return NextResponse.json({
+        success: false,
+        error: { code: error.code, message: error.message },
+      }, { status: 401 })
+    }
+    return NextResponse.json({
+      success: false,
+      error: { code: 'internal_error', message: '관리자 인증 중 오류가 발생했습니다.' },
+    }, { status: 500 })
   }
 }

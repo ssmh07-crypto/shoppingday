@@ -36,7 +36,13 @@ DOME_API_MOCK_MODE=true
 
 mock 모드에서 `goodsno=434379`는 `tests/fixtures/dome/product-normal.xml`을 반환하고, 다른 번호는 상품 없음 fixture를 반환합니다. 실제 API ID와 Key는 필요하지 않습니다. `/admin/products/import`에서 버튼을 눌렀을 때만 import가 실행됩니다.
 
-`전체 상품 가져오기`는 관리자 확인 후 공급사 API 1회를 사용합니다. 기존 상품은 `supplier_products` 원본만 갱신하고 판매용 편집값은 유지합니다.
+최초 전체 상품 가져오기는 Cloudflare Workers의 CPU 제한을 피하기 위해 Node.js 관리 명령으로 실행합니다. 실제 친구도매 API를 1회 호출하고 100개마다 진행 상황을 출력합니다. 기존 상품은 `supplier_products` 원본만 갱신하고 판매용 편집값은 유지합니다.
+
+```bash
+npm run import:all -- --confirm
+```
+
+이 명령은 `.env.local`의 친구도매 인증정보와 `DATABASE_URL`을 사용하며, DB에서 가장 먼저 생성된 admin 사용자를 신규 상품의 소유자로 지정합니다. 운영 화면에서는 상품번호별 가져오기와 명시적 갱신만 실행합니다.
 
 흐름은 관리자 인증 → goodsno 검증 → DB 중복 확인 → 공급처 호출 → 크기/Content-Type/XML 검증 → 표준 공급처 상품 매핑 → 트랜잭션 저장 → 민감정보가 제거된 호출 로그 저장 순서입니다.
 

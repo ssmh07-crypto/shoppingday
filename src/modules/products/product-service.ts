@@ -20,6 +20,10 @@ export interface ImportAllProductsResult {
   updated: number
 }
 
+export interface ImportAllProductsProgress extends ImportAllProductsResult {
+  processed: number
+}
+
 export class ProductImportError extends Error {
   readonly code = 'database_error'
   constructor() { super('상품 저장 중 오류가 발생했습니다.'); this.name = 'ProductImportError' }
@@ -71,7 +75,10 @@ export class ProductImportService {
     return this.fetchAndSave(goodsno, existing, actorId)
   }
 
-  async importAll(actorId: string): Promise<ImportAllProductsResult> {
+  async importAll(
+    actorId: string,
+    onProgress?: (progress: ImportAllProductsProgress) => void,
+  ): Promise<ImportAllProductsResult> {
     await this.assertDailyLimit()
     const requestId = randomUUID()
     const requestedAt = new Date()
@@ -92,6 +99,16 @@ export class ProductImportService {
         } else {
           await this.products.importSupplierProduct(product, actorId)
           created += 1
+        }
+        const processed = created + updated
+        if (processed % 100 === 0 || processed === fetched.products.length) {
+          onProgress?.({
+            success: true,
+            total: fetched.products.length,
+            processed,
+            created,
+            updated,
+          })
         }
       }
       await this.saveLog({ requestId, requestType:'product_import_all', goodsno:'all', requestedAt, started, success:true, responseStatus, responseCount })
