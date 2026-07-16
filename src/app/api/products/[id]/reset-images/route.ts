@@ -1,2 +1,23 @@
-import { NextResponse } from 'next/server';import { z } from 'zod';import { requireAdmin } from '@/lib/auth/admin';import { createProductEditService } from '@/modules/products/product-edit-factory';import { productError } from '../../route-utils'
-export async function POST(request:Request,{params}:{params:Promise<{id:string}>}){try{const user=await requireAdmin();const {draftVersion}=z.object({draftVersion:z.number().int().positive()}).parse(await request.json());return NextResponse.json({success:true,data:await createProductEditService().reset((await params).id,user.id,draftVersion,'images')})}catch(error){return productError(error)}}
+import { NextResponse } from "next/server";
+import { z } from "zod";
+import { createProductEditService } from "@/modules/products/product-edit-factory";
+import { withAdminProductRoute } from "../../route-utils";
+
+const resetInput = z.object({ draftVersion: z.number().int().positive() });
+
+export async function POST(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  return withAdminProductRoute(async (user, database) => {
+    const { id } = await params;
+    const { draftVersion } = resetInput.parse(await request.json());
+    const data = await createProductEditService(database).reset(
+      id,
+      user.id,
+      draftVersion,
+      "images",
+    );
+    return NextResponse.json({ success: true, data });
+  });
+}

@@ -2,46 +2,23 @@
 /* eslint-disable @next/next/no-img-element -- supplier URLs are intentionally loaded directly; no image storage/optimizer proxy */
 
 import { useEffect, useMemo, useState } from "react";
-import type { EditedOptions, SelectedImage } from "@/lib/db/schema";
+import type { SelectedImage } from "@/lib/db/schema";
 import { OptionEditor } from "./option-editor";
-
-type Initial = {
-  product: {
-    id: string;
-    status: string;
-    title: string;
-    searchTags: string[];
-    sellingPrice: number | null;
-    currency: string;
-    description: string;
-    categoryId: string | null;
-    selectedImages: SelectedImage[];
-    editedOptions: EditedOptions;
-    draftVersion: number;
-    updatedAt: string;
-  };
-  supplier: {
-    name: string;
-    externalProductId: string;
-    originalName: string | null;
-    supplierPrice: string | null;
-    currency: string;
-    availability: string;
-    originalImages: string[];
-    originalOptions: Array<{ name: string; price: number | null }>;
-    rawDescription: string | null;
-    lastSyncedAt: string;
-  };
-};
+import type {
+  ProductEditorCategory,
+  ProductEditorInitial,
+} from "./product-editor-types";
 
 type EditorTab = "basic" | "content" | "market";
 
 export function ProductEditor({
   initial,
   categories,
+  onMutated,
 }: {
-  initial: Initial;
-  categories: Array<{ id: string; name: string }>;
+  initial: ProductEditorInitial;
+  categories: ProductEditorCategory[];
+  onMutated?: () => void;
 }) {
   const [form, setForm] = useState(() => fromInitial(initial));
   const [baseline, setBaseline] = useState(() =>
@@ -93,6 +70,7 @@ export function ProductEditor({
       setBaseline(JSON.stringify(next));
       setStatus(product.status);
       setMessage(`저장 완료 ${new Date().toLocaleTimeString("ko-KR")}`);
+      onMutated?.();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "저장 실패");
     } finally {
@@ -129,6 +107,7 @@ export function ProductEditor({
       setBaseline(JSON.stringify(next));
       setStatus(body.data.product.status);
       setMessage("원본 이미지로 초기화했습니다.");
+      onMutated?.();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "초기화 실패");
     } finally {
@@ -532,7 +511,7 @@ function TabButton({
   );
 }
 
-function fromInitial(initial: Initial) {
+function fromInitial(initial: ProductEditorInitial) {
   const product = initial.product;
   return {
     draftVersion: product.draftVersion,

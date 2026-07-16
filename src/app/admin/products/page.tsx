@@ -2,9 +2,9 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 /* eslint-disable @next/next/no-img-element -- supplier URLs are intentionally loaded directly; no image storage/optimizer proxy */
 import { requireAdminPage } from "@/lib/auth/admin";
-import { withDbReadRecovery } from "@/lib/db";
+import { withDbReadRecovery, type Database } from "@/lib/db";
 import { createProductEditService } from "@/modules/products/product-edit-factory";
-import { ProductEditor } from "./[id]/edit/product-editor";
+import { ProductEditorDrawer } from "./[id]/edit/product-editor-drawer";
 
 type SearchParams = Record<string, string | undefined>;
 
@@ -13,26 +13,30 @@ export default async function ProductsPage({
 }: {
   searchParams: Promise<SearchParams>;
 }) {
-  const user = await requireAdminPage();
+  return withDbReadRecovery((database) =>
+    renderProductsPage(searchParams, database),
+  );
+}
+
+async function renderProductsPage(
+  searchParams: Promise<SearchParams>,
+  database: Database,
+) {
+  const user = await requireAdminPage(database);
   const params = await searchParams;
-  const service = createProductEditService();
-  const result = await withDbReadRecovery(() =>
+  const service = createProductEditService(database);
+  const [result, categories] = await Promise.all([
     service.list(user.id, {
       search: params.search,
       filter: params.filter,
       sort: params.sort,
       page: Number(params.page) || 1,
     }),
-  );
+    service.categories(),
+  ]);
   const totalPages = Math.max(1, Math.ceil(result.total / result.pageSize));
   const firstItem = result.total ? (result.page - 1) * result.pageSize + 1 : 0;
   const lastItem = Math.min(result.page * result.pageSize, result.total);
-  const editor = params.edit
-    ? await withDbReadRecovery(() =>
-        Promise.all([service.get(params.edit!, user.id), service.categories()]),
-      )
-    : null;
-
   return (
     <div className="inventory-app">
       <aside className="inventory-sidebar">
@@ -230,6 +234,8 @@ export default async function ProductsPage({
                           <Link
                             href={editorHref(params, item.id)}
                             scroll={false}
+                            prefetch={false}
+                            data-product-editor-id={item.id}
                           >
                             {item.title || "상품명 미입력"}
                           </Link>
@@ -263,6 +269,8 @@ export default async function ProductsPage({
                           <Link
                             href={editorHref(params, item.id)}
                             scroll={false}
+                            prefetch={false}
+                            data-product-editor-id={item.id}
                           >
                             편집
                           </Link>
@@ -319,38 +327,10 @@ export default async function ProductsPage({
           </section>
         </main>
       </div>
-      {editor && (
-        <>
-          <Link
-            className="inventory-drawer-backdrop"
-            href={closeEditorHref(params)}
-            scroll={false}
-            aria-label="편집창 닫기"
-          />
-          <aside className="inventory-drawer" aria-label="상품 편집">
-            <header className="inventory-drawer-head">
-              <div>
-                <span>상품 편집</span>
-                <strong>
-                  {editor[0].product.title || editor[0].supplier.originalName}
-                </strong>
-              </div>
-              <Link
-                href={closeEditorHref(params)}
-                scroll={false}
-                aria-label="닫기"
-              >
-                ×
-              </Link>
-            </header>
-            <ProductEditor
-              key={editor[0].product.id}
-              initial={JSON.parse(JSON.stringify(editor[0]))}
-              categories={editor[1]}
-            />
-          </aside>
-        </>
-      )}
+      <ProductEditorDrawer
+        initialProductId={params.edit}
+        categories={categories}
+      />
     </div>
   );
 }
@@ -448,14 +428,6 @@ function editorHref(params: SearchParams, id: string) {
     if (value && key !== "edit") queryString.set(key, value);
   queryString.set("edit", id);
   return `/admin/products?${queryString}`;
-}
-
-function closeEditorHref(params: SearchParams) {
-  const queryString = new URLSearchParams();
-  for (const [key, value] of Object.entries(params))
-    if (value && key !== "edit") queryString.set(key, value);
-  const suffix = queryString.toString();
-  return suffix ? `/admin/products?${suffix}` : "/admin/products";
 }
 
 function Icon({ name }: { name: string }) {

@@ -1,5 +1,4 @@
 import "server-only";
-import { sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
@@ -11,54 +10,50 @@ declare global {
   }
 }
 
-let client: ReturnType<typeof postgres> | undefined;
-let database: ReturnType<typeof drizzle> | undefined;
+type SqlClient = ReturnType<typeof postgres>;
+export type Database = ReturnType<typeof drizzle>;
+type DatabaseSession = { client: SqlClient; database: Database };
 
+let commandSession: DatabaseSession | undefined;
+
+/**
+ * Database used only by Node maintenance commands. Worker pages and routes
+ * receive a request-scoped Database through withDbSession/withDbReadRecovery.
+ */
 export function getDb() {
-  if (!database) {
-    client = postgres(getDatabaseUrl(), {
-      prepare: false,
-      // A Worker isolate can be frozen between requests. Keep a single socket
-      // so concurrent isolates cannot exhaust the Supabase pooler.
-      max: 1,
-      connect_timeout: 6,
-      idle_timeout: 10,
-      max_lifetime: 60,
-    });
-    database = drizzle(client);
-  }
-  return database;
+  commandSession ??= createSession();
+  return commandSession.database;
 }
 
-function getDatabaseUrl() {
+/** Create and close one database client for a page/API request. */
+export async function withDbSession<T>(
+  operation: (database: Database) => Promise<T>,
+): Promise<T> {
+  const session = createSession();
   try {
-    const hyperdrive = getCloudflareContext().env.HYPERDRIVE;
-    if (hyperdrive?.connectionString) return hyperdrive.connectionString;
-  } catch {
-    // Node.js admin commands and `next dev` run outside workerd, where the
-    // Cloudflare request context is intentionally unavailable.
+    return await operation(session.database);
+  } finally {
+    await session.client.end({ timeout: 1 }).catch(() => undefined);
   }
-  return getServerEnv().DATABASE_URL;
 }
 
+/** Close the shared client used by local maintenance commands. */
 export async function closeDb() {
-  const current = client;
-  client = undefined;
-  database = undefined;
-  await current?.end({ timeout: 1 });
+  const current = commandSession;
+  commandSession = undefined;
+  await current?.client.end({ timeout: 1 });
 }
 
 /**
- * Serverless runtimes can resume with a socket that the pooler has already
- * discarded. Check liveness before read-only work and retry once with a new
- * client. The operation must not perform writes.
+ * Run a read-only request immediately and retry it once with a fresh client on
+ * a transient connection failure. There is no mandatory liveness query, so a
+ * healthy request does not pay for an extra database round-trip.
  */
 export async function withDbReadRecovery<T>(
-  operation: () => Promise<T>,
+  operation: (database: Database) => Promise<T>,
 ): Promise<T> {
   try {
-    await assertDbAlive();
-    return await operation();
+    return await withDbSession(operation);
   } catch (error) {
     if (!isTransientConnectionError(error)) throw error;
     console.warn(
@@ -67,38 +62,46 @@ export async function withDbReadRecovery<T>(
         code: errorCode(error),
       }),
     );
-    await closeDb().catch(() => undefined);
-    await assertDbAlive();
-    return operation();
+    return withDbSession(operation);
   }
 }
 
-async function assertDbAlive() {
-  let timeout: ReturnType<typeof setTimeout> | undefined;
+function createSession(): DatabaseSession {
+  const connection = getDatabaseConnection();
+  const client = postgres(connection.url, {
+    // Hyperdrive pools origin connections itself. Cloudflare recommends up to
+    // five request-local connections so independent reads are not serialized.
+    max: connection.hyperdrive ? 5 : 1,
+    fetch_types: false,
+    prepare: connection.hyperdrive,
+    connect_timeout: 6,
+    idle_timeout: 10,
+    max_lifetime: 60,
+  });
+  return { client, database: drizzle(client) };
+}
+
+function getDatabaseConnection() {
   try {
-    await Promise.race([
-      getDb().execute(sql`select 1`),
-      new Promise<never>((_, reject) => {
-        timeout = setTimeout(() => reject(new DatabaseLivenessError()), 3_000);
-      }),
-    ]);
-  } finally {
-    if (timeout) clearTimeout(timeout);
+    const hyperdrive = getCloudflareContext().env.HYPERDRIVE;
+    if (hyperdrive?.connectionString) {
+      return { url: hyperdrive.connectionString, hyperdrive: true } as const;
+    }
+  } catch {
+    // Node.js admin commands and `next dev` run outside workerd, where the
+    // Cloudflare request context is intentionally unavailable.
   }
-}
-
-class DatabaseLivenessError extends Error {
-  readonly code = "DB_LIVENESS_TIMEOUT";
+  return { url: getServerEnv().DATABASE_URL, hyperdrive: false } as const;
 }
 
 function errorCode(error: unknown) {
-  if (!error || typeof error !== "object" || !("code" in error))
+  if (!error || typeof error !== "object" || !("code" in error)) {
     return "unknown";
+  }
   return String(error.code);
 }
 
 function isTransientConnectionError(error: unknown) {
-  if (error instanceof DatabaseLivenessError) return true;
   const code = errorCode(error);
   return (
     code.startsWith("08") ||

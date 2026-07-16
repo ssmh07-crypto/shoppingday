@@ -970,6 +970,9 @@ td small {
   inset: 0;
   z-index: 50;
   display: block;
+  width: 100%;
+  border: 0;
+  border-radius: 0;
   background: #11182766;
   backdrop-filter: blur(2px);
   animation: drawer-fade-in 0.2s ease-out;
@@ -1012,18 +1015,69 @@ td small {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.inventory-drawer-head > a {
+.inventory-drawer-head > button {
   width: 36px;
   height: 36px;
   display: grid;
   place-items: center;
   border-radius: 50%;
+  background: transparent;
   color: #4c5668;
   font-size: 28px;
   font-weight: 300;
 }
-.inventory-drawer-head > a:hover {
+.inventory-drawer-head > button:hover {
   background: #eef1f6;
+}
+.drawer-load-state {
+  height: calc(100vh - 72px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+  color: #667085;
+  text-align: center;
+}
+.drawer-load-state strong {
+  margin-top: 16px;
+  color: #253047;
+  font-size: 15px;
+}
+.drawer-load-state p {
+  max-width: 420px;
+  margin: 7px 0 0;
+  font-size: 12px;
+}
+.drawer-load-state > button {
+  margin-top: 18px;
+  padding: 9px 15px;
+  background: var(--inv-primary);
+  color: #fff;
+}
+.drawer-load-state.error strong {
+  color: #a22828;
+}
+.drawer-spinner {
+  width: 30px;
+  height: 30px;
+  border: 3px solid #dce4f5;
+  border-top-color: var(--inv-primary);
+  border-radius: 50%;
+  animation: drawer-spin 0.7s linear infinite;
+}
+.drawer-skeleton-lines {
+  width: min(520px, 100%);
+  display: grid;
+  gap: 10px;
+  margin-top: 30px;
+}
+.drawer-skeleton-lines i {
+  height: 42px;
+  border-radius: 7px;
+  background: linear-gradient(90deg, #edf0f5 25%, #f8f9fb 50%, #edf0f5 75%);
+  background-size: 200% 100%;
+  animation: drawer-shimmer 1.2s infinite;
 }
 .drawer-editor {
   height: calc(100vh - 72px);
@@ -1466,6 +1520,16 @@ td small {
   }
   to {
     opacity: 1;
+  }
+}
+@keyframes drawer-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes drawer-shimmer {
+  to {
+    background-position: -200% 0;
   }
 }
 @media (max-width: 1100px) {

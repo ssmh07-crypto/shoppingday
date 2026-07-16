@@ -1,7 +1,7 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
 import { and, asc, desc, eq, ilike, isNull, or, sql } from "drizzle-orm";
-import { getDb } from "@/lib/db";
+import { getDb, type Database } from "@/lib/db";
 import {
   productAuditLogs,
   productCategories,
@@ -16,9 +16,23 @@ import {
 import type { DraftInput } from "./product-domain";
 
 export type ProductEditorRecord = {
-  product: ProductRow;
+  product: Pick<
+    ProductRow,
+    | "id"
+    | "status"
+    | "title"
+    | "searchTags"
+    | "sellingPrice"
+    | "currency"
+    | "description"
+    | "categoryId"
+    | "selectedImages"
+    | "editedOptions"
+    | "draftVersion"
+    | "readyAt"
+    | "updatedAt"
+  >;
   supplier: {
-    code: string;
     name: string;
     externalProductId: string;
     originalName: string | null;
@@ -27,9 +41,6 @@ export type ProductEditorRecord = {
     availability: string;
     originalImages: string[];
     originalOptions: Array<{ name: string; price: number | null }>;
-    rawDescription: string | null;
-    supplierCreatedAt: Date | null;
-    supplierUpdatedAt: Date | null;
     lastSyncedAt: Date;
   };
 };
@@ -43,6 +54,8 @@ export type ListQuery = {
 };
 
 export class ProductEditRepository {
+  constructor(private readonly database: Database = getDb()) {}
+
   async list(query: ListQuery) {
     const ownership = or(
       eq(products.ownerId, query.ownerId),
@@ -90,7 +103,7 @@ export class ProductEditRepository {
                 ? asc(products.title)
                 : desc(products.createdAt);
     const where = and(...conditions);
-    const base = getDb()
+    const base = this.database
       .select({
         id: products.id,
         status: products.status,
@@ -123,7 +136,7 @@ export class ProductEditRepository {
         .orderBy(order)
         .limit(query.pageSize)
         .offset((query.page - 1) * query.pageSize),
-      getDb()
+      this.database
         .select({ count: sql<number>`count(*)::int` })
         .from(products)
         .innerJoin(
@@ -135,7 +148,7 @@ export class ProductEditRepository {
           eq(supplierProducts.id, productSupplierLinks.supplierProductId),
         )
         .where(where),
-      getDb()
+      this.database
         .select({
           total: sql<number>`count(*)::int`,
           available: sql<number>`count(*) filter (where ${supplierProducts.availability} <> 'sold_out')::int`,
@@ -170,11 +183,24 @@ export class ProductEditRepository {
   }
 
   async find(id: string, ownerId: string): Promise<ProductEditorRecord | null> {
-    const [row] = await getDb()
+    const [row] = await this.database
       .select({
-        product: products,
+        product: {
+          id: products.id,
+          status: products.status,
+          title: products.title,
+          searchTags: products.searchTags,
+          sellingPrice: products.sellingPrice,
+          currency: products.currency,
+          description: products.description,
+          categoryId: products.categoryId,
+          selectedImages: products.selectedImages,
+          editedOptions: products.editedOptions,
+          draftVersion: products.draftVersion,
+          readyAt: products.readyAt,
+          updatedAt: products.updatedAt,
+        },
         supplier: {
-          code: suppliers.code,
           name: suppliers.name,
           externalProductId: supplierProducts.externalProductId,
           originalName: supplierProducts.originalName,
@@ -183,9 +209,6 @@ export class ProductEditRepository {
           availability: supplierProducts.availability,
           originalImages: supplierProducts.originalImages,
           originalOptions: supplierProducts.originalOptions,
-          rawDescription: supplierProducts.rawDescription,
-          supplierCreatedAt: supplierProducts.supplierCreatedAt,
-          supplierUpdatedAt: supplierProducts.supplierUpdatedAt,
           lastSyncedAt: supplierProducts.lastSyncedAt,
         },
       })
@@ -210,7 +233,7 @@ export class ProductEditRepository {
   }
 
   async categories() {
-    return getDb()
+    return this.database
       .select({ id: productCategories.id, name: productCategories.name })
       .from(productCategories)
       .where(eq(productCategories.active, true))
@@ -227,7 +250,7 @@ export class ProductEditRepository {
     validationErrors: Record<string, string> = {},
     readyAt: Date | null = null,
   ) {
-    return getDb().transaction(async (tx) => {
+    return this.database.transaction(async (tx) => {
       const [old] = await tx
         .select()
         .from(products)
@@ -288,7 +311,7 @@ export class ProductEditRepository {
     kind: "images" | "options",
     value: SelectedImage[] | EditedOptions,
   ) {
-    return getDb().transaction(async (tx) => {
+    return this.database.transaction(async (tx) => {
       const set =
         kind === "images"
           ? { selectedImages: value as SelectedImage[] }
