@@ -31,6 +31,7 @@ export class NaverCommerceError extends Error {
   constructor(
     readonly code:
       | "not_configured"
+      | "ip_not_allowed"
       | "authentication_failed"
       | "request_failed"
       | "invalid_response"
@@ -178,6 +179,14 @@ export class NaverCommerceClient {
         );
       }
       if (!response.ok) {
+        const gatewayCode = await readGatewayErrorCode(response);
+        if (gatewayCode === "GW.IP_NOT_ALLOWED") {
+          throw new NaverCommerceError(
+            "ip_not_allowed",
+            "현재 서버의 공인 IP가 네이버 커머스API 호출 IP에 등록되지 않았습니다.",
+            response.status,
+          );
+        }
         throw new NaverCommerceError(
           response.status === 401 || response.status === 403
             ? "authentication_failed"
@@ -204,6 +213,17 @@ export class NaverCommerceClient {
     } finally {
       clearTimeout(timeout);
     }
+  }
+}
+
+async function readGatewayErrorCode(response: Response) {
+  const contentType = response.headers.get("content-type") ?? "";
+  if (!contentType.toLowerCase().includes("application/json")) return undefined;
+  try {
+    const body = (await response.clone().json()) as { code?: unknown };
+    return typeof body.code === "string" ? body.code : undefined;
+  } catch {
+    return undefined;
   }
 }
 

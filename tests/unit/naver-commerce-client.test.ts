@@ -114,6 +114,24 @@ describe("네이버 커머스API 클라이언트", () => {
     });
   });
 
+  it("허용되지 않은 호출 IP 오류를 구체적으로 안내한다", async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(
+      json(
+        {
+          code: "GW.IP_NOT_ALLOWED",
+          message: "호출이 허용되지 않은 IP입니다.",
+        },
+        403,
+      ),
+    );
+    await expect(
+      new NaverCommerceClient(config, fetcher, () => now).fetchCategories(),
+    ).rejects.toMatchObject({
+      code: "ip_not_allowed",
+      responseStatus: 403,
+    });
+  });
+
   it("응답 형식이 잘못되면 안전하게 거부한다", async () => {
     const fetcher = vi
       .fn<typeof fetch>()
