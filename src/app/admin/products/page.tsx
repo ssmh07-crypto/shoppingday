@@ -61,11 +61,10 @@ async function renderProductsPage(
             <Icon name="download" />
             <span>상품 가져오기</span>
           </Link>
-          <span className="disabled" title="준비 중">
+          <Link href="/admin/channels/naver">
             <Icon name="store" />
             <span>판매 채널</span>
-            <small>준비 중</small>
-          </span>
+          </Link>
         </nav>
         <div className="inventory-sidebar-note">
           <Icon name="database" />

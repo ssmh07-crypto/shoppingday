@@ -50,6 +50,19 @@ const serverEnvSchema = z
     GITHUB_ACTIONS_TOKEN: optionalString,
     GITHUB_ACTIONS_REPOSITORY: optionalString,
     GITHUB_ACTIONS_WORKFLOW: optionalString,
+    NAVER_COMMERCE_API_URL: z
+      .url()
+      .default("https://api.commerce.naver.com/external"),
+    NAVER_COMMERCE_CLIENT_ID: optionalString,
+    NAVER_COMMERCE_CLIENT_SECRET: optionalString,
+    NAVER_COMMERCE_TOKEN_TYPE: z.enum(["SELF", "SELLER"]).default("SELF"),
+    NAVER_COMMERCE_ACCOUNT_ID: optionalString,
+    NAVER_COMMERCE_TIMEOUT_MS: z.coerce
+      .number()
+      .int()
+      .min(1000)
+      .max(60_000)
+      .default(15_000),
   })
   .superRefine((env, ctx) => {
     if (!env.DOME_API_MOCK_MODE && (!env.DOME_API_ID || !env.DOME_API_KEY)) {
@@ -57,6 +70,28 @@ const serverEnvSchema = z
         code: "custom",
         path: ["DOME_API_ID"],
         message: "DOME_API_ID and DOME_API_KEY are required outside mock mode",
+      });
+    }
+    if (
+      Boolean(env.NAVER_COMMERCE_CLIENT_ID) !==
+      Boolean(env.NAVER_COMMERCE_CLIENT_SECRET)
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["NAVER_COMMERCE_CLIENT_ID"],
+        message:
+          "NAVER_COMMERCE_CLIENT_ID and NAVER_COMMERCE_CLIENT_SECRET must be configured together",
+      });
+    }
+    if (
+      env.NAVER_COMMERCE_CLIENT_ID &&
+      env.NAVER_COMMERCE_TOKEN_TYPE === "SELLER" &&
+      !env.NAVER_COMMERCE_ACCOUNT_ID
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["NAVER_COMMERCE_ACCOUNT_ID"],
+        message: "NAVER_COMMERCE_ACCOUNT_ID is required for SELLER token type",
       });
     }
   });

@@ -1,8 +1,10 @@
 # Modular PIM
 
-Next.js App Router, Supabase Auth/PostgreSQL, Drizzle ORM 기반의 모듈형 PIM입니다. 현재 구현 범위는 친구도매 원본 상품을 상품번호로 가져와 조회하는 기능입니다. 스마트스토어 및 네이버 커머스 연동은 포함하지 않습니다.
+Next.js App Router, Supabase Auth/PostgreSQL, Drizzle ORM 기반의 모듈형 PIM입니다. 친구도매 상품 동기화와 판매용 상품 편집, 네이버 커머스API 카테고리 동기화 기반을 제공합니다. 스마트스토어 상품 등록·수정·삭제 전송은 후속 구현 범위입니다.
 
 세션이 초기화된 뒤 작업을 재개할 때는 먼저 [`docs/ARCHITECTURE_DECISIONS.md`](docs/ARCHITECTURE_DECISIONS.md)를 확인합니다.
+
+스마트스토어 및 네이버 커머스API 연동 참고 링크는 [`docs/naver-commerce-api.md`](docs/naver-commerce-api.md)에 기록합니다.
 
 ## 환경 변수
 
@@ -17,6 +19,9 @@ Next.js App Router, Supabase Auth/PostgreSQL, Drizzle ORM 기반의 모듈형 PI
 - `DOME_API_TIMEOUT_MS`: HTTP 제한 시간(기본 10초)
 - `DOME_API_MAX_RESPONSE_BYTES`: 응답 본문 최대 크기(기본 5 MiB)
 - `R2_*`: 승인된 Cloudflare R2 저장소 설정. 이번 단계에서는 원본 이미지 URL만 보존하므로 아직 import 흐름에서 사용하지 않음
+- `NAVER_COMMERCE_CLIENT_ID`, `NAVER_COMMERCE_CLIENT_SECRET`: 서버 전용 네이버 커머스API 애플리케이션 인증정보
+- `NAVER_COMMERCE_TOKEN_TYPE`: 본인 스토어는 `SELF`(기본값), 판매자 계정 연동 방식은 `SELLER`
+- `NAVER_COMMERCE_ACCOUNT_ID`: `SELLER` 방식에서만 필요한 판매자 계정 ID
 
 ## 실행
 
@@ -51,6 +56,12 @@ npm run import:all -- --confirm
 `/admin/products`에서 DB에 저장된 상품을 검색·필터·정렬하고 `/admin/products/:id/edit`에서 공급처 원본과 분리된 판매 정보를 편집합니다. 상품명, 태그, 판매가, 내부 카테고리, 설명 HTML, 이미지 URL의 선택/대표/순서 메타데이터, 옵션 JSON을 수동 임시저장할 수 있습니다. 이미지 파일 자체는 DB·Supabase Storage·R2 어느 곳에도 저장하지 않습니다.
 
 저장에는 `draft_version` 낙관적 잠금을 적용하며 변경 여부, 저장 중, 저장 완료 시각을 표시합니다. 등록 준비 완료는 필수값을 검토해 내부 `ready` 상태로 바꾸는 기능일 뿐 스마트스토어 게시가 아닙니다. 편집 화면과 목록은 외부 API를 호출하지 않습니다. 이미지 파일도 저장하지 않고 공급사 URL 메타데이터만 사용합니다.
+
+판매가 계산기는 공급가, 예상 전체 수수료율, 판매자 부담 배송비, 포장·고정비, 구매자 배송비와 목표 실마진율을 역산해 권장 판매가를 제시합니다. 수수료는 주문 조건에 따라 달라지는 예상값이므로 실제 주문 후 정산 데이터와 대조해야 합니다.
+
+## 네이버 카테고리 동기화
+
+`/admin/channels/naver`에서 관리자가 명시적으로 동기화 버튼을 누를 때만 네이버 전체 카테고리를 한 번 조회해 PostgreSQL에 교체 저장합니다. 화면 조회와 카테고리 검색은 저장된 DB만 사용하며 네이버 API를 호출하지 않습니다. Client Secret과 Access Token은 브라우저 응답이나 로그에 포함하지 않습니다.
 
 DB 변경 적용:
 

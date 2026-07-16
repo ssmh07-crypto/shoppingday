@@ -4,6 +4,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { SelectedImage } from "@/lib/db/schema";
 import { OptionEditor } from "./option-editor";
+import { MarginCalculator } from "./margin-calculator";
 import type {
   ProductEditorCategory,
   ProductEditorInitial,
@@ -302,6 +303,12 @@ export function ProductEditor({
                   <small>수수료·배송비·세금 미반영</small>
                 </p>
               )}
+              <MarginCalculator
+                supplierCost={Number(initial.supplier.supplierPrice ?? 0)}
+                onApply={(sellingPrice) =>
+                  setForm((current) => ({ ...current, sellingPrice }))
+                }
+              />
             </section>
 
             <details className="drawer-options">

@@ -1759,3 +1759,260 @@ td small {
   border: 1px solid #ccd3df;
   color: #344054;
 }
+
+.naver-channel-page {
+  min-height: 100vh;
+  padding: 40px 24px;
+  background: #f5f7fc;
+  color: #172033;
+}
+.naver-channel-shell {
+  width: min(1180px, 100%);
+  margin: 0 auto;
+}
+.naver-channel-back {
+  color: #596579;
+  font-size: 13px;
+  font-weight: 700;
+}
+.naver-channel-heading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  margin: 24px 0;
+}
+.naver-channel-heading span {
+  color: #03a64a;
+  font-size: 12px;
+  font-weight: 800;
+}
+.naver-channel-heading h1 {
+  margin: 6px 0 8px;
+  font-size: 30px;
+}
+.naver-channel-heading p {
+  margin: 0;
+  color: #667085;
+  font-size: 14px;
+}
+.naver-sync-control {
+  display: grid;
+  justify-items: end;
+  gap: 7px;
+}
+.naver-sync-control button {
+  min-height: 42px;
+  padding: 0 17px;
+  border: 0;
+  border-radius: 7px;
+  background: #03c75a;
+  color: white;
+  font-size: 13px;
+  font-weight: 800;
+}
+.naver-sync-control button:disabled {
+  background: #aab2bf;
+  cursor: not-allowed;
+}
+.naver-sync-control span {
+  max-width: 380px;
+  color: #596579;
+  font-size: 12px;
+}
+.naver-channel-alert {
+  margin-bottom: 18px;
+  padding: 13px 16px;
+  border: 1px solid #f7d48a;
+  border-radius: 8px;
+  background: #fffaeb;
+  color: #7a5015;
+  font-size: 13px;
+}
+.naver-channel-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-bottom: 18px;
+}
+.naver-channel-stats article,
+.naver-category-panel {
+  border: 1px solid #dfe4ee;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 5px 16px #1f293708;
+}
+.naver-channel-stats article {
+  display: grid;
+  gap: 7px;
+  padding: 19px;
+}
+.naver-channel-stats span {
+  color: #697386;
+  font-size: 12px;
+  font-weight: 700;
+}
+.naver-channel-stats strong {
+  font-size: 20px;
+}
+.naver-category-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 17px 20px;
+  border-bottom: 1px solid #e5e9f0;
+}
+.naver-category-head h2 {
+  margin: 0 0 5px;
+  font-size: 17px;
+}
+.naver-category-head p {
+  margin: 0;
+  color: #697386;
+  font-size: 12px;
+}
+.naver-category-head form {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.naver-category-head input {
+  width: 230px;
+  height: 38px;
+  padding: 0 11px;
+  border: 1px solid #ccd3df;
+  border-radius: 6px;
+}
+.naver-category-head button {
+  height: 38px;
+  padding: 0 14px;
+  border: 1px solid #aeb7c5;
+  border-radius: 6px;
+  background: #fff;
+  font-size: 12px;
+  font-weight: 800;
+}
+.naver-category-head form a {
+  color: #697386;
+  font-size: 12px;
+  text-decoration: underline;
+}
+.naver-category-table-wrap {
+  overflow-x: auto;
+}
+.naver-category-table {
+  width: 100%;
+  min-width: 700px;
+  border-collapse: collapse;
+}
+.naver-category-table th,
+.naver-category-table td {
+  padding: 12px 15px;
+  border-bottom: 1px solid #edf0f5;
+  text-align: left;
+  font-size: 12px;
+}
+.naver-category-table th {
+  background: #f8f9fb;
+  color: #667085;
+  font-size: 11px;
+}
+.naver-category-table code {
+  color: #176b42;
+}
+.drawer-margin-calculator {
+  margin-top: 14px;
+  padding: 13px;
+  border: 1px solid #d9e1eb;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+.drawer-margin-calculator summary {
+  color: #344054;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 800;
+}
+.drawer-margin-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+  margin-top: 13px;
+}
+.drawer-margin-fields label {
+  gap: 5px;
+  color: #667085;
+  font-size: 10px;
+}
+.drawer-margin-fields input {
+  min-width: 0;
+  height: 36px;
+  background: white;
+}
+.drawer-margin-result {
+  display: grid;
+  gap: 6px;
+  margin-top: 12px;
+  padding: 11px;
+  border-radius: 7px;
+  background: #ecfdf3;
+  color: #166534;
+}
+.drawer-margin-result span {
+  font-size: 12px;
+}
+.drawer-margin-result strong {
+  font-size: 17px;
+}
+.drawer-margin-result small,
+.drawer-margin-disclaimer {
+  font-size: 10px;
+  line-height: 1.5;
+}
+.drawer-margin-result button {
+  justify-self: start;
+  min-height: 32px;
+  padding: 0 11px;
+  border: 0;
+  border-radius: 5px;
+  background: #15803d;
+  color: white;
+  font-size: 11px;
+  font-weight: 800;
+}
+.drawer-margin-disclaimer {
+  margin: 10px 0 0;
+  color: #667085;
+}
+.drawer-margin-error {
+  color: #b42318;
+  font-size: 11px;
+}
+@media (max-width: 760px) {
+  .naver-channel-page {
+    padding: 24px 14px;
+  }
+  .naver-channel-heading,
+  .naver-category-head {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .naver-sync-control {
+    justify-items: stretch;
+  }
+  .naver-channel-stats {
+    grid-template-columns: 1fr;
+  }
+  .naver-category-head form {
+    flex-wrap: wrap;
+  }
+  .naver-category-head input {
+    flex: 1;
+    width: auto;
+    min-width: 180px;
+  }
+  .drawer-margin-fields {
+    grid-template-columns: 1fr;
+  }
+}

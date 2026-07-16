@@ -297,6 +297,30 @@ export const supplierSyncJobs = pgTable(
   ],
 );
 
+export const naverCommerceCategories = pgTable(
+  "naver_commerce_categories",
+  {
+    id: text("id").primaryKey(),
+    name: text("name").notNull(),
+    wholeCategoryName: text("whole_category_name").notNull(),
+    last: boolean("last").notNull(),
+    syncBatchId: uuid("sync_batch_id").notNull(),
+    lastSyncedAt: timestamp("last_synced_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("naver_commerce_categories_name_idx").on(table.name),
+    index("naver_commerce_categories_last_idx").on(table.last),
+  ],
+);
+
 export const productAuditLogs = pgTable(
   "product_audit_logs",
   {
@@ -334,3 +358,6 @@ export const productAuditLogs = pgTable(
 export type ProductRow = typeof products.$inferSelect;
 
 export type SupplierProductRow = typeof supplierProducts.$inferSelect;
+
+export type NaverCommerceCategoryRow =
+  typeof naverCommerceCategories.$inferSelect;
