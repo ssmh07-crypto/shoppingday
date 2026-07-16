@@ -2,6 +2,10 @@ import { requireAdminPage } from "@/lib/auth/admin";
 import { withDbReadRecovery } from "@/lib/db";
 import { ImportForm } from "./import-form";
 
+// Authentication and the database binding only exist at request time. Never
+// execute this administrator page during Next.js static prerendering.
+export const dynamic = "force-dynamic";
+
 export default async function ImportProductPage() {
   return withDbReadRecovery(async (database) => {
     await requireAdminPage(database);

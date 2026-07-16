@@ -8,6 +8,10 @@ import { ProductEditorDrawer } from "./[id]/edit/product-editor-drawer";
 
 type SearchParams = Record<string, string | undefined>;
 
+// Authentication and Hyperdrive bindings are request-only. Explicitly opt out
+// of Next.js build-time execution even when no search parameters are present.
+export const dynamic = "force-dynamic";
+
 export default async function ProductsPage({
   searchParams,
 }: {
