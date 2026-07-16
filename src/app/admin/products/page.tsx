@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 /* eslint-disable @next/next/no-img-element -- supplier URLs are intentionally loaded directly; no image storage/optimizer proxy */
 import { requireAdminPage } from "@/lib/auth/admin";
+import { withDbReadRecovery } from "@/lib/db";
 import { createProductEditService } from "@/modules/products/product-edit-factory";
 import { ProductEditor } from "./[id]/edit/product-editor";
 
@@ -15,20 +16,21 @@ export default async function ProductsPage({
   const user = await requireAdminPage();
   const params = await searchParams;
   const service = createProductEditService();
-  const result = await service.list(user.id, {
-    search: params.search,
-    filter: params.filter,
-    sort: params.sort,
-    page: Number(params.page) || 1,
-  });
+  const result = await withDbReadRecovery(() =>
+    service.list(user.id, {
+      search: params.search,
+      filter: params.filter,
+      sort: params.sort,
+      page: Number(params.page) || 1,
+    }),
+  );
   const totalPages = Math.max(1, Math.ceil(result.total / result.pageSize));
   const firstItem = result.total ? (result.page - 1) * result.pageSize + 1 : 0;
   const lastItem = Math.min(result.page * result.pageSize, result.total);
   const editor = params.edit
-    ? await Promise.all([
-        service.get(params.edit, user.id),
-        service.categories(),
-      ])
+    ? await withDbReadRecovery(() =>
+        Promise.all([service.get(params.edit!, user.id), service.categories()]),
+      )
     : null;
 
   return (

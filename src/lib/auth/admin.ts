@@ -1,34 +1,38 @@
-import 'server-only'
-import { eq } from 'drizzle-orm'
-import { redirect } from 'next/navigation'
-import { getDb } from '@/lib/db'
-import { userProfiles } from '@/lib/db/schema'
-import { createSupabaseServerClient } from '@/lib/supabase/server'
+import "server-only";
+import { eq } from "drizzle-orm";
+import { redirect } from "next/navigation";
+import { getDb, withDbReadRecovery } from "@/lib/db";
+import { userProfiles } from "@/lib/db/schema";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export class AuthenticationError extends Error {
-  readonly code = 'authentication_error'
+  readonly code = "authentication_error";
 }
 
 export async function requireAdmin() {
-  const supabase = await createSupabaseServerClient()
-  const { data, error } = await supabase.auth.getClaims()
-  const userId = data?.claims.sub
-  if (error || !userId) throw new AuthenticationError('관리자 로그인이 필요합니다.')
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase.auth.getClaims();
+  const userId = data?.claims.sub;
+  if (error || !userId)
+    throw new AuthenticationError("관리자 로그인이 필요합니다.");
 
-  const [profile] = await getDb()
-    .select({ role: userProfiles.role })
-    .from(userProfiles)
-    .where(eq(userProfiles.userId, userId))
-    .limit(1)
+  const [profile] = await withDbReadRecovery(() =>
+    getDb()
+      .select({ role: userProfiles.role })
+      .from(userProfiles)
+      .where(eq(userProfiles.userId, userId))
+      .limit(1),
+  );
 
-  if (profile?.role !== 'admin') throw new AuthenticationError('관리자 권한이 필요합니다.')
-  return { id: userId }
+  if (profile?.role !== "admin")
+    throw new AuthenticationError("관리자 권한이 필요합니다.");
+  return { id: userId };
 }
 
 export async function requireAdminPage() {
   try {
-    return await requireAdmin()
+    return await requireAdmin();
   } catch {
-    redirect('/login')
+    redirect("/login");
   }
 }
