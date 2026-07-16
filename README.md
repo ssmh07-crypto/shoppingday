@@ -2,7 +2,7 @@
 
 Next.js App Router, Supabase Auth/PostgreSQL, Drizzle ORM 기반의 모듈형 PIM입니다. 친구도매 상품 동기화와 판매용 상품 편집, 네이버 커머스API 카테고리 동기화 기반을 제공합니다. 스마트스토어 상품 등록·수정·삭제 전송은 후속 구현 범위입니다.
 
-세션이 초기화된 뒤 작업을 재개할 때는 먼저 [`docs/ARCHITECTURE_DECISIONS.md`](docs/ARCHITECTURE_DECISIONS.md)를 확인합니다.
+세션이 초기화된 뒤 작업을 재개할 때는 먼저 [`docs/NEXT_SESSION.md`](docs/NEXT_SESSION.md)와 [`docs/ARCHITECTURE_DECISIONS.md`](docs/ARCHITECTURE_DECISIONS.md)를 확인합니다.
 
 스마트스토어 및 네이버 커머스API 연동 참고 링크는 [`docs/naver-commerce-api.md`](docs/naver-commerce-api.md)에 기록합니다.
 
