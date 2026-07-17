@@ -1,6 +1,10 @@
 import { closeDb, getDb } from "@/lib/db";
 import { SupplierSyncJobRepository } from "@/modules/suppliers/core/sync-job-repository";
 import { createDomeImportService } from "@/modules/suppliers/dome/dome-service";
+import {
+  supplierEditableFields,
+  type SupplierEditableField,
+} from "@/modules/products/product-repository";
 
 async function main() {
   const mode = process.env.SYNC_MODE;
@@ -25,15 +29,22 @@ async function main() {
   if (!started) throw new Error("이미 시작되었거나 종료된 동기화 작업입니다.");
 
   const service = createDomeImportService(database);
+  const protectedFields = parseProtectedFields(
+    process.env.SYNC_PROTECTED_FIELDS,
+  );
   try {
     if (mode === "all") {
-      const result = await service.importAll(job.actorId, async (progress) => {
-        await jobs.progress(jobId, progress);
-        console.info(
-          `진행 ${progress.processed}/${progress.total} ` +
-            `(신규 ${progress.created}, 갱신 ${progress.updated})`,
-        );
-      });
+      const result = await service.importAll(
+        job.actorId,
+        async (progress) => {
+          await jobs.progress(jobId, progress);
+          console.info(
+            `진행 ${progress.processed}/${progress.total} ` +
+              `(신규 ${progress.created}, 갱신 ${progress.updated})`,
+          );
+        },
+        protectedFields,
+      );
       await jobs.succeed(jobId, { ...result, processed: result.total });
       console.info(
         `전체 가져오기 완료: 총 ${result.total}개, 신규 ${result.created}개, ` +
@@ -64,6 +75,7 @@ async function main() {
             `(신규 ${progress.created}, 변경 ${progress.updated}, 동일 ${progress.unchanged})`,
         );
       },
+      protectedFields,
     );
     await jobs.succeed(
       jobId,
@@ -80,6 +92,14 @@ async function main() {
     await jobs.fail(jobId, message);
     throw error;
   }
+}
+
+function parseProtectedFields(value: string | undefined) {
+  if (value === undefined) return [...supplierEditableFields];
+  const allowed = new Set<string>(supplierEditableFields);
+  return [...new Set(value.split(","))].filter((field) =>
+    allowed.has(field),
+  ) as SupplierEditableField[];
 }
 
 function koreaDate(value: Date) {

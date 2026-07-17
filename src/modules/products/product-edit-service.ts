@@ -5,6 +5,7 @@ import {
   optionsFromSupplier,
   readyErrors,
   statusAfterSave,
+  titleInputSchema,
   type DraftInput,
 } from "./product-domain";
 import {
@@ -18,13 +19,22 @@ export class ProductEditService {
   constructor(private repo: ProductEditRepository) {}
   list(
     ownerId: string,
-    input: { search?: string; filter?: string; sort?: string; page?: number },
+    input: {
+      search?: string;
+      filter?: string;
+      sort?: string;
+      page?: number;
+      pageSize?: number;
+    },
   ) {
+    const pageSize = [30, 50, 100].includes(input.pageSize ?? 0)
+      ? input.pageSize!
+      : 30;
     return this.repo.list({
       ownerId,
       ...input,
       page: Math.max(1, input.page ?? 1),
-      pageSize: 20,
+      pageSize,
     });
   }
   async get(id: string, ownerId: string) {
@@ -48,6 +58,37 @@ export class ProductEditService {
         status,
         changed,
         "product_draft_saved",
+        {},
+        status === "ready" ? current.product.readyAt : null,
+      ),
+    );
+  }
+  async saveTitle(id: string, ownerId: string, raw: unknown) {
+    const { draftVersion, title } = titleInputSchema.parse(raw);
+    const current = await this.get(id, ownerId);
+    if (current.product.draftVersion !== draftVersion)
+      throw new ProductConflictError();
+    const input: DraftInput = {
+      draftVersion,
+      title,
+      searchTags: current.product.searchTags,
+      sellingPrice: current.product.sellingPrice,
+      currency: current.product.currency as "KRW",
+      description: current.product.description,
+      categoryId: current.product.categoryId,
+      naverCategoryId: current.product.naverCategoryId,
+      selectedImages: current.product.selectedImages,
+      editedOptions: current.product.editedOptions,
+    };
+    const status = statusAfterSave(current.product.status, ["title"]);
+    return this.handle(
+      await this.repo.save(
+        id,
+        ownerId,
+        input,
+        status,
+        ["title"],
+        "product_title_saved",
         {},
         status === "ready" ? current.product.readyAt : null,
       ),

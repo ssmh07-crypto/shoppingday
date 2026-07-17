@@ -1,5 +1,5 @@
 import "server-only";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { getDb, type Database } from "@/lib/db";
 import {
   products,
@@ -21,6 +21,14 @@ export interface ImportedProductRecord {
   supplierProduct: SupplierProductRow;
 }
 
+export const supplierEditableFields = [
+  "title",
+  "description",
+  "images",
+  "options",
+] as const;
+export type SupplierEditableField = (typeof supplierEditableFields)[number];
+
 export interface ProductRepository {
   findImported(
     supplierCode: string,
@@ -35,6 +43,7 @@ export interface ProductRepository {
     supplierProductId: string,
     product: SupplierProduct,
     existing?: ImportedProductRecord,
+    options?: { protectedFields?: SupplierEditableField[] },
   ): Promise<ImportedProductRecord>;
   findDetail(productId: string): Promise<ProductDetail | null>;
 }
@@ -54,27 +63,8 @@ export class DrizzleProductRepository implements ProductRepository {
     supplierProductId: string,
     product: SupplierProduct,
     existing?: ImportedProductRecord,
+    options?: { protectedFields?: SupplierEditableField[] },
   ) {
-    const [supplierProduct] = await this.database
-      .update(supplierProducts)
-      .set({
-        originalName: product.originalName,
-        supplierPrice:
-          product.supplierPrice === null ? null : String(product.supplierPrice),
-        currency: product.currency,
-        availability: product.availability,
-        originalImages: product.images,
-        originalOptions: product.options,
-        rawDescription: product.rawDescription,
-        rawPayload: product.rawPayload,
-        supplierCreatedAt: product.supplierCreatedAt,
-        supplierUpdatedAt: product.supplierUpdatedAt,
-        lastSyncedAt: new Date(),
-        updatedAt: new Date(),
-      })
-      .where(eq(supplierProducts.id, supplierProductId))
-      .returning();
-    if (!supplierProduct) throw new Error("supplier_product_not_found");
     const imported =
       existing ??
       (await this.findImported(
@@ -82,7 +72,62 @@ export class DrizzleProductRepository implements ProductRepository {
         product.externalProductId,
       ));
     if (!imported) throw new Error("product_link_not_found");
-    return { ...imported, supplierProduct };
+    const protectedFields = new Set(
+      options?.protectedFields ?? supplierEditableFields,
+    );
+    return this.database.transaction(async (tx) => {
+      const [supplierProduct] = await tx
+        .update(supplierProducts)
+        .set({
+          originalName: product.originalName,
+          supplierPrice:
+            product.supplierPrice === null
+              ? null
+              : String(product.supplierPrice),
+          currency: product.currency,
+          availability: product.availability,
+          originalImages: product.images,
+          originalOptions: product.options,
+          rawDescription: product.rawDescription,
+          rawPayload: product.rawPayload,
+          supplierCreatedAt: product.supplierCreatedAt,
+          supplierUpdatedAt: product.supplierUpdatedAt,
+          lastSyncedAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(eq(supplierProducts.id, supplierProductId))
+        .returning();
+      if (!supplierProduct) throw new Error("supplier_product_not_found");
+
+      const productUpdates = {
+        ...(!protectedFields.has("title")
+          ? { title: product.originalName ?? "" }
+          : {}),
+        ...(!protectedFields.has("description")
+          ? { description: sanitizeDescription(product.rawDescription ?? "") }
+          : {}),
+        ...(!protectedFields.has("images")
+          ? { selectedImages: imagesFromSupplier(product.images) }
+          : {}),
+        ...(!protectedFields.has("options")
+          ? { editedOptions: optionsFromSupplier(product.options) }
+          : {}),
+      };
+      if (Object.keys(productUpdates).length) {
+        await tx
+          .update(products)
+          .set({
+            ...productUpdates,
+            status: "editing",
+            readyAt: null,
+            validationErrors: {},
+            draftVersion: sql`${products.draftVersion}+1`,
+            updatedAt: new Date(),
+          })
+          .where(eq(products.id, imported.productId));
+      }
+      return { ...imported, supplierProduct };
+    });
   }
 
   async findImported(supplierCode: string, externalProductId: string) {

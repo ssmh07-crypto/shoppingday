@@ -19,6 +19,10 @@ export const PRODUCT_LIMITS = {
   values: 50,
   combinations: 500,
 } as const;
+export const titleInputSchema = z.object({
+  draftVersion: z.number().int().positive(),
+  title: z.string().trim().min(1, "상품명을 입력해 주세요.").max(PRODUCT_LIMITS.title),
+});
 const safeUrl = z
   .url()
   .refine(

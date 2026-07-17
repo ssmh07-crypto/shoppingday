@@ -244,4 +244,25 @@ describe("상품 import 통합 흐름", () => {
       unchanged: 1,
     });
   });
+  it("변동처리 보호 항목을 공급처 갱신에 전달한다", async () => {
+    const context = setup(saved);
+    const changed = { ...product, originalName: "변경된 원본명" };
+    vi.mocked(context.adapter.fetchProducts)
+      .mockResolvedValueOnce({ products: [], responseStatus: 200 })
+      .mockResolvedValueOnce({ products: [changed], responseStatus: 200 });
+
+    await context.service.syncChanges(
+      "u1",
+      { from: "2026-07-15", to: "2026-07-16" },
+      undefined,
+      ["title", "images"],
+    );
+
+    expect(context.repository.updateSupplierProduct).toHaveBeenCalledWith(
+      "sp1",
+      changed,
+      saved,
+      { protectedFields: ["title", "images"] },
+    );
+  });
 });

@@ -62,12 +62,7 @@ export class NaverCategoryService {
 
   async recommend(productName: string) {
     const ruleCategoryIds = categoryRuleIds(productName);
-    if (ruleCategoryIds.length) {
-      const [category] = await this.repository.findLeafByIds(ruleCategoryIds);
-      if (category) {
-        return { category, source: "title_rule" as const };
-      }
-    } else {
+    if (!ruleCategoryIds.length) {
       const localCategory =
         await this.repository.recommendFromTitle(productName);
       if (localCategory) {
@@ -75,25 +70,33 @@ export class NaverCategoryService {
       }
     }
     try {
-      const models = await this.client.fetchProductModels(productName, 30);
-      const rankedCategories = rankCatalogCategories(models);
-      const categoryIds = rankedCategories.map((item) => item.categoryId);
-      const [category] = await this.repository.findLeafByIds(categoryIds);
-      if (category) {
-        const vote = rankedCategories.find(
-          (item) => item.categoryId === category.id,
-        );
-        return {
-          category,
-          source: "naver_catalog" as const,
-          evidence: {
-            votes: vote?.count ?? 0,
-            sampleSize: models.length,
-          },
-        };
+      for (const query of catalogSearchQueries(productName)) {
+        const models = await this.client.fetchProductModels(query, 30);
+        if (!models.length) continue;
+        const rankedCategories = rankCatalogCategories(models);
+        const categoryIds = rankedCategories.map((item) => item.categoryId);
+        const [category] = await this.repository.findLeafByIds(categoryIds);
+        if (category) {
+          const vote = rankedCategories.find(
+            (item) => item.categoryId === category.id,
+          );
+          return {
+            category,
+            source: "naver_catalog" as const,
+            evidence: {
+              votes: vote?.count ?? 0,
+              sampleSize: models.length,
+              ...(query === productName.trim() ? {} : { query }),
+            },
+          };
+        }
       }
     } catch {
       // Manual category search remains available if the relay is down.
+    }
+    if (ruleCategoryIds.length) {
+      const [category] = await this.repository.findLeafByIds(ruleCategoryIds);
+      if (category) return { category, source: "title_rule" as const };
     }
     return null;
   }
@@ -101,7 +104,7 @@ export class NaverCategoryService {
 
 const TITLE_CATEGORY_RULES = [
   {
-    categoryId: "50004771",
+    categoryId: "50005257",
     matches: (title: string) =>
       /(캡슐커피|커피캡슐)/.test(title) &&
       /(보관|거치|홀더|디스펜서|정리|수납|스탠드|랙)/.test(title),
@@ -113,6 +116,16 @@ export function categoryRuleIds(title: string) {
   return TITLE_CATEGORY_RULES.filter((rule) => rule.matches(normalized)).map(
     (rule) => rule.categoryId,
   );
+}
+
+export function catalogSearchQueries(title: string) {
+  const normalized = title.trim().replace(/\s+/g, " ");
+  const tokens = normalized.split(" ").filter(Boolean);
+  const queries = [normalized];
+  for (let index = 1; index <= Math.min(2, tokens.length - 3); index += 1) {
+    queries.push(tokens.slice(index).join(" "));
+  }
+  return [...new Set(queries.filter((query) => query.length >= 2))];
 }
 
 export function rankCatalogCategories(models: NaverCommerceProductModel[]) {

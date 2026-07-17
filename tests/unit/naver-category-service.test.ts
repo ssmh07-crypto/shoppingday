@@ -16,10 +16,10 @@ const category = {
   wholeCategoryName: "패션의류>여성의류>원피스",
   last: true,
 };
-const kitchenOrganizerCategory = {
-  id: "50004771",
-  name: "주방정리소품",
-  wholeCategoryName: "생활/건강>주방용품>주방수납용품>주방정리소품",
+const capsuleStorageCategory = {
+  id: "50005257",
+  name: "기타보관용기",
+  wholeCategoryName: "생활/건강>주방용품>보관/밀폐용기>기타보관용기",
   last: true,
 };
 
@@ -46,24 +46,45 @@ function setup(
 }
 
 describe("네이버 카테고리 자동 추천", () => {
-  it("커피캡슐 보관 액세서리는 식품이 아닌 주방정리소품으로 분류한다", async () => {
-    const { service, repository, client } = setup(vi.fn());
-    repository.findLeafByIds.mockResolvedValueOnce([kitchenOrganizerCategory]);
+  it("정확한 검색 결과가 없으면 수식어를 줄여 카탈로그 다수 카테고리를 적용한다", async () => {
+    const fetchProductModels = vi
+      .fn()
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        model(1, capsuleStorageCategory.id),
+        model(2, capsuleStorageCategory.id),
+      ]);
+    const { service, repository } = setup(fetchProductModels);
+    repository.findLeafByIds.mockResolvedValueOnce([capsuleStorageCategory]);
 
     await expect(
       service.recommend("나선형 캡슐커피 보관 디스펜서"),
     ).resolves.toEqual({
-      category: kitchenOrganizerCategory,
-      source: "title_rule",
+      category: capsuleStorageCategory,
+      source: "naver_catalog",
+      evidence: {
+        votes: 2,
+        sampleSize: 2,
+        query: "캡슐커피 보관 디스펜서",
+      },
     });
-    expect(repository.findLeafByIds).toHaveBeenCalledWith(["50004771"]);
+    expect(fetchProductModels).toHaveBeenNthCalledWith(
+      1,
+      "나선형 캡슐커피 보관 디스펜서",
+      30,
+    );
+    expect(fetchProductModels).toHaveBeenNthCalledWith(
+      2,
+      "캡슐커피 보관 디스펜서",
+      30,
+    );
+    expect(repository.findLeafByIds).toHaveBeenCalledWith(["50005257"]);
     expect(repository.recommendFromTitle).not.toHaveBeenCalled();
-    expect(client.fetchProductModels).not.toHaveBeenCalled();
   });
 
   it("먹는 캡슐커피 상품에는 보관용품 규칙을 적용하지 않는다", () => {
     expect(categoryRuleIds("에스프레소 캡슐커피 10개입")).toEqual([]);
-    expect(categoryRuleIds("커피 캡슐 회전형 거치대")).toEqual(["50004771"]);
+    expect(categoryRuleIds("커피 캡슐 회전형 거치대")).toEqual(["50005257"]);
   });
 
   it("강한 로컬 일치가 없으면 네이버 카탈로그를 적용한다", async () => {

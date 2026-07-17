@@ -6,6 +6,7 @@ import { withDbReadRecovery, type Database } from "@/lib/db";
 import { createProductEditService } from "@/modules/products/product-edit-factory";
 import { ProductEditorDrawer } from "./[id]/edit/product-editor-drawer";
 import { ProductSyncControl } from "./product-sync-control";
+import { ProductTitleInlineEditor } from "./product-title-inline-editor";
 
 type SearchParams = Record<string, string | undefined>;
 
@@ -35,6 +36,7 @@ async function renderProductsPage(
     filter: params.filter,
     sort: params.sort,
     page: Number(params.page) || 1,
+    pageSize: Number(params.size) || 30,
   });
   const totalPages = Math.max(1, Math.ceil(result.total / result.pageSize));
   const firstItem = result.total ? (result.page - 1) * result.pageSize + 1 : 0;
@@ -87,6 +89,9 @@ async function renderProductsPage(
             )}
             {params.sort && (
               <input type="hidden" name="sort" value={params.sort} />
+            )}
+            {params.size && (
+              <input type="hidden" name="size" value={params.size} />
             )}
           </form>
           <div className="inventory-admin-label">
@@ -158,6 +163,14 @@ async function renderProductsPage(
                   </select>
                 </label>
                 <label>
+                  <span className="sr-only">목록 표시 개수</span>
+                  <select name="size" defaultValue={String(result.pageSize)}>
+                    <option value="30">30개씩 보기</option>
+                    <option value="50">50개씩 보기</option>
+                    <option value="100">100개씩 보기</option>
+                  </select>
+                </label>
+                <label>
                   <span className="sr-only">정렬 기준</span>
                   <select name="sort" defaultValue={params.sort ?? ""}>
                     <option value="">최근 가져온 순</option>
@@ -185,6 +198,7 @@ async function renderProductsPage(
                   <tr>
                     <th className="image-column">상품</th>
                     <th>상품명</th>
+                    <th>상품번호</th>
                     <th>공급처</th>
                     <th>공급가</th>
                     <th>판매가</th>
@@ -217,15 +231,14 @@ async function renderProductsPage(
                           </div>
                         </td>
                         <td className="inventory-product-name">
-                          <Link
-                            href={editorHref(params, item.id)}
-                            scroll={false}
-                            prefetch={false}
-                            data-product-editor-id={item.id}
-                          >
-                            {item.title || "상품명 미입력"}
-                          </Link>
+                          <ProductTitleInlineEditor
+                            id={item.id}
+                            initialTitle={item.title}
+                            initialDraftVersion={item.draftVersion}
+                          />
                           <span>{item.originalName || "원본 상품명 없음"}</span>
+                        </td>
+                        <td className="inventory-product-number">
                           <code>{item.externalProductId}</code>
                         </td>
                         <td>

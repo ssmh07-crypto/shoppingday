@@ -14,6 +14,11 @@ on:
         description: 관리자 화면에서 생성한 작업 ID
         required: true
         type: string
+      protected_fields:
+        description: 공급처 동기화에서 보호할 판매용 필드
+        required: false
+        default: title,description,images,options
+        type: string
 
 concurrency:
   group: dome-product-sync
@@ -29,6 +34,7 @@ jobs:
     env:
       SYNC_MODE: ${{ inputs.mode }}
       SYNC_JOB_ID: ${{ inputs.job_id }}
+      SYNC_PROTECTED_FIELDS: ${{ inputs.protected_fields }}
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
       NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}

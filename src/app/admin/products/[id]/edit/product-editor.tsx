@@ -59,7 +59,7 @@ export function ProductEditor({
 
   useEffect(() => {
     const search = naverCategorySearch.trim();
-    if (search.length < 2) return;
+    if (search.length < 1) return;
     const controller = new AbortController();
     const timer = setTimeout(async () => {
       setCategorySearchStatus("검색 중");
@@ -112,7 +112,7 @@ export function ProductEditor({
       const recommendation = body.recommendation as {
         category: NaverCategoryOption;
         source: string;
-        evidence?: { votes: number; sampleSize: number };
+        evidence?: { votes: number; sampleSize: number; query?: string };
       } | null;
       if (!recommendation) {
         setCategoryRecommendationStatus(
@@ -128,7 +128,7 @@ export function ProductEditor({
       setCategoryRecommendationStatus(
         recommendation.source === "naver_catalog"
           ? recommendation.evidence
-            ? `네이버 카탈로그 ${recommendation.evidence.sampleSize}개 중 ${recommendation.evidence.votes}개의 다수 카테고리를 적용했습니다.`
+            ? `네이버 카탈로그 ${recommendation.evidence.sampleSize}개 중 ${recommendation.evidence.votes}개의 다수 카테고리를 적용했습니다.${recommendation.evidence.query && recommendation.evidence.query !== name ? ` 검색어: ${recommendation.evidence.query}` : ""}`
             : "네이버 카탈로그를 기준으로 자동 적용했습니다."
           : recommendation.source === "title_rule"
             ? "상품의 보관·거치 용도를 기준으로 자동 적용했습니다."
@@ -379,13 +379,17 @@ export function ProductEditor({
                 <input
                   id="naver-category-search"
                   type="search"
+                  role="combobox"
+                  aria-autocomplete="list"
+                  aria-expanded={naverCategoryResults.length > 0}
+                  aria-controls="naver-category-results"
                   value={naverCategorySearch}
                   placeholder="카테고리명 직접 검색"
                   autoComplete="off"
                   onChange={(event) => {
                     const value = event.target.value;
                     setNaverCategorySearch(value);
-                    if (value.trim().length < 2) {
+                    if (value.trim().length < 1) {
                       setNaverCategoryResults([]);
                       setCategorySearchStatus("");
                     }
@@ -396,7 +400,11 @@ export function ProductEditor({
                 )}
                 {categorySearchStatus && <small>{categorySearchStatus}</small>}
                 {naverCategoryResults.length > 0 && (
-                  <div className="drawer-naver-category-results" role="listbox">
+                  <div
+                    id="naver-category-results"
+                    className="drawer-naver-category-results"
+                    role="listbox"
+                  >
                     {naverCategoryResults.map((category) => (
                       <button
                         type="button"
