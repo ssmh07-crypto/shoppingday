@@ -12,12 +12,15 @@ const editorCache = new Map<
 
 export function ProductEditorDrawer({
   initialProductId,
+  productIds = [],
 }: {
   initialProductId?: string;
+  productIds?: string[];
 }) {
   const [productId, setProductId] = useState(initialProductId ?? null);
   const [editor, setEditor] = useState<ProductEditorInitial | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [editorDirty, setEditorDirty] = useState(false);
   const requestVersion = useRef(0);
   const openedFromList = useRef(false);
 
@@ -25,6 +28,7 @@ export function ProductEditorDrawer({
     const version = ++requestVersion.current;
     setEditor(null);
     setError(null);
+    setEditorDirty(false);
     try {
       const data = await loadEditor(id, force);
       if (version === requestVersion.current) setEditor(data);
@@ -56,6 +60,11 @@ export function ProductEditorDrawer({
   );
 
   const close = useCallback(() => {
+    if (
+      editorDirty &&
+      !confirm("저장하지 않은 변경사항이 있습니다. 편집을 닫을까요?")
+    )
+      return;
     requestVersion.current += 1;
     if (
       openedFromList.current &&
@@ -70,7 +79,24 @@ export function ProductEditorDrawer({
     setProductId(null);
     setEditor(null);
     setError(null);
-  }, []);
+  }, [editorDirty]);
+
+  const navigate = useCallback(
+    (id: string | undefined) => {
+      if (!id || id === productId) return;
+      if (
+        editorDirty &&
+        !confirm("저장하지 않은 변경사항이 있습니다. 다른 상품으로 이동할까요?")
+      )
+        return;
+      const url = new URL(location.href);
+      url.searchParams.set("edit", id);
+      history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+      setProductId(id);
+      void load(id);
+    },
+    [editorDirty, load, productId],
+  );
 
   useEffect(() => {
     if (!initialProductId) return;
@@ -165,6 +191,14 @@ export function ProductEditorDrawer({
 
   if (!productId) return null;
 
+  const productIndex = productIds.indexOf(productId);
+  const previousProductId =
+    productIndex > 0 ? productIds[productIndex - 1] : undefined;
+  const nextProductId =
+    productIndex >= 0 && productIndex < productIds.length - 1
+      ? productIds[productIndex + 1]
+      : undefined;
+
   return (
     <>
       <button
@@ -183,9 +217,40 @@ export function ProductEditorDrawer({
                 : "상품 정보를 불러오는 중…"}
             </strong>
           </div>
-          <button type="button" onClick={close} aria-label="닫기">
-            ×
-          </button>
+          <div className="inventory-drawer-navigation">
+            <span>
+              {productIndex >= 0
+                ? `${productIndex + 1} / ${productIds.length}`
+                : ""}
+            </span>
+            <button
+              type="button"
+              onClick={() => navigate(previousProductId)}
+              disabled={!previousProductId}
+              aria-label="이전 상품"
+              title="이전 상품"
+            >
+              ←
+            </button>
+            <button
+              type="button"
+              onClick={() => navigate(nextProductId)}
+              disabled={!nextProductId}
+              aria-label="다음 상품"
+              title="다음 상품"
+            >
+              →
+            </button>
+            <button
+              type="button"
+              className="inventory-drawer-close"
+              onClick={close}
+              aria-label="닫기"
+              title="닫기"
+            >
+              ×
+            </button>
+          </div>
         </header>
         {error ? (
           <div className="drawer-load-state error" role="alert">
@@ -200,6 +265,7 @@ export function ProductEditorDrawer({
             key={editor.product.id}
             initial={editor}
             onMutated={() => editorCache.delete(productId)}
+            onDirtyChange={setEditorDirty}
           />
         ) : (
           <DrawerSkeleton />

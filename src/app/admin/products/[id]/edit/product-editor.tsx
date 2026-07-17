@@ -15,9 +15,11 @@ type EditorTab = "basic" | "content" | "market";
 export function ProductEditor({
   initial,
   onMutated,
+  onDirtyChange,
 }: {
   initial: ProductEditorInitial;
   onMutated?: () => void;
+  onDirtyChange?: (dirty: boolean) => void;
 }) {
   const [form, setForm] = useState(() => fromInitial(initial));
   const [baseline, setBaseline] = useState(() =>
@@ -63,6 +65,10 @@ export function ProductEditor({
   }, [dirty]);
 
   useEffect(() => {
+    onDirtyChange?.(dirty);
+  }, [dirty, onDirtyChange]);
+
+  useEffect(() => {
     const search = naverCategorySearch.trim();
     if (search.length < 1) return;
     const controller = new AbortController();
@@ -98,65 +104,70 @@ export function ProductEditor({
     };
   }, [naverCategorySearch]);
 
-  const recommendNaverCategory = useCallback(async (productName: string) => {
-    const name = productName.trim();
-    if (name.length < 2) {
-      setCategoryRecommendationStatus("상품명을 두 글자 이상 입력해 주세요.");
-      return;
-    }
-    setCategoryRecommendationStatus("상품명으로 카테고리를 찾는 중입니다.");
-    try {
-      const response = await fetch(
-        `/api/integrations/naver/categories/recommend?productName=${encodeURIComponent(name)}`,
-      );
-      const body = await response.json();
-      if (!response.ok)
-        throw new Error(
-          body.error?.message ?? "카테고리를 추천하지 못했습니다.",
-        );
-      const recommendation = body.recommendation as {
-        category: NaverCategoryOption;
-        source: string;
-        evidence?: { votes: number; sampleSize: number; query?: string };
-      } | null;
-      if (!recommendation) {
-        setCategoryRecommendationStatus(
-          "자동 추천 결과가 없습니다. 직접 검색해 주세요.",
-        );
+  const recommendNaverCategory = useCallback(
+    async (productName: string, applyQueryOverride?: boolean) => {
+      const name = productName.trim();
+      if (name.length < 2) {
+        setCategoryRecommendationStatus("상품명을 두 글자 이상 입력해 주세요.");
         return;
       }
-      setSelectedNaverCategory(recommendation.category);
-      const relaxedQuery = recommendation.evidence?.query?.trim() ?? "";
-      setCategorySearchQuery(relaxedQuery);
-      setForm((current) => {
-        if (applyCategoryQueryToTitle && relaxedQuery) {
-          titleBeforeCategoryQuery.current = current.title;
+      setCategoryRecommendationStatus("상품명으로 카테고리를 찾는 중입니다.");
+      try {
+        const response = await fetch(
+          `/api/integrations/naver/categories/recommend?productName=${encodeURIComponent(name)}`,
+        );
+        const body = await response.json();
+        if (!response.ok)
+          throw new Error(
+            body.error?.message ?? "카테고리를 추천하지 못했습니다.",
+          );
+        const recommendation = body.recommendation as {
+          category: NaverCategoryOption;
+          source: string;
+          evidence?: { votes: number; sampleSize: number; query?: string };
+        } | null;
+        if (!recommendation) {
+          setCategoryRecommendationStatus(
+            "자동 추천 결과가 없습니다. 직접 검색해 주세요.",
+          );
+          return;
         }
-        return {
-          ...current,
-          ...(applyCategoryQueryToTitle && relaxedQuery
-            ? { title: relaxedQuery }
-            : {}),
-          naverCategoryId: recommendation.category.id,
-        };
-      });
-      setCategoryRecommendationStatus(
-        recommendation.source === "naver_catalog"
-          ? recommendation.evidence
-            ? `네이버 카탈로그 ${recommendation.evidence.sampleSize}개 중 ${recommendation.evidence.votes}개의 다수 카테고리를 적용했습니다.${recommendation.evidence.query && recommendation.evidence.query !== name ? ` 검색어: ${recommendation.evidence.query}` : ""}`
-            : "네이버 카탈로그를 기준으로 자동 적용했습니다."
-          : recommendation.source === "title_rule"
-            ? "상품의 보관·거치 용도를 기준으로 자동 적용했습니다."
-            : "동기화된 카테고리를 기준으로 자동 적용했습니다.",
-      );
-    } catch (error) {
-      setCategoryRecommendationStatus(
-        error instanceof Error
-          ? error.message
-          : "카테고리를 추천하지 못했습니다.",
-      );
-    }
-  }, [applyCategoryQueryToTitle]);
+        setSelectedNaverCategory(recommendation.category);
+        const relaxedQuery = recommendation.evidence?.query?.trim() ?? "";
+        const shouldApplyQuery =
+          applyQueryOverride ?? applyCategoryQueryToTitle;
+        setCategorySearchQuery(relaxedQuery);
+        setForm((current) => {
+          if (shouldApplyQuery && relaxedQuery) {
+            titleBeforeCategoryQuery.current = current.title;
+          }
+          return {
+            ...current,
+            ...(shouldApplyQuery && relaxedQuery
+              ? { title: relaxedQuery }
+              : {}),
+            naverCategoryId: recommendation.category.id,
+          };
+        });
+        setCategoryRecommendationStatus(
+          recommendation.source === "naver_catalog"
+            ? recommendation.evidence
+              ? `네이버 카탈로그 ${recommendation.evidence.sampleSize}개 중 ${recommendation.evidence.votes}개의 다수 카테고리를 적용했습니다.${recommendation.evidence.query && recommendation.evidence.query !== name ? ` 검색어: ${recommendation.evidence.query}` : ""}`
+              : "네이버 카탈로그를 기준으로 자동 적용했습니다."
+            : recommendation.source === "title_rule"
+              ? "상품의 보관·거치 용도를 기준으로 자동 적용했습니다."
+              : "동기화된 카테고리를 기준으로 자동 적용했습니다.",
+        );
+      } catch (error) {
+        setCategoryRecommendationStatus(
+          error instanceof Error
+            ? error.message
+            : "카테고리를 추천하지 못했습니다.",
+        );
+      }
+    },
+    [applyCategoryQueryToTitle],
+  );
 
   useEffect(() => {
     if (
@@ -356,7 +367,10 @@ export function ProductEditor({
                   <button
                     type="button"
                     disabled={form.title.trim().length < 2}
-                    onClick={() => void recommendNaverCategory(form.title)}
+                    onClick={() => {
+                      setApplyCategoryQueryToTitle(true);
+                      void recommendNaverCategory(form.title, true);
+                    }}
                   >
                     상품명으로 자동 추천
                   </button>
@@ -487,10 +501,11 @@ export function ProductEditor({
                       void recommendNaverCategory(form.title);
                   }}
                 />
-                <small>
-                  {form.title.length}/200자 · 원본:{" "}
-                  {initial.supplier.originalName ?? "-"}
-                </small>
+                <small>{form.title.length}/200자</small>
+                <span className="drawer-original-title">
+                  <small>원본 상품명</small>
+                  <strong>{initial.supplier.originalName ?? "-"}</strong>
+                </span>
               </label>
               <label>
                 검색 키워드
