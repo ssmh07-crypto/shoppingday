@@ -112,6 +112,7 @@ export function ProductEditor({
       const recommendation = body.recommendation as {
         category: NaverCategoryOption;
         source: string;
+        evidence?: { votes: number; sampleSize: number };
       } | null;
       if (!recommendation) {
         setCategoryRecommendationStatus(
@@ -126,7 +127,9 @@ export function ProductEditor({
       }));
       setCategoryRecommendationStatus(
         recommendation.source === "naver_catalog"
-          ? "네이버 카탈로그를 기준으로 자동 적용했습니다."
+          ? recommendation.evidence
+            ? `네이버 카탈로그 ${recommendation.evidence.sampleSize}개 중 ${recommendation.evidence.votes}개의 다수 카테고리를 적용했습니다.`
+            : "네이버 카탈로그를 기준으로 자동 적용했습니다."
           : "동기화된 카테고리를 기준으로 자동 적용했습니다.",
       );
     } catch (error) {

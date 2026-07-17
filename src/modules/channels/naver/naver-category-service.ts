@@ -6,6 +6,7 @@ import {
   NaverCommerceClient,
   NaverCommerceError,
   type NaverCommerceConfig,
+  type NaverCommerceProductModel,
 } from "./naver-commerce-client";
 import {
   NaverCommerceRelayClient,
@@ -66,14 +67,59 @@ export class NaverCategoryService {
     }
     try {
       const models = await this.client.fetchProductModels(productName, 30);
-      const categoryIds = [...new Set(models.map((model) => model.categoryId))];
+      const rankedCategories = rankCatalogCategories(models);
+      const categoryIds = rankedCategories.map((item) => item.categoryId);
       const [category] = await this.repository.findLeafByIds(categoryIds);
-      if (category) return { category, source: "naver_catalog" as const };
+      if (category) {
+        const vote = rankedCategories.find(
+          (item) => item.categoryId === category.id,
+        );
+        return {
+          category,
+          source: "naver_catalog" as const,
+          evidence: {
+            votes: vote?.count ?? 0,
+            sampleSize: models.length,
+          },
+        };
+      }
     } catch {
       // Manual category search remains available if the relay is down.
     }
     return null;
   }
+}
+
+export function rankCatalogCategories(models: NaverCommerceProductModel[]) {
+  const votes = new Map<
+    string,
+    {
+      categoryId: string;
+      count: number;
+      topThreeCount: number;
+      firstIndex: number;
+    }
+  >();
+  models.forEach((model, index) => {
+    const current = votes.get(model.categoryId);
+    if (current) {
+      current.count += 1;
+      if (index < 3) current.topThreeCount += 1;
+      return;
+    }
+    votes.set(model.categoryId, {
+      categoryId: model.categoryId,
+      count: 1,
+      topThreeCount: index < 3 ? 1 : 0,
+      firstIndex: index,
+    });
+  });
+  return [...votes.values()].sort(
+    (a, b) =>
+      b.count - a.count ||
+      b.topThreeCount - a.topThreeCount ||
+      a.firstIndex - b.firstIndex,
+  );
 }
 
 export function createNaverCategoryService(
