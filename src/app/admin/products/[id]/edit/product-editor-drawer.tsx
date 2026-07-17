@@ -2,10 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ProductEditor } from "./product-editor";
-import type {
-  ProductEditorCategory,
-  ProductEditorInitial,
-} from "./product-editor-types";
+import type { ProductEditorInitial } from "./product-editor-types";
 
 const PREFETCH_TTL_MS = 15_000;
 const editorCache = new Map<
@@ -15,10 +12,8 @@ const editorCache = new Map<
 
 export function ProductEditorDrawer({
   initialProductId,
-  categories,
 }: {
   initialProductId?: string;
-  categories: ProductEditorCategory[];
 }) {
   const [productId, setProductId] = useState(initialProductId ?? null);
   const [editor, setEditor] = useState<ProductEditorInitial | null>(null);
@@ -204,7 +199,6 @@ export function ProductEditorDrawer({
           <ProductEditor
             key={editor.product.id}
             initial={editor}
-            categories={categories}
             onMutated={() => editorCache.delete(productId)}
           />
         ) : (

@@ -1425,10 +1425,28 @@ td small {
   margin-bottom: 18px;
   text-align: left;
 }
-.drawer-naver-category > label {
+.drawer-naver-category-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.drawer-naver-category-heading > label {
   color: #344054;
   font-size: 12px;
   font-weight: 800;
+}
+.drawer-naver-category-heading > button {
+  min-height: 32px;
+  padding: 0 11px;
+  border: 1px solid #a6e4bd;
+  background: #effbf4;
+  color: #08734d;
+  font-size: 11px;
+  font-weight: 800;
+}
+.drawer-naver-category-heading > button:hover:not(:disabled) {
+  background: #dcf8e8;
 }
 .drawer-naver-category > input {
   width: 100%;

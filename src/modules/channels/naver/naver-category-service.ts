@@ -17,7 +17,7 @@ export function isNaverCommerceConfigured(env: ServerEnv = getServerEnv()) {
   const relayUrl = getNaverCommerceRelayUrl(env);
   return Boolean(
     (relayUrl && env.NAVER_COMMERCE_RELAY_SHARED_SECRET) ||
-      (env.NAVER_COMMERCE_CLIENT_ID && env.NAVER_COMMERCE_CLIENT_SECRET),
+    (env.NAVER_COMMERCE_CLIENT_ID && env.NAVER_COMMERCE_CLIENT_SECRET),
   );
 }
 
@@ -57,6 +57,22 @@ export class NaverCategoryService {
       leaf: categories.filter((category) => category.last).length,
       syncedAt,
     };
+  }
+
+  async recommend(productName: string) {
+    const localCategory = await this.repository.recommendFromTitle(productName);
+    if (localCategory) {
+      return { category: localCategory, source: "local_index" as const };
+    }
+    try {
+      const models = await this.client.fetchProductModels(productName, 30);
+      const categoryIds = [...new Set(models.map((model) => model.categoryId))];
+      const [category] = await this.repository.findLeafByIds(categoryIds);
+      if (category) return { category, source: "naver_catalog" as const };
+    } catch {
+      // Manual category search remains available if the relay is down.
+    }
+    return null;
   }
 }
 

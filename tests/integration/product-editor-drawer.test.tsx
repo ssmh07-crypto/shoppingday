@@ -14,12 +14,28 @@ afterEach(() => {
 describe("상품 편집 서랍", () => {
   it("목록을 다시 탐색하지 않고 즉시 로딩 서랍을 연 뒤 상세만 가져온다", async () => {
     let resolveFetch!: (response: Response) => void;
-    const fetchMock = vi.fn(
-      () =>
-        new Promise<Response>((resolve) => {
-          resolveFetch = resolve;
+    const fetchMock = vi
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise<Response>((resolve) => {
+            resolveFetch = resolve;
+          }),
+      )
+      .mockResolvedValueOnce(
+        Response.json({
+          success: true,
+          recommendation: {
+            source: "naver_catalog",
+            category: {
+              id: "50001799",
+              name: "정원부자재",
+              wholeCategoryName: "생활/건강>정원/원예용품>정원부자재",
+              last: true,
+            },
+          },
         }),
-    );
+      );
     vi.stubGlobal("fetch", fetchMock);
 
     render(
@@ -30,7 +46,7 @@ describe("상품 편집 서랍", () => {
         >
           편집
         </Link>
-        <ProductEditorDrawer categories={[]} />
+        <ProductEditorDrawer />
       </>,
     );
 
@@ -83,6 +99,12 @@ describe("상품 편집 서랍", () => {
 
     await waitFor(() =>
       expect(screen.getByText("빠른 편집 상품")).toBeInTheDocument(),
+    );
+    await waitFor(() =>
+      expect(screen.getByText("정원부자재")).toBeInTheDocument(),
+    );
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      "/api/integrations/naver/categories/recommend?productName=%EB%B9%A0%EB%A5%B8%20%ED%8E%B8%EC%A7%91%20%EC%83%81%ED%92%88",
     );
   });
 });

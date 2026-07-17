@@ -34,8 +34,6 @@ export type ProductEditorInitial = {
   };
 };
 
-export type ProductEditorCategory = { id: string; name: string };
-
 export type NaverCategoryOption = {
   id: string;
   name: string;

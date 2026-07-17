@@ -15,8 +15,21 @@ const categorySchema = z.object({
 });
 
 const categoriesSchema = z.array(categorySchema).min(1);
+const productModelSchema = z.object({
+  id: z.number().int(),
+  name: z.string().min(1),
+  categoryId: z.string().min(1),
+  wholeCategoryName: z.string().min(1),
+});
+const productModelsSchema = z.object({
+  contents: z.array(productModelSchema),
+  page: z.number().int(),
+  size: z.number().int(),
+  totalElements: z.number().int(),
+});
 
 export type NaverCommerceCategory = z.infer<typeof categorySchema>;
+export type NaverCommerceProductModel = z.infer<typeof productModelSchema>;
 
 export async function parseNaverCommerceCategories(response: Response) {
   const json = await parseJson(response);
@@ -29,6 +42,21 @@ export async function parseNaverCommerceCategories(response: Response) {
     );
   }
   return parsed.data;
+}
+
+export async function parseNaverCommerceProductModels(response: Response) {
+  const json = await parseJson(response);
+  const parsed = z
+    .union([productModelsSchema, z.array(productModelSchema)])
+    .safeParse(json);
+  if (!parsed.success) {
+    throw new NaverCommerceError(
+      "invalid_response",
+      "네이버 카탈로그 응답 형식이 올바르지 않습니다.",
+      response.status,
+    );
+  }
+  return Array.isArray(parsed.data) ? parsed.data : parsed.data.contents;
 }
 
 export type NaverCommerceConfig = {
@@ -82,6 +110,15 @@ export class NaverCommerceClient {
     }
     const response = await this.authorizedFetch(url);
     return parseNaverCommerceCategories(response);
+  }
+
+  async fetchProductModels(name: string, size = 20) {
+    const url = new URL(`${this.config.apiUrl}/v1/product-models`);
+    url.searchParams.set("name", name);
+    url.searchParams.set("page", "1");
+    url.searchParams.set("size", String(size));
+    const response = await this.authorizedFetch(url);
+    return parseNaverCommerceProductModels(response);
   }
 
   private async authorizedFetch(url: URL) {

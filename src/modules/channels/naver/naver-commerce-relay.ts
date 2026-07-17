@@ -2,7 +2,9 @@ import { z } from "zod";
 import {
   NaverCommerceError,
   parseNaverCommerceCategories,
+  parseNaverCommerceProductModels,
   type NaverCommerceCategory,
+  type NaverCommerceProductModel,
 } from "./naver-commerce-client";
 import {
   createNaverRelaySignature,
@@ -20,6 +22,10 @@ export interface NaverCategoriesClient {
   fetchCategories(options?: {
     last?: boolean;
   }): Promise<NaverCommerceCategory[]>;
+  fetchProductModels(
+    name: string,
+    size?: number,
+  ): Promise<NaverCommerceProductModel[]>;
 }
 
 export class NaverCommerceRelayClient implements NaverCategoriesClient {
@@ -43,6 +49,17 @@ export class NaverCommerceRelayClient implements NaverCategoriesClient {
 
     const response = await this.requestWithRetry(url);
     return parseNaverCommerceCategories(response);
+  }
+
+  async fetchProductModels(name: string, size = 20) {
+    const base = this.config.relayUrl.endsWith("/")
+      ? this.config.relayUrl
+      : `${this.config.relayUrl}/`;
+    const url = new URL("v1/product-models", base);
+    url.searchParams.set("name", name);
+    url.searchParams.set("size", String(size));
+    const response = await this.requestWithRetry(url);
+    return parseNaverCommerceProductModels(response);
   }
 
   private async requestWithRetry(url: URL) {
@@ -140,6 +157,10 @@ export class NaverCommerceRelayClient implements NaverCategoriesClient {
 const relayQuerySchema = z.object({
   last: z.enum(["true", "false"]).optional(),
 });
+const relayProductModelQuerySchema = z.object({
+  name: z.string().trim().min(2).max(200),
+  size: z.coerce.number().int().min(1).max(100).default(20),
+});
 
 export type NaverRelayHandlerOptions = {
   sharedSecret: string;
@@ -179,7 +200,10 @@ export function createNaverCommerceRelayHandler(
 
   return async function handle(request: Request) {
     const url = new URL(request.url);
-    if (request.method !== "GET" || url.pathname !== "/v1/categories") {
+    if (
+      request.method !== "GET" ||
+      !["/v1/categories", "/v1/product-models"].includes(url.pathname)
+    ) {
       return relayJson(
         404,
         "relay_route_not_found",
@@ -218,28 +242,13 @@ export function createNaverCommerceRelayHandler(
       );
     }
 
-    const parsedQuery = relayQuerySchema.safeParse({
-      last: url.searchParams.get("last") ?? undefined,
-    });
-    if (
-      !parsedQuery.success ||
-      Array.from(url.searchParams.keys()).some((key) => key !== "last")
-    ) {
-      return relayJson(
-        400,
-        "invalid_request",
-        "요청 조건이 올바르지 않습니다.",
-      );
-    }
-
     try {
-      const categories = await options.client.fetchCategories({
-        last:
-          parsedQuery.data.last === undefined
-            ? undefined
-            : parsedQuery.data.last === "true",
-      });
-      return Response.json(categories, {
+      const result =
+        url.pathname === "/v1/categories"
+          ? await handleCategories(url, options.client)
+          : await handleProductModels(url, options.client);
+      if (result instanceof Response) return result;
+      return Response.json(result, {
         headers: { "cache-control": "no-store" },
       });
     } catch (error) {
@@ -254,6 +263,36 @@ export function createNaverCommerceRelayHandler(
       );
     }
   };
+}
+
+async function handleCategories(url: URL, client: NaverCategoriesClient) {
+  const parsed = relayQuerySchema.safeParse({
+    last: url.searchParams.get("last") ?? undefined,
+  });
+  if (
+    !parsed.success ||
+    Array.from(url.searchParams.keys()).some((key) => key !== "last")
+  )
+    return relayJson(400, "invalid_request", "요청 조건이 올바르지 않습니다.");
+  return client.fetchCategories({
+    last:
+      parsed.data.last === undefined ? undefined : parsed.data.last === "true",
+  });
+}
+
+async function handleProductModels(url: URL, client: NaverCategoriesClient) {
+  const parsed = relayProductModelQuerySchema.safeParse({
+    name: url.searchParams.get("name") ?? undefined,
+    size: url.searchParams.get("size") ?? undefined,
+  });
+  if (
+    !parsed.success ||
+    Array.from(url.searchParams.keys()).some(
+      (key) => !["name", "size"].includes(key),
+    )
+  )
+    return relayJson(400, "invalid_request", "요청 조건이 올바르지 않습니다.");
+  return client.fetchProductModels(parsed.data.name, parsed.data.size);
 }
 
 function relayJson(status: number, code: string, message: string) {

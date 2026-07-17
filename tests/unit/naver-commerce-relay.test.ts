@@ -20,6 +20,14 @@ const categories = [
     last: true,
   },
 ];
+const productModels = [
+  {
+    id: 123,
+    name: "여성 여름 원피스",
+    categoryId: "50000805",
+    wholeCategoryName: "패션의류>여성의류>원피스",
+  },
+];
 
 function json(value: unknown, status = 200) {
   return new Response(JSON.stringify(value), {
@@ -67,7 +75,10 @@ describe("네이버 커머스API 중계 인증", () => {
   });
 
   it("유효한 요청만 허용하고 같은 nonce의 재전송을 거부한다", async () => {
-    const client = { fetchCategories: vi.fn().mockResolvedValue(categories) };
+    const client = {
+      fetchCategories: vi.fn().mockResolvedValue(categories),
+      fetchProductModels: vi.fn().mockResolvedValue(productModels),
+    };
     const handler = createNaverCommerceRelayHandler({
       sharedSecret,
       client,
@@ -89,7 +100,10 @@ describe("네이버 커머스API 중계 인증", () => {
   });
 
   it("서명 시간이 허용 범위를 벗어나면 네이버를 호출하지 않는다", async () => {
-    const client = { fetchCategories: vi.fn() };
+    const client = {
+      fetchCategories: vi.fn(),
+      fetchProductModels: vi.fn(),
+    };
     const handler = createNaverCommerceRelayHandler({
       sharedSecret,
       client,
@@ -99,6 +113,24 @@ describe("네이버 커머스API 중계 인증", () => {
     const response = await handler(await signedRequest());
     expect(response.status).toBe(401);
     expect(client.fetchCategories).not.toHaveBeenCalled();
+  });
+
+  it("상품명 카탈로그 검색 경로만 허용한다", async () => {
+    const client = {
+      fetchCategories: vi.fn(),
+      fetchProductModels: vi.fn().mockResolvedValue(productModels),
+    };
+    const handler = createNaverCommerceRelayHandler({
+      sharedSecret,
+      client,
+      now: () => now,
+    });
+    const path =
+      "/v1/product-models?name=%EC%9B%90%ED%94%BC%EC%8A%A4&size=20";
+    const response = await handler(await signedRequest(path));
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual(productModels);
+    expect(client.fetchProductModels).toHaveBeenCalledWith("원피스", 20);
   });
 });
 
@@ -128,6 +160,29 @@ describe("네이버 커머스API 중계 클라이언트", () => {
       [NAVER_RELAY_HEADERS.nonce]: nonce,
     });
     expect(JSON.stringify(init)).not.toContain("client_secret");
+  });
+
+  it("상품명을 서명된 카탈로그 검색 요청으로 전달한다", async () => {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(json(productModels));
+    const client = new NaverCommerceRelayClient(
+      {
+        relayUrl: "https://relay.example.test",
+        sharedSecret,
+        timeoutMs: 1000,
+      },
+      fetcher,
+      () => now,
+      () => nonce,
+    );
+
+    await expect(client.fetchProductModels("여름 원피스", 20)).resolves.toEqual(
+      productModels,
+    );
+    expect(String(fetcher.mock.calls[0]?.[0])).toContain(
+      "/v1/product-models?name=%EC%97%AC%EB%A6%84+%EC%9B%90%ED%94%BC%EC%8A%A4&size=20",
+    );
   });
 
   it("일시적인 503 응답은 새 서명으로 한 번 재시도한다", async () => {

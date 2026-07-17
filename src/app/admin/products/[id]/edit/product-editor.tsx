@@ -1,13 +1,12 @@
 "use client";
 /* eslint-disable @next/next/no-img-element -- supplier URLs are intentionally loaded directly; no image storage/optimizer proxy */
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { SelectedImage } from "@/lib/db/schema";
 import { OptionEditor } from "./option-editor";
 import { MarginCalculator } from "./margin-calculator";
 import type {
   NaverCategoryOption,
-  ProductEditorCategory,
   ProductEditorInitial,
 } from "./product-editor-types";
 
@@ -15,11 +14,9 @@ type EditorTab = "basic" | "content" | "market";
 
 export function ProductEditor({
   initial,
-  categories,
   onMutated,
 }: {
   initial: ProductEditorInitial;
-  categories: ProductEditorCategory[];
   onMutated?: () => void;
 }) {
   const [form, setForm] = useState(() => fromInitial(initial));
@@ -40,6 +37,9 @@ export function ProductEditor({
       initial.naverCategory ? { ...initial.naverCategory, last: true } : null,
     );
   const [categorySearchStatus, setCategorySearchStatus] = useState("");
+  const [categoryRecommendationStatus, setCategoryRecommendationStatus] =
+    useState("");
+  const autoRecommendationStarted = useRef(false);
   const dirty = JSON.stringify(form) !== baseline;
   const margin = useMemo(
     () =>
@@ -92,6 +92,66 @@ export function ProductEditor({
       controller.abort();
     };
   }, [naverCategorySearch]);
+
+  const recommendNaverCategory = useCallback(async (productName: string) => {
+    const name = productName.trim();
+    if (name.length < 2) {
+      setCategoryRecommendationStatus("상품명을 두 글자 이상 입력해 주세요.");
+      return;
+    }
+    setCategoryRecommendationStatus("상품명으로 카테고리를 찾는 중입니다.");
+    try {
+      const response = await fetch(
+        `/api/integrations/naver/categories/recommend?productName=${encodeURIComponent(name)}`,
+      );
+      const body = await response.json();
+      if (!response.ok)
+        throw new Error(
+          body.error?.message ?? "카테고리를 추천하지 못했습니다.",
+        );
+      const recommendation = body.recommendation as {
+        category: NaverCategoryOption;
+        source: string;
+      } | null;
+      if (!recommendation) {
+        setCategoryRecommendationStatus(
+          "자동 추천 결과가 없습니다. 직접 검색해 주세요.",
+        );
+        return;
+      }
+      setSelectedNaverCategory(recommendation.category);
+      setForm((current) => ({
+        ...current,
+        naverCategoryId: recommendation.category.id,
+      }));
+      setCategoryRecommendationStatus(
+        recommendation.source === "naver_catalog"
+          ? "네이버 카탈로그를 기준으로 자동 적용했습니다."
+          : "동기화된 카테고리를 기준으로 자동 적용했습니다.",
+      );
+    } catch (error) {
+      setCategoryRecommendationStatus(
+        error instanceof Error
+          ? error.message
+          : "카테고리를 추천하지 못했습니다.",
+      );
+    }
+  }, []);
+
+  useEffect(() => {
+    if (
+      autoRecommendationStarted.current ||
+      initial.product.naverCategoryId ||
+      initial.product.title.trim().length < 2
+    )
+      return;
+    autoRecommendationStarted.current = true;
+    void recommendNaverCategory(initial.product.title);
+  }, [
+    initial.product.naverCategoryId,
+    initial.product.title,
+    recommendNaverCategory,
+  ]);
 
   async function submit(action: "draft" | "ready" | "revert-to-draft") {
     setSaving(true);
@@ -192,7 +252,6 @@ export function ProductEditor({
     (image) => image.enabled,
   ).length;
   const marketChecks = [
-    { label: "내부 카테고리 지정", done: Boolean(form.categoryId) },
     {
       label: "네이버 최종 카테고리 지정",
       done: Boolean(form.naverCategoryId),
@@ -271,28 +330,96 @@ export function ProductEditor({
                   <p>마켓에 노출될 기본 판매 정보를 입력합니다.</p>
                 </div>
               </div>
-              <label>
-                카테고리
-                <select
-                  value={form.categoryId ?? ""}
-                  onChange={(event) =>
-                    setForm({ ...form, categoryId: event.target.value || null })
-                  }
-                >
-                  <option value="">카테고리를 선택하세요</option>
-                  {categories.map((category) => (
-                    <option key={category.id} value={category.id}>
-                      {category.name}
-                    </option>
-                  ))}
-                </select>
-                {!categories.length && (
-                  <small>
-                    등록된 내부 카테고리가 없습니다. 카테고리 관리 기능은 추후
-                    연결됩니다.
+              <div className="drawer-naver-category">
+                <div className="drawer-naver-category-heading">
+                  <label htmlFor="naver-category-search">네이버 카테고리</label>
+                  <button
+                    type="button"
+                    disabled={form.title.trim().length < 2}
+                    onClick={() => void recommendNaverCategory(form.title)}
+                  >
+                    상품명으로 자동 추천
+                  </button>
+                </div>
+                {form.naverCategoryId &&
+                (selectedNaverCategory?.id === form.naverCategoryId ||
+                  initial.naverCategory?.id === form.naverCategoryId) ? (
+                  <div className="drawer-naver-category-selected">
+                    <div>
+                      <strong>
+                        {selectedNaverCategory?.id === form.naverCategoryId
+                          ? selectedNaverCategory.name
+                          : initial.naverCategory?.name}
+                      </strong>
+                      <span>
+                        {selectedNaverCategory?.id === form.naverCategoryId
+                          ? selectedNaverCategory.wholeCategoryName
+                          : initial.naverCategory?.wholeCategoryName}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      aria-label="네이버 카테고리 선택 해제"
+                      title="선택 해제"
+                      onClick={() => {
+                        setForm({ ...form, naverCategoryId: null });
+                        setSelectedNaverCategory(null);
+                        setCategoryRecommendationStatus("");
+                      }}
+                    >
+                      ×
+                    </button>
+                  </div>
+                ) : null}
+                <input
+                  id="naver-category-search"
+                  type="search"
+                  value={naverCategorySearch}
+                  placeholder="카테고리명 직접 검색"
+                  autoComplete="off"
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    setNaverCategorySearch(value);
+                    if (value.trim().length < 2) {
+                      setNaverCategoryResults([]);
+                      setCategorySearchStatus("");
+                    }
+                  }}
+                />
+                {categoryRecommendationStatus && (
+                  <small>{categoryRecommendationStatus}</small>
+                )}
+                {categorySearchStatus && <small>{categorySearchStatus}</small>}
+                {naverCategoryResults.length > 0 && (
+                  <div className="drawer-naver-category-results" role="listbox">
+                    {naverCategoryResults.map((category) => (
+                      <button
+                        type="button"
+                        role="option"
+                        aria-selected={form.naverCategoryId === category.id}
+                        key={category.id}
+                        onClick={() => {
+                          setForm({ ...form, naverCategoryId: category.id });
+                          setSelectedNaverCategory(category);
+                          setNaverCategorySearch("");
+                          setNaverCategoryResults([]);
+                          setCategoryRecommendationStatus(
+                            "직접 선택한 카테고리를 적용했습니다.",
+                          );
+                        }}
+                      >
+                        <strong>{category.name}</strong>
+                        <span>{category.wholeCategoryName}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {errors.naverCategoryId && (
+                  <small className="field-error">
+                    {errors.naverCategoryId}
                   </small>
                 )}
-              </label>
+              </div>
               <label>
                 판매용 상품명
                 <input
@@ -301,6 +428,10 @@ export function ProductEditor({
                   onChange={(event) =>
                     setForm({ ...form, title: event.target.value })
                   }
+                  onBlur={() => {
+                    if (!form.naverCategoryId)
+                      void recommendNaverCategory(form.title);
+                  }}
                 />
                 <small>
                   {form.title.length}/200자 · 원본:{" "}
@@ -485,80 +616,6 @@ export function ProductEditor({
               필수 정보를 모두 작성하면 스마트스토어 등록 준비를 완료할 수
               있습니다.
             </p>
-            <div className="drawer-naver-category">
-              <label htmlFor="naver-category-search">
-                네이버 최종 카테고리
-              </label>
-              {form.naverCategoryId &&
-              (selectedNaverCategory?.id === form.naverCategoryId ||
-                initial.naverCategory?.id === form.naverCategoryId) ? (
-                <div className="drawer-naver-category-selected">
-                  <div>
-                    <strong>
-                      {selectedNaverCategory?.id === form.naverCategoryId
-                        ? selectedNaverCategory.name
-                        : initial.naverCategory?.name}
-                    </strong>
-                    <span>
-                      {selectedNaverCategory?.id === form.naverCategoryId
-                        ? selectedNaverCategory.wholeCategoryName
-                        : initial.naverCategory?.wholeCategoryName}
-                    </span>
-                  </div>
-                  <button
-                    type="button"
-                    aria-label="네이버 카테고리 선택 해제"
-                    title="선택 해제"
-                    onClick={() => {
-                      setForm({ ...form, naverCategoryId: null });
-                      setSelectedNaverCategory(null);
-                    }}
-                  >
-                    ×
-                  </button>
-                </div>
-              ) : null}
-              <input
-                id="naver-category-search"
-                type="search"
-                value={naverCategorySearch}
-                placeholder="상품 종류를 2자 이상 입력"
-                autoComplete="off"
-                onChange={(event) => {
-                  const value = event.target.value;
-                  setNaverCategorySearch(value);
-                  if (value.trim().length < 2) {
-                    setNaverCategoryResults([]);
-                    setCategorySearchStatus("");
-                  }
-                }}
-              />
-              {categorySearchStatus && <small>{categorySearchStatus}</small>}
-              {naverCategoryResults.length > 0 && (
-                <div className="drawer-naver-category-results" role="listbox">
-                  {naverCategoryResults.map((category) => (
-                    <button
-                      type="button"
-                      role="option"
-                      aria-selected={form.naverCategoryId === category.id}
-                      key={category.id}
-                      onClick={() => {
-                        setForm({ ...form, naverCategoryId: category.id });
-                        setSelectedNaverCategory(category);
-                        setNaverCategorySearch("");
-                        setNaverCategoryResults([]);
-                      }}
-                    >
-                      <strong>{category.name}</strong>
-                      <span>{category.wholeCategoryName}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-              {errors.naverCategoryId && (
-                <small className="field-error">{errors.naverCategoryId}</small>
-              )}
-            </div>
             <div className="drawer-market-checks">
               {marketChecks.map((check) => (
                 <div key={check.label} className={check.done ? "done" : ""}>
