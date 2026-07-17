@@ -115,6 +115,7 @@ export class ProductEditRepository {
         id: products.id,
         status: products.status,
         title: products.title,
+        draftVersion: products.draftVersion,
         sellingPrice: products.sellingPrice,
         selectedImages: products.selectedImages,
         categoryId: products.categoryId,

@@ -4,6 +4,16 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 type SyncMode = "all" | "changes";
+type ProtectedField = "title" | "description" | "images" | "options";
+const protectedFieldOptions: Array<{
+  value: ProtectedField;
+  label: string;
+}> = [
+  { value: "title", label: "상품명" },
+  { value: "description", label: "상세설명" },
+  { value: "images", label: "이미지" },
+  { value: "options", label: "옵션" },
+];
 type SyncJob = {
   id: string;
   type: SyncMode;
@@ -32,6 +42,10 @@ export function ProductSyncControl({
   const [job, setJob] = useState<SyncJob | null>(null);
   const [requesting, setRequesting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [configuring, setConfiguring] = useState(false);
+  const [protectedFields, setProtectedFields] = useState<ProtectedField[]>(
+    protectedFieldOptions.map((field) => field.value),
+  );
   const wasActive = useRef(false);
 
   const refresh = useCallback(async () => {
@@ -66,13 +80,14 @@ export function ProductSyncControl({
       const response = await fetch("/api/suppliers/dome/products/sync", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ mode }),
+        body: JSON.stringify({ mode, protectedFields }),
       });
       const body = await response.json().catch(() => null);
       if (!response.ok) {
         throw new Error(body?.error?.message ?? "작업을 시작하지 못했습니다.");
       }
       setJob(body.job);
+      setConfiguring(false);
       wasActive.current = true;
     } catch (caught) {
       setError(
@@ -86,6 +101,10 @@ export function ProductSyncControl({
   }
 
   const active = job?.status === "queued" || job?.status === "running";
+  const percentage =
+    job && job.total > 0
+      ? Math.min(100, Math.round((job.processed / job.total) * 100))
+      : 0;
   const buttonLabel =
     mode === "all"
       ? active
@@ -100,12 +119,43 @@ export function ProductSyncControl({
       <button
         type="button"
         className={variant === "inventory" ? "inventory-primary-button" : ""}
-        onClick={start}
+        onClick={() =>
+          mode === "changes" && !active
+            ? setConfiguring((current) => !current)
+            : void start()
+        }
         disabled={requesting || active}
       >
         <SyncIcon />
         {requesting ? "작업 요청 중…" : buttonLabel}
       </button>
+      {mode === "changes" && configuring && !active && (
+        <div className="product-sync-settings">
+          <strong>변경하지 않을 항목</strong>
+          <div className="product-sync-field-grid">
+            {protectedFieldOptions.map((field) => (
+              <label key={field.value}>
+                <input
+                  type="checkbox"
+                  checked={protectedFields.includes(field.value)}
+                  onChange={(event) =>
+                    setProtectedFields((current) =>
+                      event.target.checked
+                        ? [...current, field.value]
+                        : current.filter((value) => value !== field.value),
+                    )
+                  }
+                />
+                {field.label}
+              </label>
+            ))}
+          </div>
+          <small>체크를 해제한 항목만 공급처 최신값으로 갱신됩니다.</small>
+          <button type="button" onClick={() => void start()} disabled={requesting}>
+            변동처리 시작
+          </button>
+        </div>
+      )}
       {(job || error) && (
         <div className="product-sync-status" aria-live="polite">
           {error ? (
@@ -114,8 +164,18 @@ export function ProductSyncControl({
             <>
               <strong>{jobTitle(job)}</strong>
               <span>{jobStatus(job)}</span>
-              {job.status === "running" && job.total > 0 && (
-                <progress value={job.processed} max={job.total} />
+              {active && (
+                <div className="product-sync-progress">
+                  <progress
+                    value={job.total > 0 ? job.processed : undefined}
+                    max={job.total > 0 ? job.total : undefined}
+                  />
+                  <small>
+                    {job.total > 0
+                      ? `${percentage}% · ${job.processed.toLocaleString("ko-KR")} / ${job.total.toLocaleString("ko-KR")}개`
+                      : "처리할 상품을 조회하고 있습니다."}
+                  </small>
+                </div>
               )}
               {job.status === "succeeded" && (
                 <small>

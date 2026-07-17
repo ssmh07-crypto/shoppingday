@@ -3,7 +3,10 @@ import type { ApiCallLogRepository } from "@/modules/audit/api-call-log-reposito
 import { logger } from "@/lib/logging/logger";
 import type { SupplierAdapter } from "@/modules/suppliers/core/supplier-adapter";
 import { SupplierError } from "@/modules/suppliers/core/supplier-errors";
-import type { ProductRepository } from "./product-repository";
+import type {
+  ProductRepository,
+  SupplierEditableField,
+} from "./product-repository";
 import { supplierProductChanged } from "./product-domain";
 import type { SupplierProductsQuery } from "@/modules/suppliers/core/types";
 
@@ -111,6 +114,7 @@ export class ProductImportService {
   async importAll(
     actorId: string,
     onProgress?: (progress: ImportAllProductsProgress) => void | Promise<void>,
+    protectedFields?: SupplierEditableField[],
   ): Promise<ImportAllProductsResult> {
     await this.assertDailyLimit();
     const requestId = randomUUID();
@@ -138,11 +142,18 @@ export class ProductImportService {
           await this.products.importSupplierProduct(product, actorId);
           created += 1;
         } else if (supplierProductChanged(current.supplierProduct, product)) {
-          await this.products.updateSupplierProduct(
-            current.supplierProductId,
-            product,
-            current,
-          );
+          await (protectedFields
+            ? this.products.updateSupplierProduct(
+                current.supplierProductId,
+                product,
+                current,
+                { protectedFields },
+              )
+            : this.products.updateSupplierProduct(
+                current.supplierProductId,
+                product,
+                current,
+              ));
           updated += 1;
         } else {
           unchanged += 1;
@@ -204,6 +215,7 @@ export class ProductImportService {
     actorId: string,
     dates: { from: string; to: string },
     onProgress?: (progress: SyncProductsProgress) => void | Promise<void>,
+    protectedFields?: SupplierEditableField[],
   ): Promise<SyncProductsResult> {
     await this.assertDailyLimit(2);
     const opened = await this.fetchProductsForSync(
@@ -237,11 +249,18 @@ export class ProductImportService {
         await this.products.importSupplierProduct(product, actorId);
         created += 1;
       } else if (supplierProductChanged(current.supplierProduct, product)) {
-        await this.products.updateSupplierProduct(
-          current.supplierProductId,
-          product,
-          current,
-        );
+        await (protectedFields
+          ? this.products.updateSupplierProduct(
+              current.supplierProductId,
+              product,
+              current,
+              { protectedFields },
+            )
+          : this.products.updateSupplierProduct(
+              current.supplierProductId,
+              product,
+              current,
+            ));
         updated += 1;
       } else {
         unchanged += 1;

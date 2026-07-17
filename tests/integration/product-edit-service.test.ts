@@ -98,6 +98,31 @@ describe("상품 편집 서비스", () => {
       code: "product_conflict",
     });
   });
+  it("목록 인라인 편집은 상품명만 변경하고 기존 편집값을 보존한다", async () => {
+    const { service, repo } = setup();
+
+    await service.saveTitle("p1", "u1", {
+      draftVersion: 1,
+      title: "목록에서 변경한 상품명",
+    });
+
+    expect(repo.save).toHaveBeenCalledWith(
+      "p1",
+      "u1",
+      expect.objectContaining({
+        title: "목록에서 변경한 상품명",
+        description: product.description,
+        naverCategoryId: product.naverCategoryId,
+        selectedImages: product.selectedImages,
+        editedOptions: product.editedOptions,
+      }),
+      "editing",
+      ["title"],
+      "product_title_saved",
+      {},
+      null,
+    );
+  });
   it("최종 카테고리가 아니면 사용자 입력 오류로 변환한다", async () => {
     const { service } = setup({ kind: "invalid_naver_category" });
     await expect(service.saveDraft("p1", "u1", draft)).rejects.toMatchObject({

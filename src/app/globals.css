@@ -642,6 +642,53 @@ td small {
   margin: 0;
   padding: 8px;
 }
+.product-sync-settings {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  z-index: 30;
+  width: min(320px, calc(100vw - 32px));
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid #d5dbe6;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 16px 40px #18233c2b;
+}
+.product-sync-settings > strong {
+  color: var(--inv-text, #172033);
+  font-size: 13px;
+}
+.product-sync-settings > small {
+  color: #687387;
+  font-size: 11px;
+  line-height: 1.5;
+}
+.product-sync-settings > button {
+  min-height: 36px;
+  border: 0;
+  border-radius: 6px;
+  background: var(--inv-primary, #2457d6);
+  color: #fff;
+  font-weight: 700;
+}
+.product-sync-field-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 9px;
+}
+.product-sync-field-grid label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: #364155;
+  font-size: 12px;
+}
+.product-sync-progress {
+  display: grid;
+  gap: 5px;
+}
 .inventory-stats {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -810,18 +857,58 @@ td small {
   min-width: 250px;
   max-width: 360px;
 }
-.inventory-product-name > a {
+.inventory-inline-title-trigger {
   display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
   overflow: hidden;
   color: var(--inv-text);
   font-size: 13px;
   font-weight: 750;
+  text-align: left;
   text-overflow: ellipsis;
   white-space: nowrap;
+  cursor: text;
 }
-.inventory-product-name > a:hover {
+.inventory-inline-title-trigger:hover {
   color: var(--inv-primary);
   text-decoration: underline;
+}
+.inventory-inline-title-editor {
+  display: grid;
+  gap: 5px;
+  min-width: 260px;
+}
+.inventory-inline-title-editor input {
+  width: 100%;
+  min-height: 34px;
+  padding: 6px 8px;
+  border: 1px solid #8098d6;
+  border-radius: 5px;
+  font: inherit;
+}
+.inventory-inline-title-editor > div {
+  display: flex;
+  gap: 5px;
+}
+.inventory-inline-title-editor button {
+  min-height: 28px;
+  padding: 0 9px;
+  border: 1px solid #ccd4e2;
+  border-radius: 5px;
+  background: #fff;
+  color: #40506a;
+  font-size: 11px;
+  font-weight: 700;
+}
+.inventory-product-number code {
+  color: #526075;
+  font-family: inherit;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 .inventory-product-name span,
 .inventory-product-name code {
