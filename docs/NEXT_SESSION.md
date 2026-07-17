@@ -1,6 +1,6 @@
 # 다음 Codex 세션 인수인계
 
-마지막 갱신: 2026-07-17 (KST)
+마지막 갱신: 2026-07-18 (KST)
 
 이 문서는 대화 세션이 종료되거나 Codespace가 재시작된 뒤 작업을 이어가기 위한 기준 문서다. 인증정보와 Secret 값은 절대 이 문서에 기록하지 않는다.
 
@@ -185,5 +185,55 @@ npm run cf:deploy -- --dry-run
 - 속성값 ID가 없는 임의 속성, 불완전한 옵션 조합, 단일 재고·배송·A/S·원산지·상품정보제공고시·세금·채널 정책 누락은 경로별 발행 오류로 반환한다.
 - payload의 객체 키를 정렬한 뒤 SHA-256 해시를 생성해 향후 `product_publications.last_payload_hash`와 중복 등록 방지에 사용한다.
 - 실제 네이버 등록 호출은 아직 비활성 상태다. 다음 작업은 발행 정책 저장 모델과 입력 UI, 이미지 업로드 릴레이, `product_publications` 테이블을 추가한 뒤 관리자 확인을 거쳐 POST를 호출하는 것이다.
+
+## 2026-07-18 세션 종료 상태
+
+- 운영 브랜치: `main`
+- 마지막 병합 커밋: `ed9eacc` (`Add Naver v2 product payload builder (#16)`)
+- PR #16 병합과 Cloudflare Workers `main` 배포가 성공했다.
+- 운영 URL `https://shoppingday.ssmh07.workers.dev/`에서 HTTP 200을 확인했다.
+- 검증 결과: TypeScript, ESLint, 전체 18개 파일 97개 테스트, Next.js build, OpenNext Cloudflare build 모두 통과했다.
+- Workers dry-run 크기: gzip 약 629.49 KiB로 무료 플랜 3 MiB 한도 아래다.
+- 로컬 PC 릴레이와 Quick Tunnel은 기존 방식으로 계속 실행한다. 릴레이 실행 코드는 이번 PR에서 바뀌지 않았으므로 재시작하지 않았다.
+- 작업 트리는 문서 인수인계 커밋 병합 후 `main`과 `origin/main`이 일치해야 한다.
+
+### 다음 세션 시작 확인
+
+```powershell
+cd C:\Users\ssmh0\shoppingday
+git switch main
+git pull --ff-only origin main
+git status --short --branch
+npm run typecheck
+
+Get-CimInstance Win32_Process |
+  Where-Object { $_.CommandLine -match 'start-local-naver-tunnel|naver-commerce-relay|cloudflared' } |
+  Select-Object ProcessId, ParentProcessId, Name, CommandLine
+
+Invoke-RestMethod http://127.0.0.1:8788/healthz
+```
+
+릴레이가 실행 중이지 않으면 새 PowerShell 창에서 다음을 실행하고 창을 유지한다.
+
+```powershell
+npm run naver:local-tunnel
+```
+
+### 다음 구현 순서
+
+1. 판매 채널 기본 정책과 상품별 덮어쓰기 모델을 설계한다. 최소 필드는 단일상품 재고, 배송 정책, A/S 연락처·안내, 원산지, 상품정보제공고시, 부가가치세 유형, 미성년자 구매 가능 여부, 네이버 쇼핑 등록 여부, 채널 전시 상태다.
+2. 상품정보제공고시 목록·단건 조회 API를 제한형 릴레이에 추가하고, 카테고리에 맞는 고시 상품군 및 필수 항목 입력 UI를 스마트스토어 탭에 만든다.
+3. 네이버 이미지 업로드 API용 multipart 릴레이를 구현한다. 파일 개수 최대 10개, MIME·확장자·크기 제한, 타임아웃을 검증하고 반환 URL을 `selectedImages.storedUrl`에 저장한다.
+4. `product_publications` 테이블에 상품 ID, 채널, 원상품번호, 채널상품번호, 발행 상태, 마지막 payload hash, 최근 오류, 마지막 동기화 시각을 저장한다. 상품·채널 유일 제약으로 중복 등록을 방지한다.
+5. `naver-product-payload.ts`를 발행 서비스에 연결하고 관리자 최종 확인 후에만 `POST /v2/products`를 호출한다. 성공 응답의 원상품번호와 채널상품번호를 같은 트랜잭션 경계에서 보관한다.
+6. 등록 실패는 입력 오류와 일시 장애를 구분한다. 입력 오류는 자동 재시도하지 않고, 500·502·503·504만 제한적으로 백오프 재시도한다.
+
+### 반드시 확인할 제한사항
+
+- 현재 변환기는 `attributeValueSeq`가 없는 임의 범위 속성을 발행 거부한다. 네이버 공식 v2 스키마에서 `attributeValueSeq`가 필수이므로, 실제 API에 임의 범위값을 보낼 수 있는 별도 규칙이 확인되기 전에는 `0` 같은 값을 임의로 넣지 않는다.
+- `deliveryInfo`와 상품정보제공고시는 아직 JSON 저장 모델과 UI가 없다. 임의 기본값으로 실제 상품을 등록하지 않는다.
+- 외부 공급처 이미지 URL은 v2 상품 본문에 직접 사용할 수 없다. 반드시 네이버 이미지 업로드 API가 반환한 URL만 `storedUrl`로 사용한다.
+- 실제 등록 버튼을 만들기 전에 `product_publications`의 유일 제약, payload hash 비교, 관리자 확인창, 감사 로그를 먼저 구현한다.
+- Quick Tunnel URL은 재실행할 때 바뀐다. `npm run naver:local-tunnel`이 Worker의 `NAVER_COMMERCE_RELAY_URL_OVERRIDE` Secret을 갱신한다.
 
 배포 전에 dry-run 결과의 gzip 크기가 Cloudflare 무료 플랜 3 MiB 아래인지 확인한다.
