@@ -3,10 +3,14 @@ import {
   NaverCommerceError,
   parseNaverCommerceCategories,
   parseNaverCommerceProductAttributes,
+  parseNaverCommerceProductAttributeUnits,
+  parseNaverCommerceProductAttributeValues,
   parseNaverCommerceProductModels,
   parseNaverCommerceStandardOptions,
   type NaverCommerceCategory,
   type NaverCommerceProductAttribute,
+  type NaverCommerceProductAttributeUnit,
+  type NaverCommerceProductAttributeValue,
   type NaverCommerceProductModel,
   type NaverCommerceStandardOptions,
 } from "./naver-commerce-client";
@@ -33,6 +37,10 @@ export interface NaverCategoriesClient {
   fetchProductAttributes(
     categoryId: string,
   ): Promise<NaverCommerceProductAttribute[]>;
+  fetchProductAttributeValues(
+    categoryId: string,
+  ): Promise<NaverCommerceProductAttributeValue[]>;
+  fetchProductAttributeUnits(): Promise<NaverCommerceProductAttributeUnit[]>;
   fetchStandardOptions(
     categoryId: string,
   ): Promise<NaverCommerceStandardOptions>;
@@ -70,6 +78,21 @@ export class NaverCommerceRelayClient implements NaverCategoriesClient {
     const url = this.relayUrl("v1/product-attributes/attributes");
     url.searchParams.set("categoryId", categoryId);
     return parseNaverCommerceProductAttributes(
+      await this.requestWithRetry(url),
+    );
+  }
+
+  async fetchProductAttributeValues(categoryId: string) {
+    const url = this.relayUrl("v1/product-attributes/attribute-values");
+    url.searchParams.set("categoryId", categoryId);
+    return parseNaverCommerceProductAttributeValues(
+      await this.requestWithRetry(url),
+    );
+  }
+
+  async fetchProductAttributeUnits() {
+    const url = this.relayUrl("v1/product-attributes/attribute-value-units");
+    return parseNaverCommerceProductAttributeUnits(
       await this.requestWithRetry(url),
     );
   }
@@ -194,6 +217,8 @@ const RELAY_PATHS = [
   "/v1/categories",
   "/v1/product-models",
   "/v1/product-attributes/attributes",
+  "/v1/product-attributes/attribute-values",
+  "/v1/product-attributes/attribute-value-units",
   "/v1/options/standard-options",
 ] as const;
 
@@ -301,11 +326,23 @@ async function handleRelayRequest(url: URL, client: NaverCategoriesClient) {
   if (url.pathname === "/v1/categories") return handleCategories(url, client);
   if (url.pathname === "/v1/product-models")
     return handleProductModels(url, client);
+  if (url.pathname === "/v1/product-attributes/attribute-value-units") {
+    if (url.search) {
+      return relayJson(
+        400,
+        "invalid_request",
+        "단위 조회에는 검색 조건을 사용할 수 없습니다.",
+      );
+    }
+    return client.fetchProductAttributeUnits();
+  }
   const categoryId = parseCategoryMetadataQuery(url);
   if (categoryId instanceof Response) return categoryId;
-  return url.pathname === "/v1/product-attributes/attributes"
-    ? client.fetchProductAttributes(categoryId)
-    : client.fetchStandardOptions(categoryId);
+  if (url.pathname === "/v1/product-attributes/attributes")
+    return client.fetchProductAttributes(categoryId);
+  if (url.pathname === "/v1/product-attributes/attribute-values")
+    return client.fetchProductAttributeValues(categoryId);
+  return client.fetchStandardOptions(categoryId);
 }
 
 function parseCategoryMetadataQuery(url: URL) {

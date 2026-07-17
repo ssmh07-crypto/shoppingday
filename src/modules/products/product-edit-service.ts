@@ -15,8 +15,21 @@ import {
 } from "./product-errors";
 import type { ProductEditRepository } from "./product-edit-repository";
 
+export interface NaverRequirementLoader {
+  get(categoryId: string): Promise<{
+    requiredAttributes: Array<{ attributeSeq: number; attributeName: string }>;
+    attributeValues: Array<{
+      attributeSeq: number;
+      attributeValueSeq: number;
+    }>;
+  }>;
+}
+
 export class ProductEditService {
-  constructor(private repo: ProductEditRepository) {}
+  constructor(
+    private repo: ProductEditRepository,
+    private readonly naverRequirements?: NaverRequirementLoader,
+  ) {}
   list(
     ownerId: string,
     input: {
@@ -46,8 +59,11 @@ export class ProductEditService {
     return this.repo.categories();
   }
   async saveDraft(id: string, ownerId: string, raw: unknown) {
-    const input = draftInputSchema.parse(raw);
+    let input = draftInputSchema.parse(raw);
     const current = await this.get(id, ownerId);
+    if (current.product.naverCategoryId !== input.naverCategoryId) {
+      input = { ...input, naverAttributes: [] };
+    }
     const changed = changedFields(current.product, input);
     const status = statusAfterSave(current.product.status, changed);
     return this.handle(
@@ -79,6 +95,7 @@ export class ProductEditService {
       naverCategoryId: current.product.naverCategoryId,
       selectedImages: current.product.selectedImages,
       editedOptions: current.product.editedOptions,
+      naverAttributes: current.product.naverAttributes,
     };
     const status = statusAfterSave(current.product.status, ["title"]);
     return this.handle(
@@ -97,6 +114,35 @@ export class ProductEditService {
   async markReady(id: string, ownerId: string, raw: unknown) {
     const input = draftInputSchema.parse(raw);
     const errors = readyErrors(input);
+    if (input.naverCategoryId && this.naverRequirements) {
+      try {
+        const requirements = await this.naverRequirements.get(
+          input.naverCategoryId,
+        );
+        const missing = requirements.requiredAttributes.filter((attribute) => {
+          const selected = input.naverAttributes.filter(
+            (value) => value.attributeSeq === attribute.attributeSeq,
+          );
+          const candidates = requirements.attributeValues.filter(
+            (value) => value.attributeSeq === attribute.attributeSeq,
+          );
+          return candidates.length
+            ? !selected.some((value) =>
+                candidates.some(
+                  (candidate) =>
+                    candidate.attributeValueSeq === value.attributeValueSeq,
+                ),
+              )
+            : !selected.some((value) => value.minValue || value.maxValue);
+        });
+        if (missing.length) {
+          errors.naverAttributes = `필수 네이버 속성을 입력해 주세요: ${missing.map((item) => item.attributeName).join(", ")}`;
+        }
+      } catch {
+        errors.naverAttributes =
+          "네이버 카테고리 필수 속성을 확인하지 못했습니다. 릴레이 연결 후 다시 시도해 주세요.";
+      }
+    }
     if (Object.keys(errors).length) throw new ProductValidationError(errors);
     const current = await this.get(id, ownerId);
     return this.handle(
@@ -168,6 +214,7 @@ function changedFields(
       "naverCategoryId",
       "selectedImages",
       "editedOptions",
+      "naverAttributes",
     ] as const
   ).filter(
     (key) => JSON.stringify(product[key]) !== JSON.stringify(input[key]),

@@ -19,6 +19,7 @@ const product = {
   naverCategoryId: "50000000",
   selectedImages: imagesFromSupplier(["https://example.test/a.jpg"]),
   editedOptions: { groups: [], combinations: [] },
+  naverAttributes: [],
   draftVersion: 1,
   validationErrors: {},
   readyAt: null,
@@ -55,11 +56,24 @@ const draft = {
   naverCategoryId: "50000000",
   selectedImages: product.selectedImages,
   editedOptions: product.editedOptions,
+  naverAttributes: product.naverAttributes,
 };
 function setup(
   result: unknown = {
     kind: "ok",
     product: { ...product, draftVersion: 2, status: "editing" },
+  },
+  requirements?: {
+    get(categoryId: string): Promise<{
+      requiredAttributes: Array<{
+        attributeSeq: number;
+        attributeName: string;
+      }>;
+      attributeValues: Array<{
+        attributeSeq: number;
+        attributeValueSeq: number;
+      }>;
+    }>;
   },
 ) {
   const repo = {
@@ -70,7 +84,10 @@ function setup(
     reset: vi.fn(),
   };
   return {
-    service: new ProductEditService(repo as unknown as ProductEditRepository),
+    service: new ProductEditService(
+      repo as unknown as ProductEditRepository,
+      requirements,
+    ),
     repo,
   };
 }
@@ -136,6 +153,63 @@ describe("상품 편집 서비스", () => {
       service.markReady("p1", "u1", { ...draft, title: "" }),
     ).rejects.toMatchObject({ code: "product_validation" });
     expect(repo.save).not.toHaveBeenCalled();
+  });
+  it("카테고리를 바꾸면 이전 네이버 속성값을 제거한다", async () => {
+    const { service, repo } = setup();
+    await service.saveDraft("p1", "u1", {
+      ...draft,
+      naverCategoryId: "50000001",
+      naverAttributes: [
+        {
+          attributeSeq: 10,
+          attributeValueSeq: 100,
+          minValue: "빨강",
+          maxValue: "",
+          unitCode: null,
+        },
+      ],
+    });
+    expect(repo.save).toHaveBeenCalledWith(
+      "p1",
+      "u1",
+      expect.objectContaining({ naverAttributes: [] }),
+      expect.any(String),
+      expect.any(Array),
+      expect.any(String),
+      {},
+      null,
+    );
+  });
+  it("필수 네이버 속성이 빠지면 등록 준비를 거부한다", async () => {
+    const requirements = {
+      get: vi.fn().mockResolvedValue({
+        requiredAttributes: [{ attributeSeq: 10, attributeName: "색상" }],
+        attributeValues: [{ attributeSeq: 10, attributeValueSeq: 100 }],
+      }),
+    };
+    const { service, repo } = setup(undefined, requirements);
+    const selection = {
+      attributeSeq: 10,
+      attributeValueSeq: 999,
+      minValue: "오래된 값",
+      maxValue: "",
+      unitCode: null,
+    };
+    await expect(
+      service.markReady("p1", "u1", {
+        ...draft,
+        naverAttributes: [selection],
+      }),
+    ).rejects.toMatchObject({
+      code: "product_validation",
+      errors: { naverAttributes: expect.stringContaining("색상") },
+    });
+    expect(repo.save).not.toHaveBeenCalled();
+    await service.markReady("p1", "u1", {
+      ...draft,
+      naverAttributes: [{ ...selection, attributeValueSeq: 100 }],
+    });
+    expect(repo.save).toHaveBeenCalledTimes(1);
   });
   it("ready 검증 성공 시 ready 상태와 감사 action을 저장 계층에 전달한다", async () => {
     const { service, repo } = setup({

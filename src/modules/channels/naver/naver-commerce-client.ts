@@ -43,6 +43,23 @@ const productAttributeSchema = z.object({
 });
 const productAttributesSchema = z.array(productAttributeSchema);
 
+const productAttributeValueSchema = z.object({
+  attributeSeq: z.number().int(),
+  attributeValueSeq: z.number().int(),
+  minAttributeValue: z.string().optional(),
+  minAttributeValueUnitCode: z.string().optional(),
+  maxAttributeValue: z.string().optional(),
+  maxAttributeValueUnitCode: z.string().optional(),
+  exposureOrder: z.number().int().optional(),
+});
+const productAttributeValuesSchema = z.array(productAttributeValueSchema);
+
+const productAttributeUnitSchema = z.object({
+  id: z.string().min(1),
+  unitCodeName: z.string().min(1),
+});
+const productAttributeUnitsSchema = z.array(productAttributeUnitSchema);
+
 const standardOptionGroupSchema = z.object({
   attributeId: z.number().int().optional(),
   attributeName: z.string().min(1),
@@ -60,6 +77,12 @@ export type NaverCommerceCategory = z.infer<typeof categorySchema>;
 export type NaverCommerceProductModel = z.infer<typeof productModelSchema>;
 export type NaverCommerceProductAttribute = z.infer<
   typeof productAttributeSchema
+>;
+export type NaverCommerceProductAttributeValue = z.infer<
+  typeof productAttributeValueSchema
+>;
+export type NaverCommerceProductAttributeUnit = z.infer<
+  typeof productAttributeUnitSchema
 >;
 export type NaverCommerceStandardOptions = z.infer<
   typeof standardOptionsSchema
@@ -98,6 +121,26 @@ export async function parseNaverCommerceProductAttributes(response: Response) {
     response,
     productAttributesSchema,
     "네이버 카테고리 속성 응답 형식이 올바르지 않습니다.",
+  );
+}
+
+export async function parseNaverCommerceProductAttributeValues(
+  response: Response,
+) {
+  return parseResponse(
+    response,
+    productAttributeValuesSchema,
+    "네이버 카테고리 속성값 응답 형식이 올바르지 않습니다.",
+  );
+}
+
+export async function parseNaverCommerceProductAttributeUnits(
+  response: Response,
+) {
+  return parseResponse(
+    response,
+    productAttributeUnitsSchema,
+    "네이버 속성값 단위 응답 형식이 올바르지 않습니다.",
   );
 }
 
@@ -179,6 +222,25 @@ export class NaverCommerceClient {
     const response = await this.authorizedFetch(url, { allowNotFound: true });
     if (response.status === 404) return [];
     return parseNaverCommerceProductAttributes(response);
+  }
+
+  async fetchProductAttributeValues(categoryId: string) {
+    const url = new URL(
+      `${this.config.apiUrl}/v1/product-attributes/attribute-values`,
+    );
+    url.searchParams.set("categoryId", categoryId);
+    const response = await this.authorizedFetch(url, { allowNotFound: true });
+    if (response.status === 404) return [];
+    return parseNaverCommerceProductAttributeValues(response);
+  }
+
+  async fetchProductAttributeUnits() {
+    const url = new URL(
+      `${this.config.apiUrl}/v1/product-attributes/attribute-value-units`,
+    );
+    const response = await this.authorizedFetch(url, { allowNotFound: true });
+    if (response.status === 404) return [];
+    return parseNaverCommerceProductAttributeUnits(response);
   }
 
   async fetchStandardOptions(categoryId: string) {

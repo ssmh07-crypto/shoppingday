@@ -2,9 +2,10 @@
 /* eslint-disable @next/next/no-img-element -- supplier URLs are intentionally loaded directly; no image storage/optimizer proxy */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { SelectedImage } from "@/lib/db/schema";
+import type { NaverProductAttribute, SelectedImage } from "@/lib/db/schema";
 import { OptionEditor } from "./option-editor";
 import { MarginCalculator } from "./margin-calculator";
+import { NaverAttributeEditor } from "./naver-attribute-editor";
 import type {
   NaverCategoryOption,
   ProductEditorInitial,
@@ -17,7 +18,20 @@ type CategoryRequirements = {
     attributeSeq: number;
     attributeName: string;
     attributeClassificationType?: "SINGLE_SELECT" | "MULTI_SELECT" | "RANGE";
+    unitUsable?: boolean;
+    representativeUnitCode?: string;
+    attributeValueMaxMatchingCount?: number;
   }>;
+  attributeValues: Array<{
+    attributeSeq: number;
+    attributeValueSeq: number;
+    minAttributeValue?: string;
+    minAttributeValueUnitCode?: string;
+    maxAttributeValue?: string;
+    maxAttributeValueUnitCode?: string;
+    exposureOrder?: number;
+  }>;
+  units: Array<{ id: string; unitCodeName: string }>;
   standardOptions: {
     useStandardOption: boolean;
     standardOptionCategoryGroups: Array<{
@@ -205,6 +219,10 @@ export function ProductEditor({
               ? { title: relaxedQuery }
               : {}),
             naverCategoryId: recommendation.category.id,
+            naverAttributes:
+              current.naverCategoryId === recommendation.category.id
+                ? current.naverAttributes
+                : [],
           };
         });
         setCategoryRecommendationStatus(
@@ -353,6 +371,19 @@ export function ProductEditor({
       label: "네이버 최종 카테고리 지정",
       done: Boolean(form.naverCategoryId),
     },
+    {
+      label: "카테고리 필수 속성 입력",
+      done: Boolean(
+        categoryRequirements &&
+        categoryRequirements.requiredAttributes.every((attribute) =>
+          isNaverAttributeComplete(
+            attribute.attributeSeq,
+            categoryRequirements.attributeValues,
+            form.naverAttributes,
+          ),
+        ),
+      ),
+    },
     { label: "상품명 입력", done: Boolean(form.title.trim()) },
     { label: "판매가 입력", done: Boolean(form.sellingPrice) },
     {
@@ -465,7 +496,11 @@ export function ProductEditor({
                       aria-label="네이버 카테고리 선택 해제"
                       title="선택 해제"
                       onClick={() => {
-                        setForm({ ...form, naverCategoryId: null });
+                        setForm({
+                          ...form,
+                          naverCategoryId: null,
+                          naverAttributes: [],
+                        });
                         setSelectedNaverCategory(null);
                         setCategoryRecommendationStatus("");
                       }}
@@ -536,7 +571,14 @@ export function ProductEditor({
                         aria-selected={form.naverCategoryId === category.id}
                         key={category.id}
                         onClick={() => {
-                          setForm({ ...form, naverCategoryId: category.id });
+                          setForm({
+                            ...form,
+                            naverCategoryId: category.id,
+                            naverAttributes:
+                              form.naverCategoryId === category.id
+                                ? form.naverAttributes
+                                : [],
+                          });
                           setSelectedNaverCategory(category);
                           setNaverCategorySearch("");
                           setNaverCategoryResults([]);
@@ -793,6 +835,17 @@ export function ProductEditor({
                       <li>필수 상품 속성 없음</li>
                     )}
                   </ul>
+                  {categoryRequirements.requiredAttributes.length > 0 && (
+                    <NaverAttributeEditor
+                      attributes={categoryRequirements.requiredAttributes}
+                      candidates={categoryRequirements.attributeValues}
+                      units={categoryRequirements.units}
+                      value={form.naverAttributes}
+                      onChange={(naverAttributes) =>
+                        setForm({ ...form, naverAttributes })
+                      }
+                    />
+                  )}
                   <div>
                     <span>필수 표준 옵션</span>
                     <strong>
@@ -905,6 +958,27 @@ function TabButton({
   );
 }
 
+function isNaverAttributeComplete(
+  attributeSeq: number,
+  candidates: CategoryRequirements["attributeValues"],
+  selected: NaverProductAttribute[],
+) {
+  const attributeCandidates = candidates.filter(
+    (candidate) => candidate.attributeSeq === attributeSeq,
+  );
+  const attributeSelections = selected.filter(
+    (value) => value.attributeSeq === attributeSeq,
+  );
+  return attributeCandidates.length
+    ? attributeSelections.some((value) =>
+        attributeCandidates.some(
+          (candidate) =>
+            candidate.attributeValueSeq === value.attributeValueSeq,
+        ),
+      )
+    : attributeSelections.some((value) => value.minValue || value.maxValue);
+}
+
 function attributeTypeLabel(
   type: CategoryRequirements["requiredAttributes"][number]["attributeClassificationType"],
 ) {
@@ -929,6 +1003,7 @@ function fromInitial(initial: ProductEditorInitial) {
     naverCategoryId: product.naverCategoryId,
     selectedImages: product.selectedImages,
     editedOptions: product.editedOptions,
+    naverAttributes: product.naverAttributes ?? [],
   };
 }
 

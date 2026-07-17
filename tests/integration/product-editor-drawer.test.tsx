@@ -254,6 +254,7 @@ function editorResponse({
         naverCategoryId,
         selectedImages: [],
         editedOptions: { groups: [], combinations: [] },
+        naverAttributes: [],
         draftVersion: 1,
         updatedAt: new Date().toISOString(),
       },

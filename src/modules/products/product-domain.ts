@@ -21,7 +21,11 @@ export const PRODUCT_LIMITS = {
 } as const;
 export const titleInputSchema = z.object({
   draftVersion: z.number().int().positive(),
-  title: z.string().trim().min(1, "상품명을 입력해 주세요.").max(PRODUCT_LIMITS.title),
+  title: z
+    .string()
+    .trim()
+    .min(1, "상품명을 입력해 주세요.")
+    .max(PRODUCT_LIMITS.title),
 });
 const safeUrl = z
   .url()
@@ -110,6 +114,38 @@ export const editedOptionsSchema = z
       combinations.add(key);
     });
   });
+export const naverAttributeSchema = z
+  .object({
+    attributeSeq: z.number().int().positive(),
+    attributeValueSeq: z.number().int().positive().nullable(),
+    minValue: z.string().trim().max(200),
+    maxValue: z.string().trim().max(200),
+    unitCode: z.string().trim().min(1).max(20).nullable(),
+  })
+  .refine(
+    (value) =>
+      value.attributeValueSeq !== null ||
+      Boolean(value.minValue) ||
+      Boolean(value.maxValue),
+    "속성값을 입력해 주세요.",
+  );
+export const naverAttributesSchema = z
+  .array(naverAttributeSchema)
+  .max(100)
+  .superRefine((attributes, ctx) => {
+    const keys = new Set<string>();
+    attributes.forEach((attribute, index) => {
+      const key = `${attribute.attributeSeq}:${attribute.attributeValueSeq ?? "custom"}`;
+      if (keys.has(key)) {
+        ctx.addIssue({
+          code: "custom",
+          path: [index],
+          message: "동일한 네이버 속성값을 중복 선택할 수 없습니다.",
+        });
+      }
+      keys.add(key);
+    });
+  });
 export const draftInputSchema = z.object({
   draftVersion: z.number().int().positive(),
   title: z.string().trim().max(PRODUCT_LIMITS.title),
@@ -139,6 +175,7 @@ export const draftInputSchema = z.object({
     .max(PRODUCT_LIMITS.images)
     .transform(normalizeImages),
   editedOptions: editedOptionsSchema,
+  naverAttributes: naverAttributesSchema,
 });
 export type DraftInput = z.infer<typeof draftInputSchema>;
 
@@ -230,6 +267,7 @@ export function statusAfterSave(
         "naverCategoryId",
         "selectedImages",
         "editedOptions",
+        "naverAttributes",
       ].includes(field),
     )
   )

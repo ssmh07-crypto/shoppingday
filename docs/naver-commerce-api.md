@@ -9,6 +9,8 @@
 - 하위 카테고리 조회: <https://apicenter.commerce.naver.com/llms/get-v1-categories-categoryId-sub-categories.md>
 - 상품명 카탈로그 조회: <https://apicenter.commerce.naver.com/docs/commerce-api/current/get-model-list-product>
 - 카테고리별 상품 속성 조회: <https://apicenter.commerce.naver.com/llms/get-v1-product-attributes-attributes.md>
+- 카테고리별 상품 속성값 조회: <https://apicenter.commerce.naver.com/llms/get-v1-product-attributes-attribute-values.md>
+- 전체 상품 속성값 단위 조회: <https://apicenter.commerce.naver.com/llms/get-v1-product-attributes-attribute-value-units.md>
 - 카테고리별 표준 옵션 조회: <https://apicenter.commerce.naver.com/llms/get-v1-options-standard-options.md>
 
 ## 연동 원칙

@@ -21,6 +21,17 @@ function client() {
         attributeType: "OPTIONAL" as const,
       },
     ]),
+    fetchProductAttributeValues: vi.fn().mockResolvedValue([
+      {
+        attributeSeq: 1,
+        attributeValueSeq: 11,
+        minAttributeValue: "빨강",
+        exposureOrder: 1,
+      },
+    ]),
+    fetchProductAttributeUnits: vi
+      .fn()
+      .mockResolvedValue([{ id: "A02036", unitCodeName: "cm" }]),
     fetchStandardOptions: vi.fn().mockResolvedValue({
       useStandardOption: true,
       standardOptionCategoryGroups: [
@@ -52,6 +63,8 @@ describe("네이버 카테고리 필수정보", () => {
       "색상",
     ]);
     expect(first.requiredOptionGroups).toHaveLength(1);
+    expect(first.attributeValues).toHaveLength(1);
+    expect(first.units).toEqual([{ id: "A02036", unitCodeName: "cm" }]);
     expect(first.cached).toBe(false);
     expect(second.cached).toBe(true);
     expect(api.fetchProductAttributes).toHaveBeenCalledTimes(1);

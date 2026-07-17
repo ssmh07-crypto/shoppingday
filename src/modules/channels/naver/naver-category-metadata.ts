@@ -8,12 +8,19 @@ type Metadata = {
   attributes: Awaited<
     ReturnType<NaverCategoriesClient["fetchProductAttributes"]>
   >;
+  attributeValues: Awaited<
+    ReturnType<NaverCategoriesClient["fetchProductAttributeValues"]>
+  >;
+  units: Awaited<
+    ReturnType<NaverCategoriesClient["fetchProductAttributeUnits"]>
+  >;
   standardOptions: Awaited<
     ReturnType<NaverCategoriesClient["fetchStandardOptions"]>
   >;
 };
 
 const cache = new Map<string, { value: Metadata; expiresAt: number }>();
+let unitsCache: { value: Metadata["units"]; expiresAt: number } | undefined;
 
 export class NaverCategoryMetadataService {
   constructor(
@@ -28,11 +35,14 @@ export class NaverCategoryMetadataService {
     }
 
     try {
-      const [attributes, standardOptions] = await Promise.all([
-        this.client.fetchProductAttributes(categoryId),
-        this.client.fetchStandardOptions(categoryId),
-      ]);
-      const value = { attributes, standardOptions };
+      const [attributes, attributeValues, units, standardOptions] =
+        await Promise.all([
+          this.client.fetchProductAttributes(categoryId),
+          this.client.fetchProductAttributeValues(categoryId),
+          this.getUnits(),
+          this.client.fetchStandardOptions(categoryId),
+        ]);
+      const value = { attributes, attributeValues, units, standardOptions };
       cache.set(categoryId, {
         value,
         expiresAt: this.now() + CACHE_TTL_MS,
@@ -40,6 +50,19 @@ export class NaverCategoryMetadataService {
       return summarize(categoryId, value, false, false);
     } catch (error) {
       if (cached) return summarize(categoryId, cached.value, true, true);
+      throw error;
+    }
+  }
+
+  private async getUnits() {
+    if (unitsCache && unitsCache.expiresAt > this.now())
+      return unitsCache.value;
+    try {
+      const value = await this.client.fetchProductAttributeUnits();
+      unitsCache = { value, expiresAt: this.now() + CACHE_TTL_MS };
+      return value;
+    } catch (error) {
+      if (unitsCache) return unitsCache.value;
       throw error;
     }
   }
@@ -58,6 +81,8 @@ function summarize(
   return {
     categoryId,
     attributes: metadata.attributes,
+    attributeValues: metadata.attributeValues,
+    units: metadata.units,
     requiredAttributes: metadata.attributes.filter(
       (attribute) => attribute.attributeType === "PRIMARY",
     ),

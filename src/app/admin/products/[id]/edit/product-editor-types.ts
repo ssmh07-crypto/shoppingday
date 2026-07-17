@@ -1,4 +1,8 @@
-import type { EditedOptions, SelectedImage } from "@/lib/db/schema";
+import type {
+  EditedOptions,
+  NaverProductAttribute,
+  SelectedImage,
+} from "@/lib/db/schema";
 import type { ProductProcessingSettings } from "@/modules/products/product-processing-settings";
 
 export type ProductEditorInitial = {
@@ -15,6 +19,7 @@ export type ProductEditorInitial = {
     naverCategoryId: string | null;
     selectedImages: SelectedImage[];
     editedOptions: EditedOptions;
+    naverAttributes: NaverProductAttribute[];
     draftVersion: number;
     updatedAt: string;
   };

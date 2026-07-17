@@ -170,6 +170,14 @@ export interface EditedOptions {
   }>;
 }
 
+export interface NaverProductAttribute {
+  attributeSeq: number;
+  attributeValueSeq: number | null;
+  minValue: string;
+  maxValue: string;
+  unitCode: string | null;
+}
+
 export const productCategories = pgTable("product_categories", {
   id: uuid("id").primaryKey().defaultRandom(),
   name: text("name").notNull(),
@@ -210,6 +218,10 @@ export const products = pgTable(
       .$type<EditedOptions>()
       .notNull()
       .default({ groups: [], combinations: [] }),
+    naverAttributes: jsonb("naver_attributes")
+      .$type<NaverProductAttribute[]>()
+      .notNull()
+      .default([]),
     draftVersion: integer("draft_version").notNull().default(1),
     validationErrors: jsonb("validation_errors")
       .$type<Record<string, string>>()

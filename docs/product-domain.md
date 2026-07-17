@@ -14,7 +14,9 @@
 - `ready`: 내부 필수값 검토 통과. 실제 마켓 게시는 아님
 - `archived`: 내부 보관 상태
 
-ready 중요 필드는 `title`, `sellingPrice`, `description`, `selectedImages`, `editedOptions`다. 태그나 카테고리만 바뀐 경우 ready를 유지할 수 있다.
+ready 중요 필드는 `title`, `sellingPrice`, `description`, `selectedImages`, `editedOptions`, `naverAttributes`다. 태그만 바뀐 경우 ready를 유지할 수 있다.
+
+네이버 카테고리 속성 선택은 `products.naver_attributes` JSONB에 일반 판매 옵션과 분리해 저장한다. 카테고리 변경 시 기존 선택을 비우고, 등록 준비 전 현재 카테고리의 필수 `attributeSeq`와 유효한 `attributeValueSeq`를 서버에서 다시 검증한다.
 
 ## 필수 검증
 

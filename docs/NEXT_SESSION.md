@@ -168,4 +168,13 @@ npm run cf:deploy -- --dry-run
 - 목록 행 높이, 상품명 글씨와 썸네일을 추가 확대했다.
 - 관련 테스트는 `product-title-inline-editor.test.tsx`, `product-editor-drawer.test.tsx`, `naver-category-metadata.test.ts`에 있다.
 
+## 2026-07-17 네이버 필수 속성 입력
+
+- migration `0007_tiny_triathlon.sql`로 `products.naver_attributes` JSONB 필드를 추가하고 적용했다.
+- 네이버 속성값 후보와 전체 단위 API를 HMAC 릴레이 및 카테고리 필수정보 API에 연결했다.
+- 필수 속성은 단일 선택, 복수 선택, 범위형에 맞는 컨트롤로 스마트스토어 탭에서 입력한다. 범위형도 네이버 후보 구간이 있으면 표준 `attributeValueSeq`를 선택한다.
+- 카테고리를 변경하면 이전 카테고리의 속성값을 클라이언트와 서버 양쪽에서 초기화한다.
+- 등록 준비 처리 시 현재 카테고리의 필수 속성과 후보값을 서버에서 다시 조회해 누락값과 오래된 후보를 거부한다.
+- 다음 작업은 저장된 `naverAttributes`를 v2 상품 등록 payload의 상세 속성으로 변환하고 상품정보제공고시·배송·이미지 업로드 모델을 연결하는 것이다.
+
 배포 전에 dry-run 결과의 gzip 크기가 Cloudflare 무료 플랜 3 MiB 아래인지 확인한다.
