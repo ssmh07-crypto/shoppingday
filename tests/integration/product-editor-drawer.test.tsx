@@ -27,6 +27,11 @@ describe("상품 편집 서랍", () => {
           success: true,
           recommendation: {
             source: "naver_catalog",
+            evidence: {
+              votes: 1,
+              sampleSize: 1,
+              query: "정원 상품",
+            },
             category: {
               id: "50001799",
               name: "정원부자재",
@@ -66,6 +71,10 @@ describe("상품 편집 서랍", () => {
       Response.json({
         success: true,
         data: {
+          settings: {
+            syncProtectedFields: ["title", "description", "images", "options"],
+            applyCategoryQueryToTitleByDefault: true,
+          },
           product: {
             id: "drawer-test-product",
             status: "draft",
@@ -103,6 +112,18 @@ describe("상품 편집 서랍", () => {
     await waitFor(() =>
       expect(screen.getByText("정원부자재")).toBeInTheDocument(),
     );
+    expect(screen.getByDisplayValue("정원 상품")).toBeInTheDocument();
+    expect(
+      screen.getByRole("checkbox", {
+        name: "정리된 검색어를 상품명에도 적용",
+      }),
+    ).toBeChecked();
+    fireEvent.click(
+      screen.getByRole("checkbox", {
+        name: "정리된 검색어를 상품명에도 적용",
+      }),
+    );
+    expect(screen.getByDisplayValue("빠른 편집 상품")).toBeInTheDocument();
     expect(fetchMock).toHaveBeenLastCalledWith(
       "/api/integrations/naver/categories/recommend?productName=%EB%B9%A0%EB%A5%B8%20%ED%8E%B8%EC%A7%91%20%EC%83%81%ED%92%88",
     );

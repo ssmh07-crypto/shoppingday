@@ -39,7 +39,12 @@ export function ProductEditor({
   const [categorySearchStatus, setCategorySearchStatus] = useState("");
   const [categoryRecommendationStatus, setCategoryRecommendationStatus] =
     useState("");
+  const [applyCategoryQueryToTitle, setApplyCategoryQueryToTitle] = useState(
+    initial.settings.applyCategoryQueryToTitleByDefault,
+  );
+  const [categorySearchQuery, setCategorySearchQuery] = useState("");
   const autoRecommendationStarted = useRef(false);
+  const titleBeforeCategoryQuery = useRef(initial.product.title);
   const dirty = JSON.stringify(form) !== baseline;
   const margin = useMemo(
     () =>
@@ -121,10 +126,20 @@ export function ProductEditor({
         return;
       }
       setSelectedNaverCategory(recommendation.category);
-      setForm((current) => ({
-        ...current,
-        naverCategoryId: recommendation.category.id,
-      }));
+      const relaxedQuery = recommendation.evidence?.query?.trim() ?? "";
+      setCategorySearchQuery(relaxedQuery);
+      setForm((current) => {
+        if (applyCategoryQueryToTitle && relaxedQuery) {
+          titleBeforeCategoryQuery.current = current.title;
+        }
+        return {
+          ...current,
+          ...(applyCategoryQueryToTitle && relaxedQuery
+            ? { title: relaxedQuery }
+            : {}),
+          naverCategoryId: recommendation.category.id,
+        };
+      });
       setCategoryRecommendationStatus(
         recommendation.source === "naver_catalog"
           ? recommendation.evidence
@@ -141,7 +156,7 @@ export function ProductEditor({
           : "카테고리를 추천하지 못했습니다.",
       );
     }
-  }, []);
+  }, [applyCategoryQueryToTitle]);
 
   useEffect(() => {
     if (
@@ -398,6 +413,32 @@ export function ProductEditor({
                 {categoryRecommendationStatus && (
                   <small>{categoryRecommendationStatus}</small>
                 )}
+                <label className="drawer-category-title-option">
+                  <input
+                    type="checkbox"
+                    checked={applyCategoryQueryToTitle}
+                    onChange={(event) => {
+                      const checked = event.target.checked;
+                      setApplyCategoryQueryToTitle(checked);
+                      if (checked && categorySearchQuery) {
+                        setForm((current) => {
+                          titleBeforeCategoryQuery.current = current.title;
+                          return { ...current, title: categorySearchQuery };
+                        });
+                      } else if (!checked && categorySearchQuery) {
+                        setForm((current) =>
+                          current.title === categorySearchQuery
+                            ? {
+                                ...current,
+                                title: titleBeforeCategoryQuery.current,
+                              }
+                            : current,
+                        );
+                      }
+                    }}
+                  />
+                  정리된 검색어를 상품명에도 적용
+                </label>
                 {categorySearchStatus && <small>{categorySearchStatus}</small>}
                 {naverCategoryResults.length > 0 && (
                   <div

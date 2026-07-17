@@ -1,6 +1,8 @@
 import type { EditedOptions, SelectedImage } from "@/lib/db/schema";
+import type { ProductProcessingSettings } from "@/modules/products/product-processing-settings";
 
 export type ProductEditorInitial = {
+  settings: ProductProcessingSettings;
   product: {
     id: string;
     status: string;

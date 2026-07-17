@@ -10,6 +10,10 @@ import {
 } from "@/lib/db/schema";
 import type { SupplierProduct } from "@/modules/suppliers/core/types";
 import {
+  productSyncProtectedFields,
+  type ProductSyncProtectedField,
+} from "./product-processing-settings";
+import {
   imagesFromSupplier,
   optionsFromSupplier,
   sanitizeDescription,
@@ -21,13 +25,8 @@ export interface ImportedProductRecord {
   supplierProduct: SupplierProductRow;
 }
 
-export const supplierEditableFields = [
-  "title",
-  "description",
-  "images",
-  "options",
-] as const;
-export type SupplierEditableField = (typeof supplierEditableFields)[number];
+export const supplierEditableFields = productSyncProtectedFields;
+export type SupplierEditableField = ProductSyncProtectedField;
 
 export interface ProductRepository {
   findImported(

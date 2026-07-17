@@ -7,21 +7,12 @@ import {
   isActiveJobConflict,
   SupplierSyncJobRepository,
 } from "@/modules/suppliers/core/sync-job-repository";
+import {
+  ProductProcessingSettingsRepository,
+} from "@/modules/products/product-processing-settings-repository";
 
-const protectedFieldSchema = z.enum([
-  "title",
-  "description",
-  "images",
-  "options",
-]);
 const inputSchema = z.object({
   mode: z.enum(["all", "changes"]),
-  protectedFields: z.array(protectedFieldSchema).max(4).default([
-    "title",
-    "description",
-    "images",
-    "options",
-  ]),
 });
 
 export async function GET() {
@@ -45,7 +36,10 @@ export async function POST(request: Request) {
     let jobId: string | undefined;
     try {
       const user = await requireAdmin(database);
-      const { mode, protectedFields } = inputSchema.parse(await request.json());
+      const { mode } = inputSchema.parse(await request.json());
+      const settings = await new ProductProcessingSettingsRepository(
+        database,
+      ).get(user.id);
       const env = getServerEnv();
       if (!env.GITHUB_ACTIONS_TOKEN) {
         return NextResponse.json(
@@ -81,7 +75,7 @@ export async function POST(request: Request) {
             inputs: {
               mode,
               job_id: job.id,
-              protected_fields: protectedFields.join(","),
+              protected_fields: settings.syncProtectedFields.join(","),
             },
           }),
         },
