@@ -6,6 +6,7 @@ import {
   productAuditLogs,
   productCategories,
   products,
+  naverCommerceCategories,
   productSupplierLinks,
   supplierProducts,
   suppliers,
@@ -26,12 +27,18 @@ export type ProductEditorRecord = {
     | "currency"
     | "description"
     | "categoryId"
+    | "naverCategoryId"
     | "selectedImages"
     | "editedOptions"
     | "draftVersion"
     | "readyAt"
     | "updatedAt"
   >;
+  naverCategory: {
+    id: string;
+    name: string;
+    wholeCategoryName: string;
+  } | null;
   supplier: {
     name: string;
     externalProductId: string;
@@ -194,11 +201,17 @@ export class ProductEditRepository {
           currency: products.currency,
           description: products.description,
           categoryId: products.categoryId,
+          naverCategoryId: products.naverCategoryId,
           selectedImages: products.selectedImages,
           editedOptions: products.editedOptions,
           draftVersion: products.draftVersion,
           readyAt: products.readyAt,
           updatedAt: products.updatedAt,
+        },
+        naverCategory: {
+          id: naverCommerceCategories.id,
+          name: naverCommerceCategories.name,
+          wholeCategoryName: naverCommerceCategories.wholeCategoryName,
         },
         supplier: {
           name: suppliers.name,
@@ -222,6 +235,10 @@ export class ProductEditRepository {
         eq(supplierProducts.id, productSupplierLinks.supplierProductId),
       )
       .innerJoin(suppliers, eq(suppliers.id, supplierProducts.supplierId))
+      .leftJoin(
+        naverCommerceCategories,
+        eq(naverCommerceCategories.id, products.naverCategoryId),
+      )
       .where(
         and(
           eq(products.id, id),
@@ -264,6 +281,19 @@ export class ProductEditRepository {
       if (!old) return { kind: "not_found" as const };
       if (old.draftVersion !== input.draftVersion)
         return { kind: "conflict" as const };
+      if (input.naverCategoryId) {
+        const [category] = await tx
+          .select({ id: naverCommerceCategories.id })
+          .from(naverCommerceCategories)
+          .where(
+            and(
+              eq(naverCommerceCategories.id, input.naverCategoryId),
+              eq(naverCommerceCategories.last, true),
+            ),
+          )
+          .limit(1);
+        if (!category) return { kind: "invalid_naver_category" as const };
+      }
       const [product] = await tx
         .update(products)
         .set({
@@ -274,6 +304,7 @@ export class ProductEditRepository {
           currency: input.currency,
           description: input.description,
           categoryId: input.categoryId,
+          naverCategoryId: input.naverCategoryId,
           selectedImages: input.selectedImages,
           editedOptions: input.editedOptions,
           status,

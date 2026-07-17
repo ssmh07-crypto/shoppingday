@@ -105,6 +105,10 @@ export class ProductEditService {
   private handle<T extends { kind: string }>(result: T) {
     if (result.kind === "conflict") throw new ProductConflictError();
     if (result.kind === "not_found") throw new ProductNotFoundError();
+    if (result.kind === "invalid_naver_category")
+      throw new ProductValidationError({
+        naverCategoryId: "동기화된 네이버 최종 카테고리를 선택해 주세요.",
+      });
     return result;
   }
 }
@@ -120,6 +124,7 @@ function changedFields(
       "currency",
       "description",
       "categoryId",
+      "naverCategoryId",
       "selectedImages",
       "editedOptions",
     ] as const

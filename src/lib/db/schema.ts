@@ -12,6 +12,7 @@ import {
   timestamp,
   uniqueIndex,
   uuid,
+  type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
@@ -173,6 +174,10 @@ export const products = pgTable(
     categoryId: uuid("category_id").references(() => productCategories.id, {
       onDelete: "set null",
     }),
+    naverCategoryId: text("naver_category_id").references(
+      (): AnyPgColumn => naverCommerceCategories.id,
+      { onDelete: "set null" },
+    ),
     selectedImages: jsonb("selected_images")
       .$type<SelectedImage[]>()
       .notNull()
@@ -200,6 +205,7 @@ export const products = pgTable(
       sql`${table.sellingPrice} is null or ${table.sellingPrice} > 0`,
     ),
     index("products_owner_updated_idx").on(table.ownerId, table.updatedAt),
+    index("products_naver_category_idx").on(table.naverCategoryId),
   ],
 );
 

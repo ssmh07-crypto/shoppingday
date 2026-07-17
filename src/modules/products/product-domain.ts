@@ -129,6 +129,7 @@ export const draftInputSchema = z.object({
     .max(PRODUCT_LIMITS.description)
     .transform(sanitizeDescription),
   categoryId: z.uuid().nullable(),
+  naverCategoryId: z.string().trim().regex(/^\d+$/).max(20).nullable(),
   selectedImages: z
     .array(imageSchema)
     .max(PRODUCT_LIMITS.images)
@@ -197,6 +198,8 @@ export function readyErrors(
   if (!input.title) errors.title = "상품명을 입력해 주세요.";
   if (!input.sellingPrice)
     errors.sellingPrice = "판매가는 0보다 큰 정수여야 합니다.";
+  if (!input.naverCategoryId)
+    errors.naverCategoryId = "네이버 최종 카테고리를 선택해 주세요.";
   const enabled = input.selectedImages.filter((i) => i.enabled);
   if (enabled.filter((i) => i.isPrimary).length !== 1)
     errors.selectedImages = "활성화된 대표 이미지를 하나 지정해 주세요.";
@@ -220,6 +223,7 @@ export function statusAfterSave(
         "title",
         "sellingPrice",
         "description",
+        "naverCategoryId",
         "selectedImages",
         "editedOptions",
       ].includes(field),

@@ -18,6 +18,19 @@ const categoriesSchema = z.array(categorySchema).min(1);
 
 export type NaverCommerceCategory = z.infer<typeof categorySchema>;
 
+export async function parseNaverCommerceCategories(response: Response) {
+  const json = await parseJson(response);
+  const parsed = categoriesSchema.safeParse(json);
+  if (!parsed.success) {
+    throw new NaverCommerceError(
+      "invalid_response",
+      "네이버 카테고리 응답 형식이 올바르지 않습니다.",
+      response.status,
+    );
+  }
+  return parsed.data;
+}
+
 export type NaverCommerceConfig = {
   apiUrl: string;
   clientId: string;
@@ -68,16 +81,7 @@ export class NaverCommerceClient {
       url.searchParams.set("last", String(options.last));
     }
     const response = await this.authorizedFetch(url);
-    const json = await parseJson(response);
-    const parsed = categoriesSchema.safeParse(json);
-    if (!parsed.success) {
-      throw new NaverCommerceError(
-        "invalid_response",
-        "네이버 카테고리 응답 형식이 올바르지 않습니다.",
-        response.status,
-      );
-    }
-    return parsed.data;
+    return parseNaverCommerceCategories(response);
   }
 
   private async authorizedFetch(url: URL) {

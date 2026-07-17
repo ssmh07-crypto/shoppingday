@@ -57,6 +57,9 @@ const serverEnvSchema = z
     NAVER_COMMERCE_CLIENT_SECRET: optionalString,
     NAVER_COMMERCE_TOKEN_TYPE: z.enum(["SELF", "SELLER"]).default("SELF"),
     NAVER_COMMERCE_ACCOUNT_ID: optionalString,
+    NAVER_COMMERCE_RELAY_URL: optionalUrl,
+    NAVER_COMMERCE_RELAY_URL_OVERRIDE: optionalUrl,
+    NAVER_COMMERCE_RELAY_SHARED_SECRET: optionalString,
     NAVER_COMMERCE_TIMEOUT_MS: z.coerce
       .number()
       .int()
@@ -92,6 +95,30 @@ const serverEnvSchema = z
         code: "custom",
         path: ["NAVER_COMMERCE_ACCOUNT_ID"],
         message: "NAVER_COMMERCE_ACCOUNT_ID is required for SELLER token type",
+      });
+    }
+    if (
+      Boolean(
+        env.NAVER_COMMERCE_RELAY_URL_OVERRIDE ?? env.NAVER_COMMERCE_RELAY_URL,
+      ) !==
+      Boolean(env.NAVER_COMMERCE_RELAY_SHARED_SECRET)
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["NAVER_COMMERCE_RELAY_URL"],
+        message:
+          "a Naver relay URL and NAVER_COMMERCE_RELAY_SHARED_SECRET must be configured together",
+      });
+    }
+    if (
+      env.NAVER_COMMERCE_RELAY_SHARED_SECRET &&
+      env.NAVER_COMMERCE_RELAY_SHARED_SECRET.length < 32
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["NAVER_COMMERCE_RELAY_SHARED_SECRET"],
+        message:
+          "NAVER_COMMERCE_RELAY_SHARED_SECRET must be at least 32 characters",
       });
     }
   });

@@ -59,11 +59,13 @@ describe("상품 편집 서랍", () => {
             currency: "KRW",
             description: "",
             categoryId: null,
+            naverCategoryId: null,
             selectedImages: [],
             editedOptions: { groups: [], combinations: [] },
             draftVersion: 1,
             updatedAt: new Date().toISOString(),
           },
+          naverCategory: null,
           supplier: {
             name: "친구도매",
             externalProductId: "drawer-test-product",
