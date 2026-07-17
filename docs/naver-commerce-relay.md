@@ -4,7 +4,7 @@ Cloudflare Worker의 외부 호출 IP는 고정값으로 전제하지 않는다.
 
 ## 보안 경계
 
-- 중계 서버는 현재 `GET /v1/categories`만 제공하며 임의 URL·메서드·헤더 전달을 허용하지 않는다.
+- 중계 서버는 `GET /v1/categories`와 `GET /v1/product-models`만 제공하며 임의 URL·메서드·헤더 전달을 허용하지 않는다.
 - Worker와 중계 서버는 32자 이상의 `NAVER_COMMERCE_RELAY_SHARED_SECRET`을 공유한다.
 - 서명에는 timestamp, nonce, HTTP 메서드, 경로와 쿼리, 본문 SHA-256이 포함된다.
 - 중계 서버는 기본 5분을 벗어난 요청과 재사용된 nonce를 거부한다.

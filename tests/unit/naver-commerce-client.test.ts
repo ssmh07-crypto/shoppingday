@@ -114,6 +114,37 @@ describe("네이버 커머스API 클라이언트", () => {
     });
   });
 
+  it("상품명으로 네이버 카탈로그와 카테고리를 조회한다", async () => {
+    const contents = [
+      {
+        id: 123,
+        name: "여성 여름 원피스",
+        categoryId: "50000805",
+        wholeCategoryName: "패션의류>여성의류>원피스",
+      },
+    ];
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        json({
+          access_token: "access-token",
+          expires_in: 10800,
+          token_type: "Bearer",
+        }),
+      )
+      .mockResolvedValueOnce(
+        json({ contents, page: 1, size: 20, totalElements: 1 }),
+      );
+    const client = new NaverCommerceClient(config, fetcher, () => now);
+
+    await expect(client.fetchProductModels("여름 원피스", 20)).resolves.toEqual(
+      contents,
+    );
+    expect(String(fetcher.mock.calls[1]?.[0])).toContain(
+      "/v1/product-models?name=%EC%97%AC%EB%A6%84+%EC%9B%90%ED%94%BC%EC%8A%A4&page=1&size=20",
+    );
+  });
+
   it("허용되지 않은 호출 IP 오류를 구체적으로 안내한다", async () => {
     const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(
       json(

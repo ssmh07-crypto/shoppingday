@@ -30,15 +30,12 @@ async function renderProductsPage(
   const user = await requireAdminPage(database);
   const params = await searchParams;
   const service = createProductEditService(database);
-  const [result, categories] = await Promise.all([
-    service.list(user.id, {
-      search: params.search,
-      filter: params.filter,
-      sort: params.sort,
-      page: Number(params.page) || 1,
-    }),
-    service.categories(),
-  ]);
+  const result = await service.list(user.id, {
+    search: params.search,
+    filter: params.filter,
+    sort: params.sort,
+    page: Number(params.page) || 1,
+  });
   const totalPages = Math.max(1, Math.ceil(result.total / result.pageSize));
   const firstItem = result.total ? (result.page - 1) * result.pageSize + 1 : 0;
   const lastItem = Math.min(result.page * result.pageSize, result.total);
@@ -316,10 +313,7 @@ async function renderProductsPage(
           </section>
         </main>
       </div>
-      <ProductEditorDrawer
-        initialProductId={params.edit}
-        categories={categories}
-      />
+      <ProductEditorDrawer initialProductId={params.edit} />
     </div>
   );
 }

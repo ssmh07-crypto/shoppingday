@@ -88,7 +88,7 @@ export class ProductEditRepository {
     if (query.filter === "missing_price")
       conditions.push(isNull(products.sellingPrice));
     if (query.filter === "missing_category")
-      conditions.push(isNull(products.categoryId));
+      conditions.push(isNull(products.naverCategoryId));
     if (query.filter === "missing_image")
       conditions.push(
         sql`not jsonb_path_exists(${products.selectedImages}, '$[*] ? (@.enabled == true)')`,

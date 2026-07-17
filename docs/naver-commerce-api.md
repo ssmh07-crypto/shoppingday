@@ -7,6 +7,7 @@
 - 전체 카테고리 조회: <https://apicenter.commerce.naver.com/llms/get-v1-categories.md>
 - 카테고리 단건 조회: <https://apicenter.commerce.naver.com/llms/get-v1-categories-categoryId.md>
 - 하위 카테고리 조회: <https://apicenter.commerce.naver.com/llms/get-v1-categories-categoryId-sub-categories.md>
+- 상품명 카탈로그 조회: <https://apicenter.commerce.naver.com/docs/commerce-api/current/get-model-list-product>
 - 카테고리별 상품 속성 조회: <https://apicenter.commerce.naver.com/llms/get-v1-product-attributes-attributes.md>
 - 카테고리별 표준 옵션 조회: <https://apicenter.commerce.naver.com/llms/get-v1-options-standard-options.md>
 
@@ -25,6 +26,7 @@
 - 운영 Worker용 HMAC 중계 클라이언트와 고정 IP Node.js 릴레이를 구현했다. 배치와 Secret 설정은 [`naver-commerce-relay.md`](naver-commerce-relay.md)를 따른다.
 - `/admin/channels/naver`의 명시적 버튼으로 전체 카테고리를 가져와 `naver_commerce_categories`에 원자적으로 교체 저장한다.
 - 화면 조회와 검색은 DB만 사용하므로 페이지를 열 때마다 네이버 API가 호출되지 않는다.
+- 상품 기본정보에서 네이버 최종 카테고리를 검색·선택할 수 있다. 카테고리가 비어 있으면 상품명의 고신뢰 카테고리명 일치 또는 네이버 카탈로그 조회를 이용해 자동 적용한다.
 - 상품 등록·수정·삭제·판매 상태 변경, 카테고리 속성 및 표준 옵션, 주문 정산 연동은 아직 구현되지 않았다. 해당 기능을 구현하기 전 위 공식 인덱스에서 현재 endpoint 규격을 다시 확인한다.
 
 ## API 호출 IP
