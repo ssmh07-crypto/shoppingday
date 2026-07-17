@@ -12,6 +12,8 @@
 - 카테고리별 상품 속성값 조회: <https://apicenter.commerce.naver.com/llms/get-v1-product-attributes-attribute-values.md>
 - 전체 상품 속성값 단위 조회: <https://apicenter.commerce.naver.com/llms/get-v1-product-attributes-attribute-value-units.md>
 - 카테고리별 표준 옵션 조회: <https://apicenter.commerce.naver.com/llms/get-v1-options-standard-options.md>
+- 상품 이미지 다건 등록: <https://apicenter.commerce.naver.com/llms/post-v1-product-images-upload.md>
+- v2 상품 등록: <https://apicenter.commerce.naver.com/llms/post-v2-products.md>
 
 ## 연동 원칙
 
@@ -29,7 +31,8 @@
 - `/admin/channels/naver`의 명시적 버튼으로 전체 카테고리를 가져와 `naver_commerce_categories`에 원자적으로 교체 저장한다.
 - 화면 조회와 검색은 DB만 사용하므로 페이지를 열 때마다 네이버 API가 호출되지 않는다.
 - 상품 기본정보에서 네이버 최종 카테고리를 검색·선택할 수 있다. 카테고리가 비어 있으면 상품명의 고신뢰 카테고리명 일치 또는 네이버 카탈로그 30개 결과의 카테고리 다수결을 이용해 자동 적용한다.
-- 상품 등록·수정·삭제·판매 상태 변경, 카테고리 속성 및 표준 옵션, 주문 정산 연동은 아직 구현되지 않았다. 해당 기능을 구현하기 전 위 공식 인덱스에서 현재 endpoint 규격을 다시 확인한다.
+- 저장된 카테고리·필수 속성·조합 옵션·태그를 v2 상품 등록 본문으로 변환하는 `naver-product-payload.ts`를 구현했다. 네이버 업로드 이미지 URL과 배송·A/S·원산지·상품정보제공고시·세금·재고 정책이 없으면 경로별 오류를 반환하며 실제 등록 요청은 보내지 않는다.
+- 상품 등록 호출과 발행 이력, 수정·삭제·판매 상태 변경, 주문 정산 연동은 아직 구현되지 않았다. 해당 기능을 구현하기 전 위 공식 인덱스에서 현재 endpoint 규격을 다시 확인한다.
 
 ## API 호출 IP
 

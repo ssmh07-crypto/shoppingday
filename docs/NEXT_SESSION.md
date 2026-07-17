@@ -177,4 +177,13 @@ npm run cf:deploy -- --dry-run
 - 등록 준비 처리 시 현재 카테고리의 필수 속성과 후보값을 서버에서 다시 조회해 누락값과 오래된 후보를 거부한다.
 - 다음 작업은 저장된 `naverAttributes`를 v2 상품 등록 payload의 상세 속성으로 변환하고 상품정보제공고시·배송·이미지 업로드 모델을 연결하는 것이다.
 
+## 2026-07-18 네이버 v2 상품 payload 변환
+
+- `src/modules/channels/naver/naver-product-payload.ts`에서 저장된 카테고리, 판매용 상품명, 상세 HTML, 판매가, 네이버 필수 속성, 조합 옵션, 검색 태그를 `POST /v2/products` 요청 구조로 변환한다.
+- 활성 옵션 조합은 그룹 순서에 따라 `optionCombinationGroupNames`와 `optionCombinations`로 변환하고 옵션 재고 합계를 원상품 재고로 사용한다.
+- 네이버 업로드가 완료된 `storedUrl`만 대표·추가 이미지로 사용한다. 외부 공급처 URL은 발행하지 않는다.
+- 속성값 ID가 없는 임의 속성, 불완전한 옵션 조합, 단일 재고·배송·A/S·원산지·상품정보제공고시·세금·채널 정책 누락은 경로별 발행 오류로 반환한다.
+- payload의 객체 키를 정렬한 뒤 SHA-256 해시를 생성해 향후 `product_publications.last_payload_hash`와 중복 등록 방지에 사용한다.
+- 실제 네이버 등록 호출은 아직 비활성 상태다. 다음 작업은 발행 정책 저장 모델과 입력 UI, 이미지 업로드 릴레이, `product_publications` 테이블을 추가한 뒤 관리자 확인을 거쳐 POST를 호출하는 것이다.
+
 배포 전에 dry-run 결과의 gzip 크기가 Cloudflare 무료 플랜 3 MiB 아래인지 확인한다.
