@@ -10,11 +10,17 @@ export type ProductEditorInitial = {
     currency: string;
     description: string;
     categoryId: string | null;
+    naverCategoryId: string | null;
     selectedImages: SelectedImage[];
     editedOptions: EditedOptions;
     draftVersion: number;
     updatedAt: string;
   };
+  naverCategory: {
+    id: string;
+    name: string;
+    wholeCategoryName: string;
+  } | null;
   supplier: {
     name: string;
     externalProductId: string;
@@ -29,3 +35,10 @@ export type ProductEditorInitial = {
 };
 
 export type ProductEditorCategory = { id: string; name: string };
+
+export type NaverCategoryOption = {
+  id: string;
+  name: string;
+  wholeCategoryName: string;
+  last: boolean;
+};

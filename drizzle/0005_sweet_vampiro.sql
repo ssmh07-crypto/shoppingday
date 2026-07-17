@@ -1,0 +1,3 @@
+ALTER TABLE "products" ADD COLUMN "naver_category_id" text;--> statement-breakpoint
+ALTER TABLE "products" ADD CONSTRAINT "products_naver_category_id_naver_commerce_categories_id_fk" FOREIGN KEY ("naver_category_id") REFERENCES "public"."naver_commerce_categories"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+CREATE INDEX "products_naver_category_idx" ON "products" USING btree ("naver_category_id");

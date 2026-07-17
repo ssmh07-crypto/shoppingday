@@ -16,6 +16,7 @@ const product = {
   currency: "KRW",
   description: "설명",
   categoryId: null,
+  naverCategoryId: "50000000",
   selectedImages: imagesFromSupplier(["https://example.test/a.jpg"]),
   editedOptions: { groups: [], combinations: [] },
   draftVersion: 1,
@@ -26,6 +27,11 @@ const product = {
 };
 const record: ProductEditorRecord = {
   product,
+  naverCategory: {
+    id: "50000000",
+    name: "소분류",
+    wholeCategoryName: "대분류>중분류>소분류",
+  },
   supplier: {
     name: "친구도매",
     externalProductId: "1",
@@ -46,6 +52,7 @@ const draft = {
   currency: "KRW",
   description: "<p>설명</p>",
   categoryId: null,
+  naverCategoryId: "50000000",
   selectedImages: product.selectedImages,
   editedOptions: product.editedOptions,
 };
@@ -89,6 +96,13 @@ describe("상품 편집 서비스", () => {
     const { service } = setup({ kind: "conflict" });
     await expect(service.saveDraft("p1", "u1", draft)).rejects.toMatchObject({
       code: "product_conflict",
+    });
+  });
+  it("최종 카테고리가 아니면 사용자 입력 오류로 변환한다", async () => {
+    const { service } = setup({ kind: "invalid_naver_category" });
+    await expect(service.saveDraft("p1", "u1", draft)).rejects.toMatchObject({
+      code: "product_validation",
+      errors: { naverCategoryId: expect.any(String) },
     });
   });
   it("필수값이 없으면 ready 저장을 호출하지 않는다", async () => {

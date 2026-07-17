@@ -6,6 +6,7 @@ import type { SelectedImage } from "@/lib/db/schema";
 import { OptionEditor } from "./option-editor";
 import { MarginCalculator } from "./margin-calculator";
 import type {
+  NaverCategoryOption,
   ProductEditorCategory,
   ProductEditorInitial,
 } from "./product-editor-types";
@@ -30,6 +31,15 @@ export function ProductEditor({
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("저장됨");
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [naverCategorySearch, setNaverCategorySearch] = useState("");
+  const [naverCategoryResults, setNaverCategoryResults] = useState<
+    NaverCategoryOption[]
+  >([]);
+  const [selectedNaverCategory, setSelectedNaverCategory] =
+    useState<NaverCategoryOption | null>(
+      initial.naverCategory ? { ...initial.naverCategory, last: true } : null,
+    );
+  const [categorySearchStatus, setCategorySearchStatus] = useState("");
   const dirty = JSON.stringify(form) !== baseline;
   const margin = useMemo(
     () =>
@@ -46,6 +56,42 @@ export function ProductEditor({
     addEventListener("beforeunload", listener);
     return () => removeEventListener("beforeunload", listener);
   }, [dirty]);
+
+  useEffect(() => {
+    const search = naverCategorySearch.trim();
+    if (search.length < 2) return;
+    const controller = new AbortController();
+    const timer = setTimeout(async () => {
+      setCategorySearchStatus("검색 중");
+      try {
+        const response = await fetch(
+          `/api/integrations/naver/categories?search=${encodeURIComponent(search)}&leafOnly=true&limit=20`,
+          { signal: controller.signal },
+        );
+        const body = await response.json();
+        if (!response.ok)
+          throw new Error(
+            body.error?.message ?? "카테고리를 검색하지 못했습니다.",
+          );
+        setNaverCategoryResults(body.categories ?? []);
+        setCategorySearchStatus(
+          body.categories?.length ? "" : "검색 결과가 없습니다.",
+        );
+      } catch (error) {
+        if (controller.signal.aborted) return;
+        setNaverCategoryResults([]);
+        setCategorySearchStatus(
+          error instanceof Error
+            ? error.message
+            : "카테고리를 검색하지 못했습니다.",
+        );
+      }
+    }, 300);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [naverCategorySearch]);
 
   async function submit(action: "draft" | "ready" | "revert-to-draft") {
     setSaving(true);
@@ -146,7 +192,11 @@ export function ProductEditor({
     (image) => image.enabled,
   ).length;
   const marketChecks = [
-    { label: "카테고리 지정", done: Boolean(form.categoryId) },
+    { label: "내부 카테고리 지정", done: Boolean(form.categoryId) },
+    {
+      label: "네이버 최종 카테고리 지정",
+      done: Boolean(form.naverCategoryId),
+    },
     { label: "상품명 입력", done: Boolean(form.title.trim()) },
     { label: "판매가 입력", done: Boolean(form.sellingPrice) },
     {
@@ -435,6 +485,80 @@ export function ProductEditor({
               필수 정보를 모두 작성하면 스마트스토어 등록 준비를 완료할 수
               있습니다.
             </p>
+            <div className="drawer-naver-category">
+              <label htmlFor="naver-category-search">
+                네이버 최종 카테고리
+              </label>
+              {form.naverCategoryId &&
+              (selectedNaverCategory?.id === form.naverCategoryId ||
+                initial.naverCategory?.id === form.naverCategoryId) ? (
+                <div className="drawer-naver-category-selected">
+                  <div>
+                    <strong>
+                      {selectedNaverCategory?.id === form.naverCategoryId
+                        ? selectedNaverCategory.name
+                        : initial.naverCategory?.name}
+                    </strong>
+                    <span>
+                      {selectedNaverCategory?.id === form.naverCategoryId
+                        ? selectedNaverCategory.wholeCategoryName
+                        : initial.naverCategory?.wholeCategoryName}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    aria-label="네이버 카테고리 선택 해제"
+                    title="선택 해제"
+                    onClick={() => {
+                      setForm({ ...form, naverCategoryId: null });
+                      setSelectedNaverCategory(null);
+                    }}
+                  >
+                    ×
+                  </button>
+                </div>
+              ) : null}
+              <input
+                id="naver-category-search"
+                type="search"
+                value={naverCategorySearch}
+                placeholder="상품 종류를 2자 이상 입력"
+                autoComplete="off"
+                onChange={(event) => {
+                  const value = event.target.value;
+                  setNaverCategorySearch(value);
+                  if (value.trim().length < 2) {
+                    setNaverCategoryResults([]);
+                    setCategorySearchStatus("");
+                  }
+                }}
+              />
+              {categorySearchStatus && <small>{categorySearchStatus}</small>}
+              {naverCategoryResults.length > 0 && (
+                <div className="drawer-naver-category-results" role="listbox">
+                  {naverCategoryResults.map((category) => (
+                    <button
+                      type="button"
+                      role="option"
+                      aria-selected={form.naverCategoryId === category.id}
+                      key={category.id}
+                      onClick={() => {
+                        setForm({ ...form, naverCategoryId: category.id });
+                        setSelectedNaverCategory(category);
+                        setNaverCategorySearch("");
+                        setNaverCategoryResults([]);
+                      }}
+                    >
+                      <strong>{category.name}</strong>
+                      <span>{category.wholeCategoryName}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+              {errors.naverCategoryId && (
+                <small className="field-error">{errors.naverCategoryId}</small>
+              )}
+            </div>
             <div className="drawer-market-checks">
               {marketChecks.map((check) => (
                 <div key={check.label} className={check.done ? "done" : ""}>
@@ -528,6 +652,7 @@ function fromInitial(initial: ProductEditorInitial) {
     currency: "KRW" as const,
     description: product.description,
     categoryId: product.categoryId,
+    naverCategoryId: product.naverCategoryId,
     selectedImages: product.selectedImages,
     editedOptions: product.editedOptions,
   };
