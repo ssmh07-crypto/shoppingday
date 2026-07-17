@@ -3,7 +3,10 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 
 import type { NaverCategoryRepository } from "@/modules/channels/naver/naver-category-repository";
-import { NaverCategoryService } from "@/modules/channels/naver/naver-category-service";
+import {
+  NaverCategoryService,
+  rankCatalogCategories,
+} from "@/modules/channels/naver/naver-category-service";
 import type { NaverCategoriesClient } from "@/modules/channels/naver/naver-commerce-relay";
 
 const category = {
@@ -51,10 +54,46 @@ describe("네이버 카테고리 자동 추천", () => {
     await expect(service.recommend("여성 여름 원피스")).resolves.toEqual({
       category,
       source: "naver_catalog",
+      evidence: { votes: 1, sampleSize: 1 },
     });
     expect(repository.recommendFromTitle).toHaveBeenCalledWith(
       "여성 여름 원피스",
     );
+  });
+
+  it("카탈로그에서 가장 많이 등장한 카테고리를 우선한다", async () => {
+    const otherCategoryId = "50000001";
+    const models = [
+      model(1, otherCategoryId),
+      model(2, category.id),
+      model(3, category.id),
+      model(4, otherCategoryId),
+      model(5, category.id),
+    ];
+    const { service, repository } = setup(vi.fn().mockResolvedValue(models));
+
+    await expect(service.recommend("여성 여름 원피스")).resolves.toEqual({
+      category,
+      source: "naver_catalog",
+      evidence: { votes: 3, sampleSize: 5 },
+    });
+    expect(repository.findLeafByIds).toHaveBeenCalledWith([
+      category.id,
+      otherCategoryId,
+    ]);
+  });
+
+  it("득표수가 같으면 상위 1~3개에 먼저 등장한 카테고리를 우선한다", () => {
+    const first = "50000001";
+    const second = "50000002";
+    expect(
+      rankCatalogCategories([
+        model(1, first),
+        model(2, second),
+        model(3, first),
+        model(4, second),
+      ]).map((item) => item.categoryId),
+    ).toEqual([first, second]);
   });
 
   it("상품명과 강하게 일치하는 동기화 카테고리를 우선한다", async () => {
@@ -74,3 +113,12 @@ describe("네이버 카테고리 자동 추천", () => {
     expect(client.fetchProductModels).not.toHaveBeenCalled();
   });
 });
+
+function model(id: number, categoryId: string) {
+  return {
+    id,
+    name: `상품 ${id}`,
+    categoryId,
+    wholeCategoryName: "대분류>중분류>소분류",
+  };
+}
