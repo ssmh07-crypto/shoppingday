@@ -4,6 +4,7 @@ vi.mock("server-only", () => ({}));
 
 import type { NaverCategoryRepository } from "@/modules/channels/naver/naver-category-repository";
 import {
+  categoryRuleIds,
   NaverCategoryService,
   rankCatalogCategories,
 } from "@/modules/channels/naver/naver-category-service";
@@ -13,6 +14,12 @@ const category = {
   id: "50000805",
   name: "원피스",
   wholeCategoryName: "패션의류>여성의류>원피스",
+  last: true,
+};
+const kitchenOrganizerCategory = {
+  id: "50004771",
+  name: "주방정리소품",
+  wholeCategoryName: "생활/건강>주방용품>주방수납용품>주방정리소품",
   last: true,
 };
 
@@ -39,6 +46,26 @@ function setup(
 }
 
 describe("네이버 카테고리 자동 추천", () => {
+  it("커피캡슐 보관 액세서리는 식품이 아닌 주방정리소품으로 분류한다", async () => {
+    const { service, repository, client } = setup(vi.fn());
+    repository.findLeafByIds.mockResolvedValueOnce([kitchenOrganizerCategory]);
+
+    await expect(
+      service.recommend("나선형 캡슐커피 보관 디스펜서"),
+    ).resolves.toEqual({
+      category: kitchenOrganizerCategory,
+      source: "title_rule",
+    });
+    expect(repository.findLeafByIds).toHaveBeenCalledWith(["50004771"]);
+    expect(repository.recommendFromTitle).not.toHaveBeenCalled();
+    expect(client.fetchProductModels).not.toHaveBeenCalled();
+  });
+
+  it("먹는 캡슐커피 상품에는 보관용품 규칙을 적용하지 않는다", () => {
+    expect(categoryRuleIds("에스프레소 캡슐커피 10개입")).toEqual([]);
+    expect(categoryRuleIds("커피 캡슐 회전형 거치대")).toEqual(["50004771"]);
+  });
+
   it("강한 로컬 일치가 없으면 네이버 카탈로그를 적용한다", async () => {
     const { service, repository } = setup(
       vi.fn().mockResolvedValue([

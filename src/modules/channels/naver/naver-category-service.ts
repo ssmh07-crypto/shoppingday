@@ -61,9 +61,18 @@ export class NaverCategoryService {
   }
 
   async recommend(productName: string) {
-    const localCategory = await this.repository.recommendFromTitle(productName);
-    if (localCategory) {
-      return { category: localCategory, source: "local_index" as const };
+    const ruleCategoryIds = categoryRuleIds(productName);
+    if (ruleCategoryIds.length) {
+      const [category] = await this.repository.findLeafByIds(ruleCategoryIds);
+      if (category) {
+        return { category, source: "title_rule" as const };
+      }
+    } else {
+      const localCategory =
+        await this.repository.recommendFromTitle(productName);
+      if (localCategory) {
+        return { category: localCategory, source: "local_index" as const };
+      }
     }
     try {
       const models = await this.client.fetchProductModels(productName, 30);
@@ -88,6 +97,22 @@ export class NaverCategoryService {
     }
     return null;
   }
+}
+
+const TITLE_CATEGORY_RULES = [
+  {
+    categoryId: "50004771",
+    matches: (title: string) =>
+      /(캡슐커피|커피캡슐)/.test(title) &&
+      /(보관|거치|홀더|디스펜서|정리|수납|스탠드|랙)/.test(title),
+  },
+] as const;
+
+export function categoryRuleIds(title: string) {
+  const normalized = title.toLocaleLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
+  return TITLE_CATEGORY_RULES.filter((rule) => rule.matches(normalized)).map(
+    (rule) => rule.categoryId,
+  );
 }
 
 export function rankCatalogCategories(models: NaverCommerceProductModel[]) {
