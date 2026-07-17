@@ -178,4 +178,27 @@ describe("네이버 커머스API 클라이언트", () => {
       new NaverCommerceClient(config, fetcher, () => now).fetchCategories(),
     ).rejects.toMatchObject({ code: "invalid_response" });
   });
+
+  it("카테고리 메타데이터가 없다는 404는 빈 결과로 처리한다", async () => {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        json({
+          access_token: "token",
+          expires_in: 10800,
+          token_type: "Bearer",
+        }),
+      )
+      .mockResolvedValueOnce(json({ code: "NOT_FOUND" }, 404))
+      .mockResolvedValueOnce(json({ code: "NOT_FOUND" }, 404));
+    const client = new NaverCommerceClient(config, fetcher, () => now);
+
+    await expect(client.fetchProductAttributes("50000805")).resolves.toEqual(
+      [],
+    );
+    await expect(client.fetchStandardOptions("50000805")).resolves.toEqual({
+      useStandardOption: false,
+      standardOptionCategoryGroups: [],
+    });
+  });
 });

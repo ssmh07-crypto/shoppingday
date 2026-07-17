@@ -176,17 +176,27 @@ export class NaverCommerceClient {
       `${this.config.apiUrl}/v1/product-attributes/attributes`,
     );
     url.searchParams.set("categoryId", categoryId);
-    return parseNaverCommerceProductAttributes(await this.authorizedFetch(url));
+    const response = await this.authorizedFetch(url, { allowNotFound: true });
+    if (response.status === 404) return [];
+    return parseNaverCommerceProductAttributes(response);
   }
 
   async fetchStandardOptions(categoryId: string) {
     const url = new URL(`${this.config.apiUrl}/v1/options/standard-options`);
     url.searchParams.set("categoryId", categoryId);
-    return parseNaverCommerceStandardOptions(await this.authorizedFetch(url));
+    const response = await this.authorizedFetch(url, { allowNotFound: true });
+    if (response.status === 404) {
+      return { useStandardOption: false, standardOptionCategoryGroups: [] };
+    }
+    return parseNaverCommerceStandardOptions(response);
   }
 
-  private async authorizedFetch(url: URL) {
+  private async authorizedFetch(
+    url: URL,
+    options: { allowNotFound?: boolean } = {},
+  ) {
     const token = await this.getAccessToken();
+    const allowedStatuses = options.allowNotFound ? [404] : [];
     const response = await this.request(
       url,
       {
@@ -197,18 +207,24 @@ export class NaverCommerceClient {
         },
       },
       true,
+      allowedStatuses,
     );
     if (response.status !== 401) return response;
 
     this.token = undefined;
     const refreshedToken = await this.getAccessToken();
-    return this.request(url, {
-      method: "GET",
-      headers: {
-        accept: "application/json;charset=UTF-8",
-        authorization: `Bearer ${refreshedToken}`,
+    return this.request(
+      url,
+      {
+        method: "GET",
+        headers: {
+          accept: "application/json;charset=UTF-8",
+          authorization: `Bearer ${refreshedToken}`,
+        },
       },
-    });
+      false,
+      allowedStatuses,
+    );
   }
 
   private async getAccessToken() {
@@ -265,6 +281,7 @@ export class NaverCommerceClient {
     url: URL,
     init: RequestInit,
     allowUnauthorized = false,
+    allowedStatuses: number[] = [],
   ) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.config.timeoutMs);
@@ -283,6 +300,7 @@ export class NaverCommerceClient {
           response.status,
         );
       }
+      if (allowedStatuses.includes(response.status)) return response;
       if (!response.ok) {
         const gatewayCode = await readGatewayErrorCode(response);
         if (gatewayCode === "GW.IP_NOT_ALLOWED") {
