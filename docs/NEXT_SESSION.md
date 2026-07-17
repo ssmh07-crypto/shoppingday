@@ -157,4 +157,15 @@ npm run cf:deploy -- --dry-run
 - 상품 목록의 날짜·시간 포매터를 재사용하고 목록 URL 조립 로직을 통합했다.
 - 관련 회귀 테스트는 `tests/integration/product-editor-drawer.test.tsx`에 있다.
 
+## 2026-07-17 카테고리 필수정보와 자동저장
+
+- 네이버 릴레이가 `GET /v1/product-attributes/attributes`와 `GET /v1/options/standard-options`를 허용하고 `categoryId`만 전달한다.
+- `/api/integrations/naver/category-requirements`에서 카테고리별 필수 상품 속성과 필수 표준 옵션을 병렬 조회한다.
+- 메타데이터는 Worker 인스턴스 메모리에 24시간 캐시하며, 갱신 실패 시 이전 캐시가 있으면 오래된 결과임을 표시하고 사용한다.
+- 상품 편집창의 스마트스토어 탭에서 선택 카테고리의 필수 속성·옵션 요약을 표시한다. 실제 속성값 입력·저장은 채널 상품 발행 모델과 함께 구현해야 한다.
+- 편집창에서 변경 후 다른 탭을 누르면 기존 초안 저장 API로 자동저장한 뒤 이동한다. 저장 실패 시 현재 탭에 남는다.
+- 상품 목록 제목 편집은 저장·취소 버튼 없이 입력창이 포커스를 잃을 때 저장한다. Enter는 저장, Escape는 원래 값 복원 동작이다.
+- 목록 행 높이, 상품명 글씨와 썸네일을 추가 확대했다.
+- 관련 테스트는 `product-title-inline-editor.test.tsx`, `product-editor-drawer.test.tsx`, `naver-category-metadata.test.ts`에 있다.
+
 배포 전에 dry-run 결과의 gzip 크기가 Cloudflare 무료 플랜 3 MiB 아래인지 확인한다.

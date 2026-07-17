@@ -28,8 +28,42 @@ const productModelsSchema = z.object({
   totalElements: z.number().int(),
 });
 
+const productAttributeSchema = z.object({
+  attributeSeq: z.number().int(),
+  attributeName: z.string().default(""),
+  attributeClassificationType: z
+    .enum(["SINGLE_SELECT", "MULTI_SELECT", "RANGE"])
+    .optional(),
+  attributeClassificationCodeName: z.string().optional(),
+  attributeType: z.enum(["PRIMARY", "OPTIONAL"]).optional(),
+  attributeTypeCodeName: z.string().optional(),
+  unitUsable: z.boolean().optional(),
+  representativeUnitCode: z.string().optional(),
+  attributeValueMaxMatchingCount: z.number().int().optional(),
+});
+const productAttributesSchema = z.array(productAttributeSchema);
+
+const standardOptionGroupSchema = z.object({
+  attributeId: z.number().int().optional(),
+  attributeName: z.string().min(1),
+  groupName: z.string().optional(),
+  imageRegistrationUsable: z.boolean(),
+  realValueUsable: z.boolean(),
+  optionSetRequired: z.boolean(),
+});
+const standardOptionsSchema = z.object({
+  useStandardOption: z.boolean().default(false),
+  standardOptionCategoryGroups: z.array(standardOptionGroupSchema).default([]),
+});
+
 export type NaverCommerceCategory = z.infer<typeof categorySchema>;
 export type NaverCommerceProductModel = z.infer<typeof productModelSchema>;
+export type NaverCommerceProductAttribute = z.infer<
+  typeof productAttributeSchema
+>;
+export type NaverCommerceStandardOptions = z.infer<
+  typeof standardOptionsSchema
+>;
 
 export async function parseNaverCommerceCategories(response: Response) {
   const json = await parseJson(response);
@@ -57,6 +91,22 @@ export async function parseNaverCommerceProductModels(response: Response) {
     );
   }
   return Array.isArray(parsed.data) ? parsed.data : parsed.data.contents;
+}
+
+export async function parseNaverCommerceProductAttributes(response: Response) {
+  return parseResponse(
+    response,
+    productAttributesSchema,
+    "네이버 카테고리 속성 응답 형식이 올바르지 않습니다.",
+  );
+}
+
+export async function parseNaverCommerceStandardOptions(response: Response) {
+  return parseResponse(
+    response,
+    standardOptionsSchema,
+    "네이버 표준 옵션 응답 형식이 올바르지 않습니다.",
+  );
 }
 
 export type NaverCommerceConfig = {
@@ -119,6 +169,20 @@ export class NaverCommerceClient {
     url.searchParams.set("size", String(size));
     const response = await this.authorizedFetch(url);
     return parseNaverCommerceProductModels(response);
+  }
+
+  async fetchProductAttributes(categoryId: string) {
+    const url = new URL(
+      `${this.config.apiUrl}/v1/product-attributes/attributes`,
+    );
+    url.searchParams.set("categoryId", categoryId);
+    return parseNaverCommerceProductAttributes(await this.authorizedFetch(url));
+  }
+
+  async fetchStandardOptions(categoryId: string) {
+    const url = new URL(`${this.config.apiUrl}/v1/options/standard-options`);
+    url.searchParams.set("categoryId", categoryId);
+    return parseNaverCommerceStandardOptions(await this.authorizedFetch(url));
   }
 
   private async authorizedFetch(url: URL) {
@@ -286,4 +350,16 @@ async function parseJson(response: Response): Promise<unknown> {
       response.status,
     );
   }
+}
+
+async function parseResponse<T>(
+  response: Response,
+  schema: z.ZodType<T>,
+  message: string,
+) {
+  const parsed = schema.safeParse(await parseJson(response));
+  if (!parsed.success) {
+    throw new NaverCommerceError("invalid_response", message, response.status);
+  }
+  return parsed.data;
 }

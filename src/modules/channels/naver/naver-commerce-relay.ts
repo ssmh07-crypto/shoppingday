@@ -2,9 +2,13 @@ import { z } from "zod";
 import {
   NaverCommerceError,
   parseNaverCommerceCategories,
+  parseNaverCommerceProductAttributes,
   parseNaverCommerceProductModels,
+  parseNaverCommerceStandardOptions,
   type NaverCommerceCategory,
+  type NaverCommerceProductAttribute,
   type NaverCommerceProductModel,
+  type NaverCommerceStandardOptions,
 } from "./naver-commerce-client";
 import {
   createNaverRelaySignature,
@@ -26,6 +30,12 @@ export interface NaverCategoriesClient {
     name: string,
     size?: number,
   ): Promise<NaverCommerceProductModel[]>;
+  fetchProductAttributes(
+    categoryId: string,
+  ): Promise<NaverCommerceProductAttribute[]>;
+  fetchStandardOptions(
+    categoryId: string,
+  ): Promise<NaverCommerceStandardOptions>;
 }
 
 export class NaverCommerceRelayClient implements NaverCategoriesClient {
@@ -39,10 +49,7 @@ export class NaverCommerceRelayClient implements NaverCategoriesClient {
   ) {}
 
   async fetchCategories(options: { last?: boolean } = {}) {
-    const base = this.config.relayUrl.endsWith("/")
-      ? this.config.relayUrl
-      : `${this.config.relayUrl}/`;
-    const url = new URL("v1/categories", base);
+    const url = this.relayUrl("v1/categories");
     if (options.last !== undefined) {
       url.searchParams.set("last", String(options.last));
     }
@@ -52,14 +59,32 @@ export class NaverCommerceRelayClient implements NaverCategoriesClient {
   }
 
   async fetchProductModels(name: string, size = 20) {
-    const base = this.config.relayUrl.endsWith("/")
-      ? this.config.relayUrl
-      : `${this.config.relayUrl}/`;
-    const url = new URL("v1/product-models", base);
+    const url = this.relayUrl("v1/product-models");
     url.searchParams.set("name", name);
     url.searchParams.set("size", String(size));
     const response = await this.requestWithRetry(url);
     return parseNaverCommerceProductModels(response);
+  }
+
+  async fetchProductAttributes(categoryId: string) {
+    const url = this.relayUrl("v1/product-attributes/attributes");
+    url.searchParams.set("categoryId", categoryId);
+    return parseNaverCommerceProductAttributes(
+      await this.requestWithRetry(url),
+    );
+  }
+
+  async fetchStandardOptions(categoryId: string) {
+    const url = this.relayUrl("v1/options/standard-options");
+    url.searchParams.set("categoryId", categoryId);
+    return parseNaverCommerceStandardOptions(await this.requestWithRetry(url));
+  }
+
+  private relayUrl(path: string) {
+    const base = this.config.relayUrl.endsWith("/")
+      ? this.config.relayUrl
+      : `${this.config.relayUrl}/`;
+    return new URL(path, base);
   }
 
   private async requestWithRetry(url: URL) {
@@ -161,6 +186,16 @@ const relayProductModelQuerySchema = z.object({
   name: z.string().trim().min(2).max(200),
   size: z.coerce.number().int().min(1).max(100).default(20),
 });
+const relayCategoryMetadataQuerySchema = z.object({
+  categoryId: z.string().regex(/^\d+$/).max(20),
+});
+
+const RELAY_PATHS = [
+  "/v1/categories",
+  "/v1/product-models",
+  "/v1/product-attributes/attributes",
+  "/v1/options/standard-options",
+] as const;
 
 export type NaverRelayHandlerOptions = {
   sharedSecret: string;
@@ -202,7 +237,7 @@ export function createNaverCommerceRelayHandler(
     const url = new URL(request.url);
     if (
       request.method !== "GET" ||
-      !["/v1/categories", "/v1/product-models"].includes(url.pathname)
+      !RELAY_PATHS.some((path) => path === url.pathname)
     ) {
       return relayJson(
         404,
@@ -243,10 +278,7 @@ export function createNaverCommerceRelayHandler(
     }
 
     try {
-      const result =
-        url.pathname === "/v1/categories"
-          ? await handleCategories(url, options.client)
-          : await handleProductModels(url, options.client);
+      const result = await handleRelayRequest(url, options.client);
       if (result instanceof Response) return result;
       return Response.json(result, {
         headers: { "cache-control": "no-store" },
@@ -263,6 +295,30 @@ export function createNaverCommerceRelayHandler(
       );
     }
   };
+}
+
+async function handleRelayRequest(url: URL, client: NaverCategoriesClient) {
+  if (url.pathname === "/v1/categories") return handleCategories(url, client);
+  if (url.pathname === "/v1/product-models")
+    return handleProductModels(url, client);
+  const categoryId = parseCategoryMetadataQuery(url);
+  if (categoryId instanceof Response) return categoryId;
+  return url.pathname === "/v1/product-attributes/attributes"
+    ? client.fetchProductAttributes(categoryId)
+    : client.fetchStandardOptions(categoryId);
+}
+
+function parseCategoryMetadataQuery(url: URL) {
+  const parsed = relayCategoryMetadataQuerySchema.safeParse({
+    categoryId: url.searchParams.get("categoryId") ?? undefined,
+  });
+  if (
+    !parsed.success ||
+    Array.from(url.searchParams.keys()).some((key) => key !== "categoryId")
+  ) {
+    return relayJson(400, "invalid_request", "카테고리 ID를 확인해 주세요.");
+  }
+  return parsed.data.categoryId;
 }
 
 async function handleCategories(url: URL, client: NaverCategoriesClient) {

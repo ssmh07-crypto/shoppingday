@@ -164,17 +164,19 @@ export function createNaverCategoryService(
   database: Database,
   env: ServerEnv = getServerEnv(),
 ) {
-  const relayUrl = getNaverCommerceRelayUrl(env);
-  const client =
-    relayUrl && env.NAVER_COMMERCE_RELAY_SHARED_SECRET
-      ? new NaverCommerceRelayClient({
-          relayUrl,
-          sharedSecret: env.NAVER_COMMERCE_RELAY_SHARED_SECRET,
-          timeoutMs: env.NAVER_COMMERCE_TIMEOUT_MS,
-        })
-      : new NaverCommerceClient(createNaverCommerceConfig(env));
   return new NaverCategoryService(
     new NaverCategoryRepository(database),
-    client,
+    createConfiguredNaverClient(env),
   );
+}
+
+export function createConfiguredNaverClient(env: ServerEnv = getServerEnv()) {
+  const relayUrl = getNaverCommerceRelayUrl(env);
+  return relayUrl && env.NAVER_COMMERCE_RELAY_SHARED_SECRET
+    ? new NaverCommerceRelayClient({
+        relayUrl,
+        sharedSecret: env.NAVER_COMMERCE_RELAY_SHARED_SECRET,
+        timeoutMs: env.NAVER_COMMERCE_TIMEOUT_MS,
+      })
+    : new NaverCommerceClient(createNaverCommerceConfig(env));
 }

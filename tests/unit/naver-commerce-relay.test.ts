@@ -28,6 +28,32 @@ const productModels = [
     wholeCategoryName: "패션의류>여성의류>원피스",
   },
 ];
+const productAttributes = [
+  {
+    attributeSeq: 10,
+    attributeName: "색상",
+    attributeClassificationType: "SINGLE_SELECT" as const,
+    attributeType: "PRIMARY" as const,
+  },
+];
+const standardOptions = {
+  useStandardOption: true,
+  standardOptionCategoryGroups: [
+    {
+      attributeName: "색상",
+      imageRegistrationUsable: true,
+      realValueUsable: false,
+      optionSetRequired: true,
+    },
+  ],
+};
+
+function metadataClientMocks() {
+  return {
+    fetchProductAttributes: vi.fn().mockResolvedValue(productAttributes),
+    fetchStandardOptions: vi.fn().mockResolvedValue(standardOptions),
+  };
+}
 
 function json(value: unknown, status = 200) {
   return new Response(JSON.stringify(value), {
@@ -78,6 +104,7 @@ describe("네이버 커머스API 중계 인증", () => {
     const client = {
       fetchCategories: vi.fn().mockResolvedValue(categories),
       fetchProductModels: vi.fn().mockResolvedValue(productModels),
+      ...metadataClientMocks(),
     };
     const handler = createNaverCommerceRelayHandler({
       sharedSecret,
@@ -103,6 +130,7 @@ describe("네이버 커머스API 중계 인증", () => {
     const client = {
       fetchCategories: vi.fn(),
       fetchProductModels: vi.fn(),
+      ...metadataClientMocks(),
     };
     const handler = createNaverCommerceRelayHandler({
       sharedSecret,
@@ -119,18 +147,50 @@ describe("네이버 커머스API 중계 인증", () => {
     const client = {
       fetchCategories: vi.fn(),
       fetchProductModels: vi.fn().mockResolvedValue(productModels),
+      ...metadataClientMocks(),
     };
     const handler = createNaverCommerceRelayHandler({
       sharedSecret,
       client,
       now: () => now,
     });
-    const path =
-      "/v1/product-models?name=%EC%9B%90%ED%94%BC%EC%8A%A4&size=20";
+    const path = "/v1/product-models?name=%EC%9B%90%ED%94%BC%EC%8A%A4&size=20";
     const response = await handler(await signedRequest(path));
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual(productModels);
     expect(client.fetchProductModels).toHaveBeenCalledWith("원피스", 20);
+  });
+
+  it("카테고리 속성과 표준 옵션 경로만 검증해 전달한다", async () => {
+    const client = {
+      fetchCategories: vi.fn(),
+      fetchProductModels: vi.fn(),
+      ...metadataClientMocks(),
+    };
+    const attributesHandler = createNaverCommerceRelayHandler({
+      sharedSecret,
+      client,
+      now: () => now,
+    });
+    const attributesPath =
+      "/v1/product-attributes/attributes?categoryId=50000805";
+    const attributesResponse = await attributesHandler(
+      await signedRequest(attributesPath),
+    );
+    expect(attributesResponse.status).toBe(200);
+    expect(client.fetchProductAttributes).toHaveBeenCalledWith("50000805");
+
+    const optionsHandler = createNaverCommerceRelayHandler({
+      sharedSecret,
+      client,
+      now: () => now,
+    });
+    const optionsPath = "/v1/options/standard-options?categoryId=50000805";
+    const optionsResponse = await optionsHandler(
+      await signedRequest(optionsPath),
+    );
+    expect(optionsResponse.status).toBe(200);
+    expect(client.fetchStandardOptions).toHaveBeenCalledWith("50000805");
   });
 });
 

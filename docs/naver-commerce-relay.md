@@ -76,6 +76,8 @@ npx wrangler login --use-keyring
 npm run naver:local-tunnel
 ```
 
+릴레이는 HMAC 서명된 읽기 요청 중 카테고리, 상품 모델 검색, 카테고리별 상품 속성, 표준 옵션 경로만 허용한다. 메타데이터 경로는 숫자형 `categoryId` 쿼리만 전달하며 다른 쿼리는 거부한다.
+
 실행기는 다음 작업을 자동 처리한다.
 
 1. `.env.local`의 네이버 인증정보를 확인한다.
