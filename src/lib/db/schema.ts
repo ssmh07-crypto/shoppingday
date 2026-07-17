@@ -54,6 +54,30 @@ export const userProfiles = pgTable("user_profiles", {
     .defaultNow(),
 });
 
+export const productProcessingSettings = pgTable(
+  "product_processing_settings",
+  {
+    userId: uuid("user_id")
+      .primaryKey()
+      .references(() => userProfiles.userId, { onDelete: "cascade" }),
+    syncProtectedFields: jsonb("sync_protected_fields")
+      .$type<Array<"title" | "description" | "images" | "options">>()
+      .notNull()
+      .default(["title", "description", "images", "options"]),
+    applyCategoryQueryToTitleByDefault: boolean(
+      "apply_category_query_to_title_by_default",
+    )
+      .notNull()
+      .default(false),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+);
+
 export const suppliers = pgTable("suppliers", {
   id: uuid("id").primaryKey().defaultRandom(),
   code: text("code").notNull().unique(),

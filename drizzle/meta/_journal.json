@@ -43,6 +43,13 @@
       "when": 1784272242751,
       "tag": "0005_sweet_vampiro",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1784291221536,
+      "tag": "0006_real_ogun",
+      "breakpoints": true
     }
   ]
 }
