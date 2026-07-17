@@ -122,7 +122,7 @@ export function catalogSearchQueries(title: string) {
   const normalized = title.trim().replace(/\s+/g, " ");
   const tokens = normalized.split(" ").filter(Boolean);
   const queries = [normalized];
-  for (let index = 1; index <= Math.min(2, tokens.length - 3); index += 1) {
+  for (let index = 1; index <= Math.min(2, tokens.length - 1); index += 1) {
     queries.push(tokens.slice(index).join(" "));
   }
   return [...new Set(queries.filter((query) => query.length >= 2))];

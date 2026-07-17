@@ -81,6 +81,38 @@ describe("네이버 카테고리 자동 추천", () => {
     expect(repository.findLeafByIds).toHaveBeenCalledWith(["50005257"]);
     expect(repository.recommendFromTitle).not.toHaveBeenCalled();
   });
+  it("세 단어 상품명도 앞쪽 수식어를 제거해 다시 검색한다", async () => {
+    const stickyMemoCategory = {
+      id: "50003558",
+      name: "점착식메모지",
+      wholeCategoryName: "생활/건강>문구/사무용품>노트/수첩>점착식메모지",
+      last: true,
+    };
+    const fetchProductModels = vi
+      .fn()
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        model(1, stickyMemoCategory.id),
+        model(2, stickyMemoCategory.id),
+      ]);
+    const { service, repository } = setup(fetchProductModels);
+    repository.findLeafByIds.mockResolvedValueOnce([stickyMemoCategory]);
+
+    await expect(service.recommend("레트로 메모 포스트잇")).resolves.toEqual({
+      category: stickyMemoCategory,
+      source: "naver_catalog",
+      evidence: {
+        votes: 2,
+        sampleSize: 2,
+        query: "메모 포스트잇",
+      },
+    });
+    expect(fetchProductModels).toHaveBeenNthCalledWith(
+      2,
+      "메모 포스트잇",
+      30,
+    );
+  });
 
   it("먹는 캡슐커피 상품에는 보관용품 규칙을 적용하지 않는다", () => {
     expect(categoryRuleIds("에스프레소 캡슐커피 10개입")).toEqual([]);
