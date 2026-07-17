@@ -18,7 +18,9 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "node --env-file=.env.local ./node_modules/drizzle-kit/bin.cjs migrate",
     "import:all": "node --max-old-space-size=2048 --conditions=react-server --env-file=.env.local --import tsx scripts/import-dome-all.ts",
-    "sync:products": "node --max-old-space-size=2048 --conditions=react-server --import tsx scripts/sync-dome-products.ts"
+    "sync:products": "node --max-old-space-size=2048 --conditions=react-server --import tsx scripts/sync-dome-products.ts",
+    "naver:relay": "tsx scripts/naver-commerce-relay.ts",
+    "naver:local-tunnel": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start-local-naver-tunnel.ps1"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1086.0",

@@ -1,6 +1,6 @@
 # 다음 Codex 세션 인수인계
 
-마지막 갱신: 2026-07-16 (UTC)
+마지막 갱신: 2026-07-17 (KST)
 
 이 문서는 대화 세션이 종료되거나 Codespace가 재시작된 뒤 작업을 이어가기 위한 기준 문서다. 인증정보와 Secret 값은 절대 이 문서에 기록하지 않는다.
 
@@ -43,6 +43,27 @@ npm run typecheck
 - 상품 편집창에 예상 수수료·배송비·목표 실마진 기반 권장 판매가 계산기 추가
 - 전체 테스트 59개, lint, typecheck, Next.js build, OpenNext Cloudflare build 통과
 
+## 2026-07-17 진행 상태
+
+- 고정 IP 중계 구조를 제한형 HTTPS 릴레이로 결정하고 구현했다.
+- Worker는 timestamp·nonce·메서드·경로·본문 hash를 포함한 HMAC 서명 요청을 보낸다.
+- 릴레이는 현재 `GET /v1/categories`만 허용하며 5분 시간창과 nonce 재사용 방지를 적용한다.
+- 네이버 인증정보와 Access Token은 릴레이 서버에만 두고, Worker에는 릴레이 URL과 공유 Secret만 둔다.
+- 일시적인 502·503·504 및 연결 실패는 읽기 요청에 한해 한 번 재시도한다.
+- 릴레이 감사 로그는 요청 ID, 메서드, 경로, 상태, 처리 시간만 기록한다.
+- 배치 절차: [`naver-commerce-relay.md`](naver-commerce-relay.md)
+- 전체 테스트 65개, lint, typecheck, Next.js build, OpenNext Cloudflare build 통과
+- Cloudflare dry-run 크기: gzip 약 627.74 KiB
+- 실제 고정 IP VM 준비, DNS/TLS, 네이버 허용 IP 등록과 Secret 배치는 아직 하지 않았다.
+- 비용 없는 로컬 PC + Cloudflare Quick Tunnel 운영을 선택했다.
+- Windows에 `cloudflared` 2026.7.2를 설치하고 Wrangler OAuth 로그인을 Windows Credential Manager에 저장했다.
+- `npm run naver:local-tunnel` 한 명령으로 로컬 릴레이·Quick Tunnel 실행과 Worker Secret 갱신을 처리한다.
+- 공유 Secret은 Git에서 제외되는 `.env.relay.local`에 자동 생성된다.
+- Quick Tunnel URL은 `NAVER_COMMERCE_RELAY_URL_OVERRIDE` Worker Secret으로 매 실행 시 갱신된다.
+- Linux 컨테이너에서 OpenNext 번들을 생성해 Worker에 배포했다. Windows OpenNext 빌드는 서버 청크 오류가 발생했으므로 운영 배포에 사용하지 않는다.
+- 실제 터널 경유 네이버 전체 카테고리 호출 HTTP 200, 5,815개를 확인했다.
+- Workers 사이트와 터널 `/healthz` 모두 HTTP 200을 확인했다.
+
 ## 보안 상태
 
 - 이전 네이버 Client Secret은 Cloudflare 빌드 로그에 평문으로 노출되어 폐기했다.
@@ -63,11 +84,12 @@ npm run typecheck
 
 ### 1. 네이버 API 고정 IP 중계 구조 결정 및 구현
 
+- 애플리케이션과 릴레이 코드는 구현 완료했다.
 - 고정 공인 IPv4를 가진 작은 서버/게이트웨이를 준비한다.
 - 네이버 API센터에 그 IP를 등록한다.
-- Cloudflare Worker가 인증된 중계 서버를 통해서만 네이버 API를 호출하도록 한다.
-- 요청 서명, 재시도, 타임아웃, 호출 감사 로그와 Secret 격리를 적용한다.
-- 이 구조가 정해지기 전에는 운영 Worker에서 네이버 상품 API를 직접 호출하는 기능을 완성된 것으로 취급하지 않는다.
+- 릴레이에 DNS/TLS와 Secret을 설정하고 Cloudflare Worker의 릴레이 설정을 활성화한다.
+- 관리자 화면에서 실제 카테고리 동기화를 검증한다.
+- 릴레이 배치와 실제 호출 검증 전에는 운영 네이버 상품 API 연동을 완성된 것으로 취급하지 않는다.
 
 ### 2. 내부 상품과 네이버 카테고리 연결
 

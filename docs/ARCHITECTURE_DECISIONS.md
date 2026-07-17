@@ -30,6 +30,8 @@
 
 ## 네이버 스마트스토어 연동
 
+- 운영 호출은 고정 공인 IPv4 VM의 제한형 HTTPS 중계 서버를 사용한다. Worker는 HMAC 서명 요청만 보내고 네이버 Client Secret과 Access Token은 중계 서버에만 둔다.
+- 범용 전달 프록시는 만들지 않으며 중계 서버에 허용 API를 명시적으로 추가한다. 상세 운영 방식은 [`naver-commerce-relay.md`](naver-commerce-relay.md)를 따른다.
 - 네이버 Client Secret과 Access Token은 서버에서만 사용하고 DB·Git·일반 로그·브라우저 응답에 저장하지 않는다.
 - 카테고리 전체 동기화는 관리자가 누른 명시적 버튼에서만 네이버 API를 1회 호출한다.
 - 카테고리 화면 조회와 상품 편집 중에는 저장된 `naver_commerce_categories`를 사용한다.

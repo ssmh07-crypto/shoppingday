@@ -7,12 +7,22 @@ import {
   NaverCommerceError,
   type NaverCommerceConfig,
 } from "./naver-commerce-client";
+import {
+  NaverCommerceRelayClient,
+  type NaverCategoriesClient,
+} from "./naver-commerce-relay";
 import { NaverCategoryRepository } from "./naver-category-repository";
 
 export function isNaverCommerceConfigured(env: ServerEnv = getServerEnv()) {
+  const relayUrl = getNaverCommerceRelayUrl(env);
   return Boolean(
-    env.NAVER_COMMERCE_CLIENT_ID && env.NAVER_COMMERCE_CLIENT_SECRET,
+    (relayUrl && env.NAVER_COMMERCE_RELAY_SHARED_SECRET) ||
+      (env.NAVER_COMMERCE_CLIENT_ID && env.NAVER_COMMERCE_CLIENT_SECRET),
   );
+}
+
+function getNaverCommerceRelayUrl(env: ServerEnv) {
+  return env.NAVER_COMMERCE_RELAY_URL_OVERRIDE ?? env.NAVER_COMMERCE_RELAY_URL;
 }
 
 export function createNaverCommerceConfig(env: ServerEnv): NaverCommerceConfig {
@@ -35,7 +45,7 @@ export function createNaverCommerceConfig(env: ServerEnv): NaverCommerceConfig {
 export class NaverCategoryService {
   constructor(
     private readonly repository: NaverCategoryRepository,
-    private readonly client: NaverCommerceClient,
+    private readonly client: NaverCategoriesClient,
   ) {}
 
   async sync() {
@@ -54,8 +64,17 @@ export function createNaverCategoryService(
   database: Database,
   env: ServerEnv = getServerEnv(),
 ) {
+  const relayUrl = getNaverCommerceRelayUrl(env);
+  const client =
+    relayUrl && env.NAVER_COMMERCE_RELAY_SHARED_SECRET
+      ? new NaverCommerceRelayClient({
+          relayUrl,
+          sharedSecret: env.NAVER_COMMERCE_RELAY_SHARED_SECRET,
+          timeoutMs: env.NAVER_COMMERCE_TIMEOUT_MS,
+        })
+      : new NaverCommerceClient(createNaverCommerceConfig(env));
   return new NaverCategoryService(
     new NaverCategoryRepository(database),
-    new NaverCommerceClient(createNaverCommerceConfig(env)),
+    client,
   );
 }

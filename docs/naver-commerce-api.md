@@ -22,6 +22,7 @@
 ## 현재 구현 상태
 
 - bcrypt + Base64 전자서명, Client Credentials 토큰 발급·캐시, 인증 만료 시 1회 재발급을 구현했다.
+- 운영 Worker용 HMAC 중계 클라이언트와 고정 IP Node.js 릴레이를 구현했다. 배치와 Secret 설정은 [`naver-commerce-relay.md`](naver-commerce-relay.md)를 따른다.
 - `/admin/channels/naver`의 명시적 버튼으로 전체 카테고리를 가져와 `naver_commerce_categories`에 원자적으로 교체 저장한다.
 - 화면 조회와 검색은 DB만 사용하므로 페이지를 열 때마다 네이버 API가 호출되지 않는다.
 - 상품 등록·수정·삭제·판매 상태 변경, 카테고리 속성 및 표준 옵션, 주문 정산 연동은 아직 구현되지 않았다. 해당 기능을 구현하기 전 위 공식 인덱스에서 현재 endpoint 규격을 다시 확인한다.
