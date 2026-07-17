@@ -18,6 +18,7 @@ const base = {
   naverCategoryId: "50000000",
   selectedImages: imagesFromSupplier(["https://example.test/a.jpg"]),
   editedOptions: { groups: [], combinations: [] },
+  naverAttributes: [],
 };
 describe("판매 상품 도메인", () => {
   it("상품명과 판매가를 검증한다", () => {
@@ -147,7 +148,35 @@ describe("판매 상품 도메인", () => {
     ).toHaveProperty("naverCategoryId");
     expect(statusAfterSave("ready", ["title"])).toBe("editing");
     expect(statusAfterSave("ready", ["naverCategoryId"])).toBe("editing");
+    expect(statusAfterSave("ready", ["naverAttributes"])).toBe("editing");
     expect(statusAfterSave("ready", ["searchTags"])).toBe("ready");
+  });
+  it("네이버 속성값의 중복과 빈 직접 입력을 거부한다", () => {
+    const attribute = {
+      attributeSeq: 10,
+      attributeValueSeq: 100,
+      minValue: "빨강",
+      maxValue: "",
+      unitCode: null,
+    };
+    expect(
+      draftInputSchema.safeParse({
+        ...base,
+        naverAttributes: [attribute, attribute],
+      }).success,
+    ).toBe(false);
+    expect(
+      draftInputSchema.safeParse({
+        ...base,
+        naverAttributes: [
+          {
+            ...attribute,
+            attributeValueSeq: null,
+            minValue: "",
+          },
+        ],
+      }).success,
+    ).toBe(false);
   });
   it("위험 HTML과 URL을 제거한다", () => {
     const clean = sanitizeDescription(

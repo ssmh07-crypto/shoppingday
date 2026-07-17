@@ -30,6 +30,7 @@ export type ProductEditorRecord = {
     | "naverCategoryId"
     | "selectedImages"
     | "editedOptions"
+    | "naverAttributes"
     | "draftVersion"
     | "readyAt"
     | "updatedAt"
@@ -205,6 +206,7 @@ export class ProductEditRepository {
           naverCategoryId: products.naverCategoryId,
           selectedImages: products.selectedImages,
           editedOptions: products.editedOptions,
+          naverAttributes: products.naverAttributes,
           draftVersion: products.draftVersion,
           readyAt: products.readyAt,
           updatedAt: products.updatedAt,
@@ -308,6 +310,7 @@ export class ProductEditRepository {
           naverCategoryId: input.naverCategoryId,
           selectedImages: input.selectedImages,
           editedOptions: input.editedOptions,
+          naverAttributes: input.naverAttributes,
           status,
           validationErrors,
           readyAt,
@@ -387,7 +390,9 @@ function summarize(row: ProductRow, fields: string[]) {
     result[field] =
       field === "description"
         ? `[HTML ${String(value).length} chars]`
-        : field === "editedOptions" || field === "selectedImages"
+        : field === "editedOptions" ||
+            field === "selectedImages" ||
+            field === "naverAttributes"
           ? `[${Array.isArray(value) ? value.length : "structured"} items]`
           : value;
   }

@@ -51,6 +51,8 @@ const standardOptions = {
 function metadataClientMocks() {
   return {
     fetchProductAttributes: vi.fn().mockResolvedValue(productAttributes),
+    fetchProductAttributeValues: vi.fn().mockResolvedValue([]),
+    fetchProductAttributeUnits: vi.fn().mockResolvedValue([]),
     fetchStandardOptions: vi.fn().mockResolvedValue(standardOptions),
   };
 }
@@ -179,6 +181,27 @@ describe("네이버 커머스API 중계 인증", () => {
     );
     expect(attributesResponse.status).toBe(200);
     expect(client.fetchProductAttributes).toHaveBeenCalledWith("50000805");
+
+    const valuesHandler = createNaverCommerceRelayHandler({
+      sharedSecret,
+      client,
+      now: () => now,
+    });
+    const valuesPath =
+      "/v1/product-attributes/attribute-values?categoryId=50000805";
+    const valuesResponse = await valuesHandler(await signedRequest(valuesPath));
+    expect(valuesResponse.status).toBe(200);
+    expect(client.fetchProductAttributeValues).toHaveBeenCalledWith("50000805");
+
+    const unitsHandler = createNaverCommerceRelayHandler({
+      sharedSecret,
+      client,
+      now: () => now,
+    });
+    const unitsPath = "/v1/product-attributes/attribute-value-units";
+    const unitsResponse = await unitsHandler(await signedRequest(unitsPath));
+    expect(unitsResponse.status).toBe(200);
+    expect(client.fetchProductAttributeUnits).toHaveBeenCalledTimes(1);
 
     const optionsHandler = createNaverCommerceRelayHandler({
       sharedSecret,

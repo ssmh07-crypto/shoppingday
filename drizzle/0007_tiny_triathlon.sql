@@ -1,0 +1,1 @@
+ALTER TABLE "products" ADD COLUMN "naver_attributes" jsonb DEFAULT '[]'::jsonb NOT NULL;

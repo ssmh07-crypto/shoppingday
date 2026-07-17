@@ -201,4 +201,39 @@ describe("네이버 커머스API 클라이언트", () => {
       standardOptionCategoryGroups: [],
     });
   });
+
+  it("카테고리 속성 후보값과 전체 단위를 조회한다", async () => {
+    const values = [
+      {
+        attributeSeq: 10,
+        attributeValueSeq: 100,
+        minAttributeValue: "빨강",
+        exposureOrder: 1,
+      },
+    ];
+    const units = [{ id: "A02036", unitCodeName: "cm" }];
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        json({
+          access_token: "token",
+          expires_in: 10800,
+          token_type: "Bearer",
+        }),
+      )
+      .mockResolvedValueOnce(json(values))
+      .mockResolvedValueOnce(json(units));
+    const client = new NaverCommerceClient(config, fetcher, () => now);
+
+    await expect(
+      client.fetchProductAttributeValues("50000805"),
+    ).resolves.toEqual(values);
+    await expect(client.fetchProductAttributeUnits()).resolves.toEqual(units);
+    expect(String(fetcher.mock.calls[1]?.[0])).toContain(
+      "/v1/product-attributes/attribute-values?categoryId=50000805",
+    );
+    expect(String(fetcher.mock.calls[2]?.[0])).toContain(
+      "/v1/product-attributes/attribute-value-units",
+    );
+  });
 });
