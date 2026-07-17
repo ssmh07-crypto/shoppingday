@@ -11,6 +11,28 @@ import type {
 } from "./product-editor-types";
 
 type EditorTab = "basic" | "content" | "market";
+type CategoryRequirements = {
+  categoryId: string;
+  requiredAttributes: Array<{
+    attributeSeq: number;
+    attributeName: string;
+    attributeClassificationType?: "SINGLE_SELECT" | "MULTI_SELECT" | "RANGE";
+  }>;
+  standardOptions: {
+    useStandardOption: boolean;
+    standardOptionCategoryGroups: Array<{
+      attributeName: string;
+      groupName?: string;
+      optionSetRequired: boolean;
+    }>;
+  };
+  requiredOptionGroups: Array<{
+    attributeName: string;
+    groupName?: string;
+    optionSetRequired: boolean;
+  }>;
+  stale: boolean;
+};
 
 export function ProductEditor({
   initial,
@@ -45,6 +67,10 @@ export function ProductEditor({
     initial.settings.applyCategoryQueryToTitleByDefault,
   );
   const [categorySearchQuery, setCategorySearchQuery] = useState("");
+  const [categoryRequirements, setCategoryRequirements] =
+    useState<CategoryRequirements | null>(null);
+  const [categoryRequirementsStatus, setCategoryRequirementsStatus] =
+    useState("");
   const autoRecommendationStarted = useRef(false);
   const titleBeforeCategoryQuery = useRef(initial.product.title);
   const dirty = JSON.stringify(form) !== baseline;
@@ -67,6 +93,38 @@ export function ProductEditor({
   useEffect(() => {
     onDirtyChange?.(dirty);
   }, [dirty, onDirtyChange]);
+
+  useEffect(() => {
+    if (activeTab !== "market" || !form.naverCategoryId) return;
+    const controller = new AbortController();
+    async function loadRequirements(categoryId: string) {
+      setCategoryRequirements(null);
+      setCategoryRequirementsStatus("카테고리 필수정보를 확인하는 중입니다.");
+      try {
+        const response = await fetch(
+          `/api/integrations/naver/category-requirements?categoryId=${encodeURIComponent(categoryId)}`,
+          { signal: controller.signal },
+        );
+        const body = await response.json();
+        if (!response.ok) {
+          throw new Error(
+            body.error?.message ?? "카테고리 필수정보를 조회하지 못했습니다.",
+          );
+        }
+        setCategoryRequirements(body.requirements);
+        setCategoryRequirementsStatus("");
+      } catch (error) {
+        if (controller.signal.aborted) return;
+        setCategoryRequirementsStatus(
+          error instanceof Error
+            ? error.message
+            : "카테고리 필수정보를 조회하지 못했습니다.",
+        );
+      }
+    }
+    void loadRequirements(form.naverCategoryId);
+    return () => controller.abort();
+  }, [activeTab, form.naverCategoryId]);
 
   useEffect(() => {
     const search = naverCategorySearch.trim();
@@ -209,11 +267,19 @@ export function ProductEditor({
       setStatus(product.status);
       setMessage(`저장 완료 ${new Date().toLocaleTimeString("ko-KR")}`);
       onMutated?.();
+      return true;
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "저장 실패");
+      return false;
     } finally {
       setSaving(false);
     }
+  }
+
+  async function changeTab(nextTab: EditorTab) {
+    if (nextTab === activeTab || saving) return;
+    if (dirty && !(await submit("draft"))) return;
+    setActiveTab(nextTab);
   }
 
   async function resetImages() {
@@ -323,19 +389,22 @@ export function ProductEditor({
       <nav className="drawer-tabs" aria-label="상품 편집 단계">
         <TabButton
           active={activeTab === "basic"}
-          onClick={() => setActiveTab("basic")}
+          disabled={saving}
+          onClick={() => void changeTab("basic")}
           number="1"
           label="기본정보"
         />
         <TabButton
           active={activeTab === "content"}
-          onClick={() => setActiveTab("content")}
+          disabled={saving}
+          onClick={() => void changeTab("content")}
           number="2"
           label="이미지·상세"
         />
         <TabButton
           active={activeTab === "market"}
-          onClick={() => setActiveTab("market")}
+          disabled={saving}
+          onClick={() => void changeTab("market")}
           number="3"
           label="스마트스토어"
         />
@@ -694,6 +763,67 @@ export function ProductEditor({
                 </div>
               ))}
             </div>
+            <div className="drawer-category-requirements">
+              <strong>선택 카테고리 필수정보</strong>
+              {categoryRequirementsStatus && (
+                <p role="status">{categoryRequirementsStatus}</p>
+              )}
+              {categoryRequirements && (
+                <>
+                  <div>
+                    <span>필수 상품 속성</span>
+                    <strong>
+                      {categoryRequirements.requiredAttributes.length}개
+                    </strong>
+                  </div>
+                  <ul>
+                    {categoryRequirements.requiredAttributes.map(
+                      (attribute) => (
+                        <li key={attribute.attributeSeq}>
+                          {attribute.attributeName}
+                          <small>
+                            {attributeTypeLabel(
+                              attribute.attributeClassificationType,
+                            )}
+                          </small>
+                        </li>
+                      ),
+                    )}
+                    {!categoryRequirements.requiredAttributes.length && (
+                      <li>필수 상품 속성 없음</li>
+                    )}
+                  </ul>
+                  <div>
+                    <span>필수 표준 옵션</span>
+                    <strong>
+                      {categoryRequirements.requiredOptionGroups.length}개
+                    </strong>
+                  </div>
+                  <ul>
+                    {categoryRequirements.requiredOptionGroups.map((group) => (
+                      <li
+                        key={`${group.groupName ?? ""}-${group.attributeName}`}
+                      >
+                        {group.groupName || group.attributeName}
+                        {group.groupName && (
+                          <small>{group.attributeName}</small>
+                        )}
+                      </li>
+                    ))}
+                    {!categoryRequirements.requiredOptionGroups.length && (
+                      <li>
+                        {categoryRequirements.standardOptions.useStandardOption
+                          ? "필수 표준 옵션 없음"
+                          : "표준 옵션을 사용하지 않는 카테고리"}
+                      </li>
+                    )}
+                  </ul>
+                  {categoryRequirements.stale && (
+                    <p>릴레이 연결 문제로 마지막 조회 결과를 표시합니다.</p>
+                  )}
+                </>
+              )}
+            </div>
             <div className="drawer-market-notice">
               <strong>스마트스토어 API 연동 예정</strong>
               <p>
@@ -751,21 +881,39 @@ export function ProductEditor({
 
 function TabButton({
   active,
+  disabled,
   onClick,
   number,
   label,
 }: {
   active: boolean;
+  disabled?: boolean;
   onClick: () => void;
   number: string;
   label: string;
 }) {
   return (
-    <button type="button" className={active ? "active" : ""} onClick={onClick}>
+    <button
+      type="button"
+      className={active ? "active" : ""}
+      disabled={disabled}
+      onClick={onClick}
+    >
       <span>{number}</span>
       {label}
     </button>
   );
+}
+
+function attributeTypeLabel(
+  type: CategoryRequirements["requiredAttributes"][number]["attributeClassificationType"],
+) {
+  if (!type) return "입력";
+  return {
+    SINGLE_SELECT: "단일 선택",
+    MULTI_SELECT: "복수 선택",
+    RANGE: "범위 입력",
+  }[type];
 }
 
 function fromInitial(initial: ProductEditorInitial) {

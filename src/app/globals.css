@@ -781,9 +781,9 @@ td small {
   text-transform: uppercase;
 }
 .inventory-table td {
-  height: 92px;
-  padding: 11px 14px;
-  font-size: 14px;
+  height: 108px;
+  padding: 13px 16px;
+  font-size: 15px;
 }
 .inventory-table tbody tr {
   transition: background 0.15s ease;
@@ -792,11 +792,11 @@ td small {
   background: #f9faff;
 }
 .inventory-table .image-column {
-  width: 86px;
+  width: 104px;
 }
 .inventory-product-image {
-  width: 66px;
-  height: 66px;
+  width: 82px;
+  height: 82px;
   display: grid;
   place-items: center;
   overflow: hidden;
@@ -812,8 +812,8 @@ td small {
   background: #fff;
 }
 .inventory-product-name {
-  min-width: 250px;
-  max-width: 360px;
+  min-width: 290px;
+  max-width: 430px;
 }
 .inventory-inline-title-trigger {
   display: block;
@@ -823,7 +823,7 @@ td small {
   background: transparent;
   overflow: hidden;
   color: var(--inv-text);
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 750;
   text-align: left;
   text-overflow: ellipsis;
@@ -837,29 +837,19 @@ td small {
 .inventory-inline-title-editor {
   display: grid;
   gap: 5px;
-  min-width: 260px;
+  min-width: 290px;
 }
 .inventory-inline-title-editor input {
   width: 100%;
-  min-height: 34px;
-  padding: 6px 8px;
+  min-height: 42px;
+  padding: 8px 10px;
   border: 1px solid #8098d6;
   border-radius: 5px;
   font: inherit;
 }
-.inventory-inline-title-editor > div {
-  display: flex;
-  gap: 5px;
-}
-.inventory-inline-title-editor button {
-  min-height: 28px;
-  padding: 0 9px;
-  border: 1px solid #ccd4e2;
-  border-radius: 5px;
-  background: #fff;
-  color: #40506a;
-  font-size: 11px;
-  font-weight: 700;
+.inventory-inline-title-status {
+  color: var(--inv-primary);
+  font-size: 12px;
 }
 .inventory-product-number code {
   color: #526075;
@@ -874,7 +864,7 @@ td small {
   overflow: hidden;
   margin-top: 3px;
   color: #778196;
-  font-size: 12px;
+  font-size: 13px;
   font-family: inherit;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1661,6 +1651,51 @@ td small {
 }
 .drawer-market-checks > div.done > strong {
   color: #08734d;
+}
+.drawer-category-requirements {
+  display: grid;
+  gap: 10px;
+  margin: 18px 0;
+  padding: 16px;
+  border: 1px solid #dfe4ee;
+  border-radius: 7px;
+  background: #fff;
+  text-align: left;
+}
+.drawer-category-requirements > strong {
+  font-size: 15px;
+}
+.drawer-category-requirements > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 8px;
+  border-top: 1px solid #edf0f4;
+  color: #4f5a6c;
+  font-size: 13px;
+}
+.drawer-category-requirements ul {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.drawer-category-requirements li {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  color: #253047;
+  font-size: 13px;
+}
+.drawer-category-requirements li small,
+.drawer-category-requirements p {
+  color: #697386;
+  font-size: 12px;
+}
+.drawer-category-requirements p {
+  margin: 0;
+  line-height: 1.5;
 }
 .drawer-market-notice {
   margin: 18px 0;

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 export function ProductTitleInlineEditor({
@@ -19,8 +19,10 @@ export function ProductTitleInlineEditor({
   const [draftVersion, setDraftVersion] = useState(initialDraftVersion);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const savingRef = useRef(false);
 
   async function save() {
+    if (savingRef.current) return;
     const nextTitle = value.trim();
     if (!nextTitle) {
       setError("상품명을 입력해 주세요.");
@@ -30,6 +32,7 @@ export function ProductTitleInlineEditor({
       setEditing(false);
       return;
     }
+    savingRef.current = true;
     setSaving(true);
     setError("");
     try {
@@ -40,7 +43,9 @@ export function ProductTitleInlineEditor({
       });
       const body = await response.json().catch(() => null);
       if (!response.ok)
-        throw new Error(body?.error?.message ?? "상품명을 저장하지 못했습니다.");
+        throw new Error(
+          body?.error?.message ?? "상품명을 저장하지 못했습니다.",
+        );
       setTitle(body.data.product.title);
       setValue(body.data.product.title);
       setDraftVersion(body.data.product.draftVersion);
@@ -48,9 +53,12 @@ export function ProductTitleInlineEditor({
       router.refresh();
     } catch (caught) {
       setError(
-        caught instanceof Error ? caught.message : "상품명을 저장하지 못했습니다.",
+        caught instanceof Error
+          ? caught.message
+          : "상품명을 저장하지 못했습니다.",
       );
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   }
@@ -81,20 +89,20 @@ export function ProductTitleInlineEditor({
         value={value}
         maxLength={200}
         aria-label="상품명"
+        disabled={saving}
         onChange={(event) => setValue(event.target.value)}
+        onBlur={() => void save()}
         onKeyDown={(event) => {
-          if (event.key === "Enter") void save();
-          if (event.key === "Escape") cancel();
+          if (event.key === "Enter") event.currentTarget.blur();
+          if (event.key === "Escape") {
+            event.preventDefault();
+            cancel();
+          }
         }}
       />
-      <div>
-        <button type="button" onClick={() => void save()} disabled={saving}>
-          {saving ? "저장 중" : "저장"}
-        </button>
-        <button type="button" onClick={cancel} disabled={saving}>
-          취소
-        </button>
-      </div>
+      {saving && (
+        <small className="inventory-inline-title-status">저장 중</small>
+      )}
       {error && <small className="field-error">{error}</small>}
     </div>
   );

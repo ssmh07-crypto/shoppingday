@@ -190,6 +190,36 @@ describe("상품 편집 서랍", () => {
       }),
     ).toBeChecked();
   });
+
+  it("변경 후 다른 탭을 누르면 초안을 저장한 뒤 이동한다", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        editorResponse({ id: "autosave-product", title: "저장 전 상품명" }),
+      )
+      .mockResolvedValueOnce(
+        Response.json({
+          success: true,
+          data: { product: { status: "editing", draftVersion: 2 } },
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    render(<ProductEditorDrawer initialProductId="autosave-product" />);
+
+    const title = await screen.findByDisplayValue("저장 전 상품명");
+    fireEvent.change(title, { target: { value: "자동 저장 상품명" } });
+    fireEvent.click(screen.getByRole("button", { name: /이미지·상세/ }));
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenLastCalledWith(
+        "/api/products/autosave-product/draft",
+        expect.objectContaining({ method: "PATCH" }),
+      ),
+    );
+    await waitFor(() =>
+      expect(screen.getByText("상세페이지")).toBeInTheDocument(),
+    );
+  });
 });
 
 function editorResponse({
