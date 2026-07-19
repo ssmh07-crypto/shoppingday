@@ -191,6 +191,62 @@ describe("상품 편집 서랍", () => {
     ).toBeChecked();
   });
 
+  it("판매용 상품명 추천 근거를 확인한 뒤 사용자가 적용한다", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        editorResponse({
+          id: "title-recommendation-product",
+          title: "철제 바느질 골무 바느질부자재",
+        }),
+      )
+      .mockResolvedValueOnce(
+        Response.json({
+          success: true,
+          recommendation: {
+            title: "철제 바느질 골무",
+            source: "rules_naver_search_ad",
+            analysis: {
+              productType: "골무",
+              materials: ["철제"],
+              uses: ["바느질"],
+              modifiers: [],
+              removedTerms: ["바느질부자재"],
+            },
+            keywordEvidence: [
+              {
+                keyword: "골무",
+                totalMonthlySearchVolume: 3290,
+                competition: "medium",
+                status: "success",
+              },
+            ],
+            relatedKeywords: [],
+            notices: [],
+          },
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    render(<ProductEditorDrawer initialProductId="title-recommendation-product" />);
+
+    await screen.findByDisplayValue("철제 바느질 골무 바느질부자재");
+    fireEvent.click(screen.getByRole("button", { name: "상품명 추천" }));
+
+    expect(await screen.findByText("규칙 분석 + 네이버 검색광고 실제 데이터")).toBeVisible();
+    expect(screen.getByText("골무", { selector: "dd" })).toBeVisible();
+    expect(screen.getByText("골무 · 월 3,290")).toBeVisible();
+    expect(
+      screen.getByDisplayValue("철제 바느질 골무 바느질부자재"),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "이 상품명 적용" }));
+    expect(screen.getByDisplayValue("철제 바느질 골무")).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      "/api/products/title-recommendation-product/title-recommendation",
+      expect.objectContaining({ method: "POST" }),
+    );
+  });
+
   it("변경 후 다른 탭을 누르면 초안을 저장한 뒤 이동한다", async () => {
     const fetchMock = vi
       .fn()

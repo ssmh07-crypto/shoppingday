@@ -87,17 +87,20 @@ const server = createServer(async (incoming, outgoing) => {
         headers.set(name, value);
       }
     }
+    const body =
+      incoming.method === "POST" ? await readIncomingBody(incoming) : undefined;
     const request = new Request(requestUrl, {
       method: incoming.method,
       headers,
+      ...(body ? { body: new Blob([body as BlobPart]) } : {}),
     });
     const response = await relayHandler(request);
     status = response.status;
     const responseHeaders = Object.fromEntries(response.headers.entries());
     outgoing.writeHead(status, responseHeaders);
     outgoing.end(Buffer.from(await response.arrayBuffer()));
-  } catch {
-    status = 500;
+  } catch (error) {
+    status = error instanceof RelayPayloadTooLargeError ? 413 : 500;
     outgoing.writeHead(status, {
       "content-type": "application/json;charset=UTF-8",
       "cache-control": "no-store",
@@ -105,8 +108,11 @@ const server = createServer(async (incoming, outgoing) => {
     outgoing.end(
       JSON.stringify({
         error: {
-          code: "internal_error",
-          message: "중계 요청을 처리하지 못했습니다.",
+          code: status === 413 ? "payload_too_large" : "internal_error",
+          message:
+            status === 413
+              ? "중계 요청 본문이 너무 큽니다."
+              : "중계 요청을 처리하지 못했습니다.",
         },
       }),
     );
@@ -123,6 +129,29 @@ const server = createServer(async (incoming, outgoing) => {
     );
   }
 });
+
+const MAX_RELAY_BODY_BYTES = 51 * 1024 * 1024;
+
+async function readIncomingBody(
+  incoming: AsyncIterable<Uint8Array>,
+): Promise<Uint8Array> {
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  for await (const chunk of incoming) {
+    size += chunk.byteLength;
+    if (size > MAX_RELAY_BODY_BYTES) throw new RelayPayloadTooLargeError();
+    chunks.push(chunk);
+  }
+  const body = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) {
+    body.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return body;
+}
+
+class RelayPayloadTooLargeError extends Error {}
 
 server.listen(relayEnv.NAVER_RELAY_PORT, relayEnv.NAVER_RELAY_HOST, () => {
   console.info(

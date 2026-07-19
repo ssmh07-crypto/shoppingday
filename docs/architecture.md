@@ -53,3 +53,56 @@ products → (next phase) product_publications → marketplace adapters
 OpenNext는 Next.js App Router·Server Components·Route Handlers의 산출물을 Cloudflare Workers 모듈과 정적 assets로 변환하는 배포 adapter입니다. `wrangler.jsonc`는 `nodejs_compat`을 활성화해 Postgres.js와 기존 서버 모듈을 실행합니다. Supabase는 인증과 PostgreSQL system of record로 유지되며, Cloudflare에는 이미지 저장소를 추가하지 않습니다.
 
 Next.js 16 `proxy.ts`는 Node middleware로 빌드되어 현재 OpenNext에서 지원되지 않으므로, 세션 쿠키 갱신만 Edge `middleware.ts`가 담당합니다. 실제 관리자 인증·인가는 기존처럼 Route Handler와 서버 페이지에서 다시 검증합니다.
+
+## Growth product and keyword management
+
+성장 상품 관리는 빠른 대량등록 흐름과 분리한다. 사용자가 판매 가능성을 확인한 스마트스토어 상품만 `keyword_managed_products`에 연결하며, 기존 내부 상품이 있으면 채널 상품번호로 찾은 로컬 발행 데이터만 초깃값으로 재사용한다. 공개되지 않은 판매자센터 API나 화면 크롤링으로 링크 내용을 가져오지 않는다.
+
+```text
+Admin /admin/keywords
+  → owner-scoped Route Handlers
+    → KeywordManagementService
+      ├─ KeywordGenerationClient
+      │   ├─ RulesKeywordClient
+      │   └─ MockKeywordGenerationClient (development only)
+      ├─ KeywordMetricsClient
+      │   ├─ NaverSearchAdClient
+      │   └─ MockKeywordMetricsClient
+      └─ KeywordManagementRepository → PostgreSQL
+```
+
+`RulesKeywordClient`는 공급사 상품명을 결정적인 사전과 규칙으로 분류한다. 사용자가 핵심 상품 유형과 속성을 확인해 저장한 뒤에만 키워드 후보를 조합하고, 선택 키워드의 중복·동의 표현·금지어를 정리해 상품명 초안을 만든다. 생성형 AI 선택 경로는 없다.
+
+`CommerceApiManagedProductImporter`는 관리 상품 추가 시 링크에서 검증한 채널 상품 번호로
+인증된 커머스 API의 채널 상품을 조회한다. 본인 스토어 상품의 현재 상품명, 카테고리,
+등록 속성, 판매자 태그만 `product_input` JSONB의 별도 필드에 보존하며 공급사 원본 상품명을
+덮어쓰지 않는다. 조회는 기존 서버 직접 호출 또는 HMAC 서명 중계 경계를 그대로 사용한다.
+권한이나 네트워크 오류는 상품 추가 전체를 실패시키지 않고 수동 입력 상태로 남긴다.
+
+검색광고 클라이언트는 최대 5개 핵심 힌트로 연관 키워드를 확장하고, 정확한 검색량 보완 조회, HMAC-SHA256 서명, 타임아웃, 429·5xx 제한 재시도와 내부 모델 변환을 맡는다. `keyword_metric_cache`는 정규화 키워드 기준의 공유 외부 지표 캐시이며 기본 TTL은 24시간이다. 원문 `< 10`과 내부 정렬값 `9`를 함께 저장한다.
+
+상품 편집의 판매용 상품명 추천은 `ProductTitleRecommendationService`를 사용한다. 현재
+편집 중인 상품명과 선택 카테고리에서 상품 유형·소재·용도·수식어를 결정적인 규칙으로
+분리하고, 네이버 검색광고 키워드 도구로 해당 조합의 실제 검색량과 관련 후보를
+조회한다. 외부 연관어는 상품 유형 일치와 소재 충돌 검사를 통과해야 근거로 표시하며,
+제목 자체에는 검증되지 않은 새 단어를 자동 삽입하지 않는다. API 실패 또는 인증정보
+누락 시 규칙 결과와 한계 안내를 반환한다. 추천은 편집 폼에
+미리보기로만 나타나며 사용자가 적용하고 기존 임시저장 흐름으로 저장한다.
+
+데이터 소유권 경계:
+
+- `keyword_managed_products`: 링크, 원본 입력, 사용자 편집 상품명, 최종 상품명
+- `product_keyword_analyses`: 수정 가능한 분석 스냅샷과 입력 해시
+- `keyword_candidates`: 규칙 또는 네이버 추천 근거, 실제 지표, 분류, 사용자 선택
+- `generated_titles`: 생성 초안과 사용자 편집 결과 이력
+- `keyword_metric_cache`: 비사용자별 공개 키워드 지표 캐시
+
+앞의 네 테이블은 `owner_id` 조건을 모든 저장소 쿼리에 적용하고 Supabase `authenticated` 역할 RLS를 함께 사용한다. 캐시는 비밀값·인증 헤더·외부 원본 응답 전체를 저장하지 않는다.
+
+`NaverApiHubClient`는 쇼핑 인사이트 비율 추세용 선택 adapter로 격리되어 있다. 네이버 카테고리 ID와 DataLab 카테고리 매핑 기준이 확정되지 않았고 비율은 실제 검색량이나 순위가 아니므로 이번 MVP UI와 자동 의사결정에는 연결하지 않는다.
+
+소싱 조사는 `/admin/sourcing`과 `sourcing_researches` 테이블에 사용자별로 저장한다.
+키워드 시장 수치, 국내 평균 가격, 위험 체크, 리뷰 메모, 1688 샘플 후보를 한 레코드로
+관리한다. 최대 구매단가는 예상 판매가의 70%인 단순 참고값이며 실제 발주 전에는 수수료,
+배송비, 관부가세, 포장비와 반품비를 포함해 다시 계산해야 한다. `owner_id` 조건과
+Supabase authenticated RLS를 함께 적용한다.

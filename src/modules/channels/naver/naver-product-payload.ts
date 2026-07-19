@@ -4,6 +4,7 @@ import type {
   NaverProductAttribute,
   SelectedImage,
 } from "@/lib/db/schema";
+import type { NaverPublicationPolicyData } from "@/lib/db/schema";
 
 type JsonPrimitive = string | number | boolean | null;
 export type JsonValue = JsonPrimitive | JsonObject | JsonValue[];
@@ -21,27 +22,7 @@ export type NaverProductPayloadSource = {
   naverAttributes: NaverProductAttribute[];
 };
 
-export type NaverPublicationProfile = {
-  singleStockQuantity?: number;
-  deliveryInfo?: JsonObject;
-  afterServiceInfo?: {
-    afterServiceTelephoneNumber: string;
-    afterServiceGuideContent: string;
-  };
-  originAreaInfo?: {
-    originAreaCode: "00" | "01" | "02" | "03" | "04" | "05";
-    importer?: string;
-    content?: string;
-    plural: boolean;
-  };
-  productInfoProvidedNotice?: JsonObject & {
-    productInfoProvidedNoticeType: string;
-  };
-  taxType?: "TAX" | "DUTYFREE" | "SMALL";
-  minorPurchasable?: boolean;
-  naverShoppingRegistration?: boolean;
-  channelProductDisplayStatusType?: "ON" | "SUSPENSION";
-};
+export type NaverPublicationProfile = Partial<NaverPublicationPolicyData>;
 
 export type NaverProductPayloadIssue = {
   path: string;
@@ -214,6 +195,7 @@ export function buildNaverProductPayload(
     : profile.singleStockQuantity;
   if (
     stockQuantity === undefined ||
+    stockQuantity === null ||
     !Number.isInteger(stockQuantity) ||
     stockQuantity < 0 ||
     stockQuantity > MAX_STOCK

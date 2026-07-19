@@ -1,5 +1,5 @@
 import "server-only";
-import { count, desc, eq, ilike, inArray, max, ne, or, sql } from "drizzle-orm";
+import { and, count, desc, eq, ilike, inArray, max, ne, or, sql } from "drizzle-orm";
 import type { Database } from "@/lib/db";
 import { naverCommerceCategories } from "@/lib/db/schema";
 import type { NaverCommerceCategory } from "./naver-commerce-client";
@@ -118,6 +118,27 @@ export class NaverCategoryRepository {
       const row = byId.get(id);
       return row ? [row] : [];
     });
+  }
+
+  async findTopLevelId(categoryId: string) {
+    const [category] = await this.database
+      .select({ wholeCategoryName: naverCommerceCategories.wholeCategoryName })
+      .from(naverCommerceCategories)
+      .where(eq(naverCommerceCategories.id, categoryId))
+      .limit(1);
+    const topLevelName = category?.wholeCategoryName.split(">")[0]?.trim();
+    if (!topLevelName) return null;
+    const [topLevel] = await this.database
+      .select({ id: naverCommerceCategories.id })
+      .from(naverCommerceCategories)
+      .where(
+        and(
+          eq(naverCommerceCategories.name, topLevelName),
+          eq(naverCommerceCategories.wholeCategoryName, topLevelName),
+        ),
+      )
+      .limit(1);
+    return topLevel?.id ?? null;
   }
 
   async recommendFromTitle(title: string) {

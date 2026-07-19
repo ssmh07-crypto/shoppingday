@@ -1,0 +1,1 @@
+ALTER TYPE "public"."external_data_source" ADD VALUE 'rules' BEFORE 'openai';

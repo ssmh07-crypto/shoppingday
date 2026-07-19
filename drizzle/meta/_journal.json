@@ -57,6 +57,48 @@
       "when": 1784298520961,
       "tag": "0007_tiny_triathlon",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1784339944384,
+      "tag": "0008_organic_colleen_wing",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1784343640759,
+      "tag": "0009_nostalgic_red_wolf",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1784347480993,
+      "tag": "0010_violet_midnight",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1784425765258,
+      "tag": "0011_tough_prodigy",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1784431148380,
+      "tag": "0012_jittery_shinko_yamashiro",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1784452208223,
+      "tag": "0013_vengeful_arclight",
+      "breakpoints": true
     }
   ]
 }

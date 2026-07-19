@@ -7,6 +7,8 @@ import type { ReactNode } from "react";
 const navigation = [
   { href: "/admin/products", label: "상품 관리", icon: "box" },
   { href: "/admin/products/import", label: "상품 가져오기", icon: "download" },
+  { href: "/admin/keywords", label: "성장 상품 관리", icon: "trend" },
+  { href: "/admin/sourcing", label: "소싱 조사", icon: "search" },
   { href: "/admin/channels/naver", label: "판매 채널", icon: "store" },
   { href: "/admin/settings/products", label: "설정", icon: "settings" },
 ] as const;
@@ -82,6 +84,22 @@ function AdminIcon({
         <path d="M4 10v10h16V10" />
         <path d="M3 4h18l-2 6H5L3 4Z" />
         <path d="M9 20v-6h6v6" />
+      </>
+    ),
+    trend: (
+      <>
+        <path d="M4 19V5" />
+        <path d="M4 19h16" />
+        <path d="m7 15 4-4 3 2 5-6" />
+        <path d="M16 7h3v3" />
+      </>
+    ),
+    search: (
+      <>
+        <circle cx="11" cy="11" r="7" />
+        <path d="m20 20-4-4" />
+        <path d="M8 11h6" />
+        <path d="M11 8v6" />
       </>
     ),
     settings: (

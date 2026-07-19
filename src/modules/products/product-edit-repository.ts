@@ -381,6 +381,72 @@ export class ProductEditRepository {
       return { kind: "ok" as const, product };
     });
   }
+
+  async saveNaverImageUrls(
+    id: string,
+    ownerId: string,
+    version: number,
+    uploads: Array<{ imageId: string; sourceUrl: string; storedUrl: string }>,
+  ) {
+    return this.database.transaction(async (tx) => {
+      const [old] = await tx
+        .select()
+        .from(products)
+        .where(
+          and(
+            eq(products.id, id),
+            or(eq(products.ownerId, ownerId), isNull(products.ownerId)),
+          ),
+        )
+        .limit(1);
+      if (!old) return { kind: "not_found" as const };
+      if (old.draftVersion !== version) return { kind: "conflict" as const };
+      if (
+        !uploads.every((upload) =>
+          old.selectedImages.some(
+            (image) =>
+              image.id === upload.imageId && image.sourceUrl === upload.sourceUrl,
+          ),
+        )
+      ) {
+        return { kind: "conflict" as const };
+      }
+      const byId = new Map(uploads.map((upload) => [upload.imageId, upload]));
+      const selectedImages = old.selectedImages.map((image) => {
+        const upload = byId.get(image.id);
+        return upload && upload.sourceUrl === image.sourceUrl
+          ? { ...image, storedUrl: upload.storedUrl }
+          : image;
+      });
+      const [product] = await tx
+        .update(products)
+        .set({
+          ownerId,
+          selectedImages,
+          status: "editing",
+          readyAt: null,
+          draftVersion: sql`${products.draftVersion}+1`,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(products.id, id),
+            eq(products.draftVersion, version),
+            or(eq(products.ownerId, ownerId), isNull(products.ownerId)),
+          ),
+        )
+        .returning();
+      if (!product) return { kind: "conflict" as const };
+      await tx.insert(productAuditLogs).values({
+        actorId: ownerId,
+        entityId: id,
+        action: "naver_product_images_uploaded",
+        changedFields: ["selectedImages"],
+        requestId: randomUUID(),
+      });
+      return { kind: "ok" as const, product };
+    });
+  }
 }
 
 function summarize(row: ProductRow, fields: string[]) {

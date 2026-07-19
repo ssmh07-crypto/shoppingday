@@ -6,6 +6,7 @@ import type { NaverProductAttribute, SelectedImage } from "@/lib/db/schema";
 import { OptionEditor } from "./option-editor";
 import { MarginCalculator } from "./margin-calculator";
 import { NaverAttributeEditor } from "./naver-attribute-editor";
+import { NaverPublicationPolicyForm } from "@/app/admin/components/naver-publication-policy-form";
 import type {
   NaverCategoryOption,
   ProductEditorInitial,
@@ -48,6 +49,48 @@ type CategoryRequirements = {
   stale: boolean;
 };
 
+type PublicationInspection = {
+  ready: boolean;
+  issues?: Array<{ path: string; message: string }>;
+  payloadHash?: string;
+  action?: "create" | "retry_create" | "update" | "unchanged" | "blocked";
+  publication: {
+    status: "publishing" | "published" | "failed" | "deleting" | "deleted";
+    originProductNo: string | null;
+    channelProductNo: string | null;
+    attemptCount: number;
+    lastErrorCode: string | null;
+    lastErrorMessage: string | null;
+    lastErrorHttpStatus: number | null;
+    lastAttemptedAt: string;
+    publishedAt: string | null;
+    lastSyncedAt: string | null;
+  } | null;
+};
+
+type TitleRecommendation = {
+  title: string;
+  source: "rules" | "rules_naver_search_ad";
+  analysis: {
+    productType: string;
+    materials: string[];
+    uses: string[];
+    modifiers: string[];
+    removedTerms: string[];
+  };
+  keywordEvidence: Array<{
+    keyword: string;
+    totalMonthlySearchVolume: number | null;
+    competition: "low" | "medium" | "high" | "unknown";
+    status: "success" | "not-found" | "error";
+  }>;
+  relatedKeywords: Array<{
+    keyword: string;
+    totalMonthlySearchVolume: number | null;
+  }>;
+  notices: string[];
+};
+
 export function ProductEditor({
   initial,
   onMutated,
@@ -64,6 +107,13 @@ export function ProductEditor({
   const [activeTab, setActiveTab] = useState<EditorTab>("basic");
   const [status, setStatus] = useState(initial.product.status);
   const [saving, setSaving] = useState(false);
+  const [uploadingImages, setUploadingImages] = useState(false);
+  const [publishingNaver, setPublishingNaver] = useState(false);
+  const [recommendingTitle, setRecommendingTitle] = useState(false);
+  const [titleRecommendation, setTitleRecommendation] =
+    useState<TitleRecommendation | null>(null);
+  const [titleRecommendationStatus, setTitleRecommendationStatus] =
+    useState("");
   const [message, setMessage] = useState("저장됨");
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [naverCategorySearch, setNaverCategorySearch] = useState("");
@@ -85,6 +135,11 @@ export function ProductEditor({
     useState<CategoryRequirements | null>(null);
   const [categoryRequirementsStatus, setCategoryRequirementsStatus] =
     useState("");
+  const [publicationInspection, setPublicationInspection] =
+    useState<PublicationInspection | null>(null);
+  const [publicationInspectionStatus, setPublicationInspectionStatus] =
+    useState("");
+  const [publicationRefreshKey, setPublicationRefreshKey] = useState(0);
   const autoRecommendationStarted = useRef(false);
   const titleBeforeCategoryQuery = useRef(initial.product.title);
   const dirty = JSON.stringify(form) !== baseline;
@@ -139,6 +194,35 @@ export function ProductEditor({
     void loadRequirements(form.naverCategoryId);
     return () => controller.abort();
   }, [activeTab, form.naverCategoryId]);
+
+  useEffect(() => {
+    if (activeTab !== "market") return;
+    const controller = new AbortController();
+    void fetch(`/api/products/${initial.product.id}/naver-publication`, {
+      signal: controller.signal,
+      cache: "no-store",
+    })
+      .then(async (response) => {
+        const body = await response.json().catch(() => null);
+        if (!response.ok) {
+          throw new Error(
+            body?.error?.message ?? "발행 준비 상태를 확인하지 못했습니다.",
+          );
+        }
+        setPublicationInspection(body.inspection);
+        setPublicationInspectionStatus("");
+      })
+      .catch((error) => {
+        if (controller.signal.aborted) return;
+        setPublicationInspection(null);
+        setPublicationInspectionStatus(
+          error instanceof Error
+            ? error.message
+            : "발행 준비 상태를 확인하지 못했습니다.",
+        );
+      });
+    return () => controller.abort();
+  }, [activeTab, initial.product.id, publicationRefreshKey]);
 
   useEffect(() => {
     const search = naverCategorySearch.trim();
@@ -285,10 +369,10 @@ export function ProductEditor({
       setStatus(product.status);
       setMessage(`저장 완료 ${new Date().toLocaleTimeString("ko-KR")}`);
       onMutated?.();
-      return true;
+      return product;
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "저장 실패");
-      return false;
+      return null;
     } finally {
       setSaving(false);
     }
@@ -334,6 +418,170 @@ export function ProductEditor({
       setMessage(error instanceof Error ? error.message : "초기화 실패");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function recommendProductTitle() {
+    const title = form.title.trim();
+    if (title.length < 2) {
+      setTitleRecommendationStatus("판매용 상품명을 두 글자 이상 입력해 주세요.");
+      return;
+    }
+    setRecommendingTitle(true);
+    setTitleRecommendation(null);
+    setTitleRecommendationStatus(
+      "상품 구조를 분석하고 네이버 키워드 검색량을 확인하는 중입니다.",
+    );
+    try {
+      const categoryPath =
+        selectedNaverCategory?.id === form.naverCategoryId
+          ? selectedNaverCategory.wholeCategoryName
+          : initial.naverCategory?.id === form.naverCategoryId
+            ? initial.naverCategory.wholeCategoryName
+            : "";
+      const response = await fetch(
+        `/api/products/${initial.product.id}/title-recommendation`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            title,
+            originalTitle: initial.supplier.originalName ?? "",
+            categoryPath,
+            searchTags: form.searchTags.map((tag) => tag.trim()).filter(Boolean),
+          }),
+        },
+      );
+      const body = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(
+          body?.error?.message ?? "상품명을 추천하지 못했습니다.",
+        );
+      }
+      setTitleRecommendation(body.recommendation);
+      setTitleRecommendationStatus("");
+    } catch (error) {
+      setTitleRecommendationStatus(
+        error instanceof Error ? error.message : "상품명을 추천하지 못했습니다.",
+      );
+    } finally {
+      setRecommendingTitle(false);
+    }
+  }
+
+  async function uploadNaverImages() {
+    let draftVersion = form.draftVersion;
+    if (dirty) {
+      const saved = await submit("draft");
+      if (!saved) return;
+      draftVersion = saved.draftVersion;
+    }
+    setUploadingImages(true);
+    setMessage("네이버에 이미지를 업로드하는 중…");
+    try {
+      const response = await fetch(
+        `/api/products/${initial.product.id}/naver-images/upload`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ draftVersion }),
+        },
+      );
+      const body = await response.json().catch(() => null);
+      if (!response.ok) {
+        setErrors(body?.error?.errors ?? {});
+        throw new Error(body?.error?.message ?? "이미지 업로드에 실패했습니다.");
+      }
+      const product = body.data.product;
+      const next = {
+        ...form,
+        draftVersion: product.draftVersion,
+        selectedImages: product.selectedImages,
+      };
+      setForm(next);
+      setBaseline(JSON.stringify(next));
+      setStatus(product.status);
+      setMessage(
+        body.data.uploadedCount
+          ? `네이버 이미지 ${body.data.uploadedCount}개를 업로드했습니다.`
+          : "모든 이미지가 이미 업로드되어 있습니다.",
+      );
+      onMutated?.();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "이미지 업로드 실패");
+    } finally {
+      setUploadingImages(false);
+    }
+  }
+
+  async function publishToNaver() {
+    if (dirty) {
+      setMessage("변경사항을 먼저 저장한 뒤 등록해 주세요.");
+      return;
+    }
+    setPublishingNaver(true);
+    setErrors({});
+    try {
+      const inspectionResponse = await fetch(
+        `/api/products/${initial.product.id}/naver-publication`,
+        { cache: "no-store" },
+      );
+      const inspectionBody = await inspectionResponse.json().catch(() => null);
+      if (!inspectionResponse.ok) {
+        throw new Error(
+          inspectionBody?.error?.message ?? "발행 준비 상태를 확인하지 못했습니다.",
+        );
+      }
+      const inspection = inspectionBody.inspection as PublicationInspection;
+      setPublicationInspection(inspection);
+      if (!inspection.ready || !inspection.payloadHash) {
+        throw new Error("필수 상품 정보와 판매 정책을 먼저 입력해 주세요.");
+      }
+      if (!inspection.action || !["create", "retry_create"].includes(inspection.action)) {
+        throw new Error(
+          inspection.action === "unchanged"
+            ? "이미 최신 상태로 등록된 상품입니다."
+            : inspection.action === "update"
+              ? "등록된 상품의 수정 연동은 아직 지원하지 않습니다."
+              : "이전 등록 요청의 결과를 먼저 확인해 주세요.",
+        );
+      }
+      const actionLabel =
+        inspection.action === "retry_create" ? "등록을 다시 시도" : "신규 등록";
+      const confirmed = window.confirm(
+        `[스마트스토어 실제 등록]\n\n상품명: ${form.title}\n판매가: ${Number(form.sellingPrice ?? 0).toLocaleString("ko-KR")}원\n작업: ${actionLabel}\n\n확인하면 네이버에 상품이 실제 등록되며 전시 정책에 따라 노출될 수 있습니다. 계속할까요?`,
+      );
+      if (!confirmed) return;
+
+      setMessage("스마트스토어에 상품을 등록하는 중…");
+      const response = await fetch(
+        `/api/products/${initial.product.id}/naver-publication`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            confirmed: true,
+            payloadHash: inspection.payloadHash,
+          }),
+        },
+      );
+      const body = await response.json().catch(() => null);
+      if (!response.ok) {
+        setErrors(body?.error?.errors ?? {});
+        throw new Error(body?.error?.message ?? "스마트스토어 등록에 실패했습니다.");
+      }
+      const published = body.result?.publication;
+      setMessage(
+        published?.channelProductNo
+          ? `스마트스토어 등록 완료 · 채널상품번호 ${published.channelProductNo}`
+          : "스마트스토어 등록을 완료했습니다.",
+      );
+      onMutated?.();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "스마트스토어 등록 실패");
+    } finally {
+      setPublishingNaver(false);
+      setPublicationRefreshKey((current) => current + 1);
     }
   }
 
@@ -387,9 +635,9 @@ export function ProductEditor({
     { label: "상품명 입력", done: Boolean(form.title.trim()) },
     { label: "판매가 입력", done: Boolean(form.sellingPrice) },
     {
-      label: "대표 이미지 선택",
+      label: "네이버 대표 이미지 업로드",
       done: form.selectedImages.some(
-        (image) => image.enabled && image.isPrimary,
+        (image) => image.enabled && image.isPrimary && image.storedUrl,
       ),
     },
     { label: "상세페이지 입력", done: Boolean(form.description.trim()) },
@@ -599,14 +847,26 @@ export function ProductEditor({
                   </small>
                 )}
               </div>
-              <label>
-                판매용 상품명
+              <div className="drawer-product-title-field">
+                <div className="drawer-product-title-heading">
+                  <label htmlFor="product-selling-title">판매용 상품명</label>
+                  <button
+                    type="button"
+                    disabled={recommendingTitle || form.title.trim().length < 2}
+                    onClick={() => void recommendProductTitle()}
+                  >
+                    {recommendingTitle ? "추천 분석 중…" : "상품명 추천"}
+                  </button>
+                </div>
                 <input
+                  id="product-selling-title"
                   value={form.title}
                   maxLength={200}
-                  onChange={(event) =>
-                    setForm({ ...form, title: event.target.value })
-                  }
+                  onChange={(event) => {
+                    setForm({ ...form, title: event.target.value });
+                    setTitleRecommendation(null);
+                    setTitleRecommendationStatus("");
+                  }}
                   onBlur={() => {
                     if (!form.naverCategoryId)
                       void recommendNaverCategory(form.title);
@@ -617,7 +877,82 @@ export function ProductEditor({
                   <small>원본 상품명</small>
                   <strong>{initial.supplier.originalName ?? "-"}</strong>
                 </span>
-              </label>
+                {titleRecommendationStatus && (
+                  <small className="drawer-title-recommendation-status">
+                    {titleRecommendationStatus}
+                  </small>
+                )}
+                {titleRecommendation && (
+                  <div className="drawer-title-recommendation" aria-live="polite">
+                    <div className="drawer-title-recommendation-head">
+                      <div>
+                        <small>
+                          {titleRecommendation.source === "rules_naver_search_ad"
+                            ? "규칙 분석 + 네이버 검색광고 실제 데이터"
+                            : "규칙 기반 기본 모드"}
+                        </small>
+                        <strong>{titleRecommendation.title}</strong>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setForm((current) => ({
+                            ...current,
+                            title: titleRecommendation.title,
+                          }));
+                          setTitleRecommendationStatus(
+                            "추천 상품명을 적용했습니다. 저장 전까지 네이버에는 반영되지 않습니다.",
+                          );
+                        }}
+                      >
+                        이 상품명 적용
+                      </button>
+                    </div>
+                    <dl>
+                      <div>
+                        <dt>상품 유형</dt>
+                        <dd>{titleRecommendation.analysis.productType}</dd>
+                      </div>
+                      <div>
+                        <dt>소재·재질</dt>
+                        <dd>
+                          {titleRecommendation.analysis.materials.join(", ") || "감지 안 됨"}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>용도</dt>
+                        <dd>{titleRecommendation.analysis.uses.join(", ") || "감지 안 됨"}</dd>
+                      </div>
+                      <div>
+                        <dt>정리한 표현</dt>
+                        <dd>
+                          {titleRecommendation.analysis.removedTerms.join(", ") || "없음"}
+                        </dd>
+                      </div>
+                    </dl>
+                    {titleRecommendation.keywordEvidence.length > 0 && (
+                      <div className="drawer-title-keyword-evidence">
+                        <small>네이버 키워드 근거</small>
+                        <div>
+                          {titleRecommendation.keywordEvidence.map((item) => (
+                            <span key={item.keyword}>
+                              {item.keyword} · {item.totalMonthlySearchVolume == null
+                                ? "조회 안 됨"
+                                : `월 ${item.totalMonthlySearchVolume.toLocaleString("ko-KR")}`}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {titleRecommendation.notices.map((notice) => (
+                      <p key={notice}>{notice}</p>
+                    ))}
+                    <small className="drawer-title-recommendation-disclaimer">
+                      검색량은 네이버 검색광고 API 값이며 추천 상품명이 검색 노출이나 매출을 보장하지 않습니다.
+                    </small>
+                  </div>
+                )}
+              </div>
               <label>
                 검색 키워드
                 <input
@@ -698,9 +1033,24 @@ export function ProductEditor({
                     사용할 이미지와 대표 이미지를 선택하고 순서를 조정하세요.
                   </p>
                 </div>
-                <button type="button" onClick={resetImages} disabled={saving}>
-                  원본으로 초기화
-                </button>
+                <div className="drawer-section-actions">
+                  <button
+                    type="button"
+                    onClick={() => void uploadNaverImages()}
+                    disabled={
+                      saving ||
+                      uploadingImages ||
+                      !form.selectedImages.some(
+                        (image) => image.enabled && !image.storedUrl,
+                      )
+                    }
+                  >
+                    {uploadingImages ? "업로드 중…" : "네이버 이미지 업로드"}
+                  </button>
+                  <button type="button" onClick={resetImages} disabled={saving || uploadingImages}>
+                    원본으로 초기화
+                  </button>
+                </div>
               </div>
               <p className="drawer-image-count">
                 전체 {form.selectedImages.length}개 중 {enabledImageCount}개
@@ -718,6 +1068,7 @@ export function ProductEditor({
                         alt={image.altText}
                       />
                       {image.isPrimary && image.enabled && <span>대표</span>}
+                      {image.storedUrl && <small>네이버 업로드 완료</small>}
                     </div>
                     <label>
                       <input
@@ -877,22 +1228,94 @@ export function ProductEditor({
                 </>
               )}
             </div>
+            <div className="drawer-category-requirements">
+              <strong>스마트스토어 발행 상태</strong>
+              {publicationInspectionStatus && (
+                <p role="status">{publicationInspectionStatus}</p>
+              )}
+              {publicationInspection && (
+                <div className="drawer-publication-status">
+                  <div>
+                    <span>현재 상태</span>
+                    <strong>
+                      {publicationStatusLabel(publicationInspection)}
+                    </strong>
+                  </div>
+                  {publicationInspection.publication?.originProductNo && (
+                    <div>
+                      <span>네이버 원상품 번호</span>
+                      <strong>
+                        {publicationInspection.publication.originProductNo}
+                      </strong>
+                    </div>
+                  )}
+                  {publicationInspection.publication?.channelProductNo && (
+                    <div>
+                      <span>채널 상품 번호</span>
+                      <strong>
+                        {publicationInspection.publication.channelProductNo}
+                      </strong>
+                    </div>
+                  )}
+                  {!publicationInspection.ready && (
+                    <ul>
+                      {(publicationInspection.issues ?? []).map((issue) => (
+                        <li key={`${issue.path}-${issue.message}`}>
+                          {issue.message}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  {publicationInspection.publication?.lastErrorMessage && (
+                    <p className="drawer-publication-error">
+                      최근 오류: {publicationInspection.publication.lastErrorMessage}
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+            <div className="drawer-category-requirements">
+              <strong>상품별 판매 정책</strong>
+              <NaverPublicationPolicyForm
+                mode="product"
+                endpoint={`/api/products/${initial.product.id}/naver-publication-policy`}
+                initialDefaults={initial.naverPublicationPolicy.defaults}
+                initialOverrides={initial.naverPublicationPolicy.overrides}
+                categoryId={form.naverCategoryId}
+                onSaved={() =>
+                  setPublicationRefreshKey((current) => current + 1)
+                }
+              />
+            </div>
             <div className="drawer-market-notice">
-              <strong>스마트스토어 API 연동 예정</strong>
+              <strong>실제 상품 등록 전 확인</strong>
               <p>
-                현재는 등록 화면과 준비 상태 확인만 제공됩니다. 실제 전송 기능은
-                API 연동 후 활성화됩니다.
+                버튼을 누르면 최신 payload를 다시 검증하고 최종 확인창을 표시합니다.
+                확인 전에는 네이버로 상품을 전송하지 않습니다.
               </p>
             </div>
             <button
               type="button"
               className="drawer-market-button"
-              onClick={() =>
-                setMessage("스마트스토어 API 연동 후 사용할 수 있습니다.")
+              disabled={
+                dirty ||
+                saving ||
+                publishingNaver ||
+                !publicationInspection?.ready ||
+                !["create", "retry_create"].includes(
+                  publicationInspection.action ?? "",
+                )
               }
+              onClick={() => void publishToNaver()}
             >
-              스마트스토어 등록 <small>연동 예정</small>
+              {publishingNaver ? "등록 확인 중…" : "스마트스토어 실제 등록"}
+              {!publishingNaver && <small>최종 확인 필요</small>}
             </button>
+            {dirty && (
+              <small className="drawer-market-help">
+                저장되지 않은 변경사항을 먼저 저장해 주세요.
+              </small>
+            )}
             {!readyForMarket && (
               <small className="drawer-market-help">
                 미완료 항목을 앞선 탭에서 입력해 주세요.
@@ -988,6 +1411,30 @@ function attributeTypeLabel(
     MULTI_SELECT: "복수 선택",
     RANGE: "범위 입력",
   }[type];
+}
+
+function publicationStatusLabel(inspection: PublicationInspection) {
+  if (!inspection.ready) return "필수 정보 확인 필요";
+  const actionLabels = {
+    create: "신규 등록 가능",
+    retry_create: "등록 재시도 가능",
+    update: "네이버 반영 필요",
+    unchanged: "최신 상태",
+    blocked:
+      inspection.publication?.status === "failed"
+        ? "중복 등록 확인 필요"
+        : "처리 중",
+  } as const;
+  if (inspection.action) return actionLabels[inspection.action];
+  return inspection.publication
+    ? {
+        publishing: "등록 처리 중",
+        published: "등록 완료",
+        failed: "등록 실패",
+        deleting: "삭제 처리 중",
+        deleted: "삭제됨",
+      }[inspection.publication.status]
+    : "미등록";
 }
 
 function fromInitial(initial: ProductEditorInitial) {
