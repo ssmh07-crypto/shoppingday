@@ -3,9 +3,10 @@
 
 :root {
   color-scheme: light;
-  --app-font-family: "Pretendard Variable", Pretendard, -apple-system,
-    BlinkMacSystemFont, system-ui, "Segoe UI", "Apple SD Gothic Neo",
-    "Noto Sans KR", "Malgun Gothic", sans-serif;
+  --app-font-family:
+    "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont,
+    system-ui, "Segoe UI", "Apple SD Gothic Neo", "Noto Sans KR",
+    "Malgun Gothic", sans-serif;
   font-family: var(--app-font-family);
   background: #f6f7f9;
   color: #172033;
@@ -1419,6 +1420,42 @@ td small {
   color: #657084;
   font-size: 13px;
 }
+.drawer-url-import {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  border: 1px solid #d9e1eb;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+.drawer-url-import > label {
+  color: #344054;
+  font-size: 13px;
+  font-weight: 800;
+}
+.drawer-url-import > div {
+  display: flex;
+  gap: 8px;
+}
+.drawer-url-import input,
+.drawer-url-import textarea {
+  flex: 1;
+  min-width: 0;
+  background: #fff;
+}
+.drawer-url-import button {
+  min-height: 42px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 7px;
+  background: #2457d6;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 800;
+}
+.drawer-url-import.detail button {
+  justify-self: start;
+}
 .drawer-images {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -1474,7 +1511,7 @@ td small {
 .drawer-image-actions {
   grid-column: 1 / -1;
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr 1fr auto;
   gap: 4px;
 }
 .drawer-image-actions button {
@@ -2653,6 +2690,12 @@ td small {
   .naver-channel-stats {
     grid-template-columns: 1fr;
   }
+  .naver-store-form-grid {
+    grid-template-columns: 1fr;
+  }
+  .drawer-url-import > div {
+    flex-direction: column;
+  }
   .naver-category-head form {
     flex-wrap: wrap;
   }
@@ -2667,6 +2710,229 @@ td small {
 }
 
 /* Growth product and keyword management */
+/* Sourcing to SmartStore registration management */
+.registration-topbar > div {
+  display: grid;
+  gap: 3px;
+}
+.registration-topbar strong {
+  color: #172033;
+  font-size: 16px;
+}
+.registration-topbar span {
+  color: #697386;
+  font-size: 12px;
+}
+.registration-topbar > a {
+  border-radius: 7px;
+  padding: 9px 13px;
+  background: #172554;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 800;
+}
+.registration-page {
+  font-size: 15px;
+}
+.registration-heading {
+  align-items: center;
+}
+.registration-heading p {
+  max-width: 760px;
+  line-height: 1.65;
+}
+.registration-heading > a {
+  border: 1px solid;
+  border-radius: 999px;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 900;
+}
+.registration-heading > a.connected {
+  border-color: #9edbbd;
+  background: #ecfdf3;
+  color: #087443;
+}
+.registration-heading > a.needs-setting {
+  border-color: #f5c78b;
+  background: #fff8ed;
+  color: #8a3d0f;
+}
+.registration-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.registration-stats article {
+  display: grid;
+  gap: 7px;
+  padding: 18px;
+  border: 1px solid #dfe4ee;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 5px 16px #1f293708;
+}
+.registration-stats span {
+  color: #697386;
+  font-size: 13px;
+}
+.registration-stats strong {
+  color: #172033;
+  font-size: 24px;
+}
+.registration-alert {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding: 14px 16px;
+  border: 1px solid #f5c78b;
+  border-radius: 9px;
+  background: #fff8ed;
+  color: #7a4b0f;
+}
+.registration-alert strong {
+  font-size: 14px;
+}
+.registration-alert span {
+  font-size: 13px;
+  line-height: 1.5;
+}
+.registration-alert a {
+  color: #8a3d0f;
+  font-size: 12px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+.registration-panel {
+  overflow: hidden;
+  border: 1px solid #dfe4ee;
+  border-radius: 11px;
+  background: #fff;
+  box-shadow: 0 5px 16px #1f293708;
+}
+.registration-panel-head {
+  padding: 18px 20px;
+  border-bottom: 1px solid #e5e9f0;
+}
+.registration-panel-head h2 {
+  margin: 0 0 5px;
+  color: #172033;
+  font-size: 18px;
+}
+.registration-panel-head p {
+  margin: 0;
+  color: #697386;
+  font-size: 13px;
+}
+.registration-table-wrap {
+  overflow-x: auto;
+}
+.registration-table {
+  width: 100%;
+  min-width: 900px;
+  border-collapse: collapse;
+}
+.registration-table th,
+.registration-table td {
+  padding: 13px 15px;
+  border-bottom: 1px solid #edf0f5;
+  color: #344054;
+  font-size: 13px;
+  text-align: left;
+}
+.registration-table th {
+  background: #f8f9fb;
+  color: #667085;
+  font-size: 11px;
+}
+.registration-table td:first-child {
+  display: grid;
+  gap: 4px;
+  min-width: 190px;
+}
+.registration-table td:first-child strong {
+  color: #172033;
+  font-size: 14px;
+}
+.registration-table td:first-child span {
+  color: #697386;
+  font-size: 11px;
+}
+.registration-badge {
+  display: inline-flex;
+  border-radius: 999px;
+  padding: 5px 8px;
+  background: #eef2f6;
+  color: #475467;
+  font-size: 11px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+.registration-badge.editing {
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+.registration-badge.ready {
+  background: #dcfae6;
+  color: #087443;
+}
+.registration-start-action {
+  display: grid;
+  gap: 5px;
+}
+.registration-start-action button,
+.registration-edit-link {
+  display: inline-flex;
+  min-height: 36px;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 7px;
+  padding: 0 11px;
+  background: #2457d6;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+.registration-start-action button:disabled {
+  background: #c7ced8;
+  cursor: not-allowed;
+}
+.registration-start-action small {
+  max-width: 220px;
+  color: #b42318;
+  font-size: 11px;
+  line-height: 1.4;
+}
+.registration-empty {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  padding: 42px 20px;
+  color: #697386;
+}
+.registration-empty a {
+  color: #2457d6;
+  font-size: 13px;
+  font-weight: 900;
+}
+@media (max-width: 760px) {
+  .registration-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .registration-stats {
+    grid-template-columns: 1fr;
+  }
+  .registration-alert {
+    grid-template-columns: 1fr;
+  }
+}
+
 .keyword-topbar > div:first-child {
   display: grid;
   gap: 3px;
@@ -2678,6 +2944,94 @@ td small {
 .keyword-topbar > div:first-child span {
   color: #697386;
   font-size: 13px;
+}
+.naver-channel-alert.success {
+  border-color: #a9e3c1;
+  background: #ecfdf3;
+  color: #166534;
+}
+.naver-store-form {
+  display: grid;
+  gap: 18px;
+  margin-bottom: 18px;
+  padding: 22px;
+  border: 1px solid #dfe4ee;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 5px 16px #1f293708;
+}
+.naver-store-form-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+}
+.naver-store-form-heading span {
+  color: #03a64a;
+  font-size: 11px;
+  font-weight: 800;
+}
+.naver-store-form-heading h2 {
+  margin: 5px 0;
+  font-size: 19px;
+}
+.naver-store-form-heading p,
+.naver-store-security-note {
+  margin: 0;
+  color: #697386;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.naver-store-form-heading > strong {
+  align-self: start;
+  padding: 5px 9px;
+  border-radius: 999px;
+  background: #ecfdf3;
+  color: #08734d;
+  font-size: 11px;
+}
+.naver-store-form-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+.naver-store-form-grid label {
+  display: grid;
+  gap: 7px;
+  color: #344054;
+  font-size: 12px;
+  font-weight: 800;
+}
+.naver-store-form-grid input {
+  min-width: 0;
+  min-height: 42px;
+  padding: 0 11px;
+  border: 1px solid #ccd3df;
+  border-radius: 7px;
+  font-size: 14px;
+}
+.naver-store-form-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.naver-store-form-actions button {
+  min-height: 42px;
+  padding: 0 17px;
+  border: 0;
+  border-radius: 7px;
+  background: #172554;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 800;
+}
+.naver-store-form-actions span {
+  color: #596579;
+  font-size: 12px;
+}
+.naver-channel-alert.success {
+  border-color: #9edbbd;
+  background: #ecfdf3;
+  color: #176b42;
 }
 .keyword-runtime-badges,
 .keyword-summary-actions,
@@ -3119,7 +3473,10 @@ td small {
   color: #fff;
 }
 .keyword-filter-fields {
-  grid-template-columns: minmax(140px, 1.5fr) repeat(4, minmax(110px, 1fr)) auto auto;
+  grid-template-columns: minmax(140px, 1.5fr) repeat(
+      4,
+      minmax(110px, 1fr)
+    ) auto auto;
   align-items: end;
   padding: 13px 16px 16px;
 }
@@ -3594,10 +3951,21 @@ td small {
   display: grid;
   gap: 3px;
 }
-.sourcing-topbar > div:first-child strong { color: #172033; font-size: 17px; }
-.sourcing-topbar > div:first-child span { color: #697386; font-size: 13px; }
-.sourcing-heading { align-items: flex-end; }
-.sourcing-heading p { max-width: 800px; line-height: 1.65; }
+.sourcing-topbar > div:first-child strong {
+  color: #172033;
+  font-size: 17px;
+}
+.sourcing-topbar > div:first-child span {
+  color: #697386;
+  font-size: 13px;
+}
+.sourcing-heading {
+  align-items: flex-end;
+}
+.sourcing-heading p {
+  max-width: 800px;
+  line-height: 1.65;
+}
 .sourcing-callout {
   margin-bottom: 14px;
   padding: 13px 15px;
@@ -3605,8 +3973,16 @@ td small {
   border-radius: 9px;
   font-size: 14px;
 }
-.sourcing-callout.success { border-color: #9edbbd; background: #ecfdf3; color: #176b42; }
-.sourcing-callout.error { border-color: #efb5b5; background: #fff1f1; color: #9f2020; }
+.sourcing-callout.success {
+  border-color: #9edbbd;
+  background: #ecfdf3;
+  color: #176b42;
+}
+.sourcing-callout.error {
+  border-color: #efb5b5;
+  background: #fff1f1;
+  color: #9f2020;
+}
 .sourcing-workspace {
   display: grid;
   grid-template-columns: 260px minmax(0, 1fr);
@@ -3629,8 +4005,13 @@ td small {
   padding: 16px;
   border-bottom: 1px solid var(--sourcing-line);
 }
-.sourcing-list-head strong { font-size: 16px; }
-.sourcing-list-head span { color: var(--sourcing-muted); font-size: 13px; }
+.sourcing-list-head strong {
+  font-size: 16px;
+}
+.sourcing-list-head span {
+  color: var(--sourcing-muted);
+  font-size: 13px;
+}
 .sourcing-list > button {
   display: grid;
   width: 100%;
@@ -3644,13 +4025,52 @@ td small {
   text-align: left;
 }
 .sourcing-list > button:hover,
-.sourcing-list > button.active { background: #eff6ff; }
-.sourcing-list > button.active { box-shadow: inset 3px 0 #2563eb; }
-.sourcing-list > button strong { overflow: hidden; font-size: 15px; text-overflow: ellipsis; white-space: nowrap; }
-.sourcing-list > button span { color: #2457d6; font-size: 12px; font-weight: 800; }
-.sourcing-list > button small { color: var(--sourcing-muted); font-size: 12px; }
-.sourcing-list-empty { padding: 28px 18px; color: var(--sourcing-muted); font-size: 13px; text-align: center; }
-.sourcing-editor { display: grid; min-width: 0; gap: 16px; }
+.sourcing-list > button.active {
+  background: #eff6ff;
+}
+.sourcing-list > button.active {
+  box-shadow: inset 3px 0 #2563eb;
+}
+.sourcing-list > button strong {
+  overflow: hidden;
+  font-size: 15px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sourcing-list > button span {
+  color: #2457d6;
+  font-size: 12px;
+  font-weight: 800;
+}
+.sourcing-list > button small {
+  color: var(--sourcing-muted);
+  font-size: 12px;
+}
+.sourcing-list-empty {
+  padding: 28px 18px;
+  color: var(--sourcing-muted);
+  font-size: 13px;
+  text-align: center;
+}
+.sourcing-editor {
+  display: grid;
+  min-width: 0;
+  gap: 16px;
+}
+.sourcing-topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.sourcing-topbar-actions a {
+  border: 1px solid #9db2cf;
+  border-radius: 7px;
+  padding: 9px 12px;
+  background: #fff;
+  color: #2457d6;
+  font-size: 12px;
+  font-weight: 900;
+}
 .sourcing-editor-bar,
 .sourcing-section,
 .sourcing-final-note,
@@ -3667,13 +4087,36 @@ td small {
   gap: 16px;
   padding: 17px 20px;
 }
-.sourcing-editor-bar > div { display: grid; gap: 3px; }
-.sourcing-editor-bar > div strong { font-size: 17px; }
-.sourcing-editor-bar > div span { color: var(--sourcing-muted); font-size: 13px; }
-.sourcing-editor-bar label { display: flex; align-items: center; gap: 9px; color: #475467; font-size: 13px; font-weight: 800; }
-.sourcing-editor-bar select { min-width: 130px; }
-.sourcing-section { padding: 22px; }
-.sourcing-section-head { display: flex; gap: 13px; margin-bottom: 20px; }
+.sourcing-editor-bar > div {
+  display: grid;
+  gap: 3px;
+}
+.sourcing-editor-bar > div strong {
+  font-size: 17px;
+}
+.sourcing-editor-bar > div span {
+  color: var(--sourcing-muted);
+  font-size: 13px;
+}
+.sourcing-editor-bar label {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: #475467;
+  font-size: 13px;
+  font-weight: 800;
+}
+.sourcing-editor-bar select {
+  min-width: 130px;
+}
+.sourcing-section {
+  padding: 22px;
+}
+.sourcing-section-head {
+  display: flex;
+  gap: 13px;
+  margin-bottom: 20px;
+}
 .sourcing-section-head > span {
   display: grid;
   width: 36px;
@@ -3686,15 +4129,47 @@ td small {
   font-size: 13px;
   font-weight: 900;
 }
-.sourcing-section-head h2 { margin: 0 0 4px; color: #172033; font-size: 20px; }
-.sourcing-section-head p { margin: 0; color: var(--sourcing-muted); font-size: 14px; line-height: 1.55; }
-.sourcing-grid { display: grid; gap: 14px; }
-.sourcing-grid.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-.sourcing-grid.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-.sourcing-grid.four { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-.sourcing-grid label { display: grid; align-content: start; gap: 7px; color: #344054; font-size: 14px; font-weight: 800; }
-.sourcing-grid label.wide { grid-column: 1 / -1; }
-.sourcing-grid label > small { color: var(--sourcing-muted); font-size: 12px; font-weight: 500; line-height: 1.45; }
+.sourcing-section-head h2 {
+  margin: 0 0 4px;
+  color: #172033;
+  font-size: 20px;
+}
+.sourcing-section-head p {
+  margin: 0;
+  color: var(--sourcing-muted);
+  font-size: 14px;
+  line-height: 1.55;
+}
+.sourcing-grid {
+  display: grid;
+  gap: 14px;
+}
+.sourcing-grid.two {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.sourcing-grid.three {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.sourcing-grid.four {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+.sourcing-grid label {
+  display: grid;
+  align-content: start;
+  gap: 7px;
+  color: #344054;
+  font-size: 14px;
+  font-weight: 800;
+}
+.sourcing-grid label.wide {
+  grid-column: 1 / -1;
+}
+.sourcing-grid label > small {
+  color: var(--sourcing-muted);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.45;
+}
 .sourcing-page input,
 .sourcing-page select,
 .sourcing-page textarea {
@@ -3706,10 +4181,17 @@ td small {
   font: inherit;
   font-size: 14px;
 }
-.sourcing-page textarea { min-height: 90px; resize: vertical; line-height: 1.55; }
+.sourcing-page textarea {
+  min-height: 90px;
+  resize: vertical;
+  line-height: 1.55;
+}
 .sourcing-page input:focus,
 .sourcing-page select:focus,
-.sourcing-page textarea:focus { outline: 2px solid #bfdbfe; border-color: #2563eb; }
+.sourcing-page textarea:focus {
+  outline: 2px solid #bfdbfe;
+  border-color: #2563eb;
+}
 .sourcing-preference {
   width: fit-content;
   border-radius: 999px;
@@ -3717,11 +4199,235 @@ td small {
   font-size: 11px;
   font-weight: 800;
 }
-.sourcing-preference.met { background: #dcfae6; color: #087443; }
-.sourcing-preference.pending { background: #f2f4f7; color: #667085; }
-.sourcing-money-input { position: relative; }
-.sourcing-money-input input { width: 100%; padding-right: 38px; }
-.sourcing-money-input span { position: absolute; top: 50%; right: 12px; color: #667085; font-size: 13px; transform: translateY(-50%); }
+.sourcing-preference.met {
+  background: #dcfae6;
+  color: #087443;
+}
+.sourcing-preference.pending {
+  background: #f2f4f7;
+  color: #667085;
+}
+.sourcing-keyword-import {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 16px;
+  border: 1px dashed #9db2cf;
+  border-radius: 10px;
+  background: #f8fbff;
+}
+.sourcing-keyword-import > div {
+  display: grid;
+  gap: 4px;
+}
+.sourcing-keyword-import strong {
+  color: #172033;
+  font-size: 15px;
+}
+.sourcing-keyword-import span {
+  color: var(--sourcing-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.sourcing-file-button {
+  position: relative;
+  min-width: 132px;
+  overflow: hidden;
+  border-radius: 8px;
+  padding: 10px 14px;
+  background: #2457d6;
+  color: #fff;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 900;
+  text-align: center;
+}
+.sourcing-file-button input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+.sourcing-keyword-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 16px;
+}
+.sourcing-keyword-summary button {
+  border: 1px solid #d0d5dd;
+  border-radius: 999px;
+  padding: 7px 10px;
+  background: #fff;
+  color: #475467;
+  font-size: 12px;
+}
+.sourcing-keyword-summary button strong {
+  margin-left: 3px;
+}
+.sourcing-keyword-summary button.active {
+  border-color: #2563eb;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+.sourcing-keyword-summary button.product_name {
+  color: #1d4ed8;
+}
+.sourcing-keyword-summary button.tag {
+  color: #087443;
+}
+.sourcing-keyword-summary button.attribute {
+  color: #7a4b0f;
+}
+.sourcing-keyword-summary button.category {
+  color: #6941c6;
+}
+.sourcing-keyword-tools {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+}
+.sourcing-keyword-tools input {
+  min-width: 220px;
+  flex: 1;
+}
+.sourcing-keyword-tools span {
+  color: var(--sourcing-muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.sourcing-keyword-tools button {
+  border: 0;
+  background: transparent;
+  color: #b42318;
+  font-size: 12px;
+}
+.sourcing-keyword-volume-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 10px;
+}
+.sourcing-keyword-volume-filters button {
+  border: 1px solid #d0d5dd;
+  border-radius: 7px;
+  padding: 7px 10px;
+  background: #fff;
+  color: #475467;
+  font-size: 12px;
+}
+.sourcing-keyword-volume-filters button.active {
+  border-color: #2563eb;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-weight: 900;
+}
+.sourcing-keyword-volume-filters button.sort {
+  margin-left: auto;
+  border-color: #9db2cf;
+  color: #2457d6;
+  font-weight: 800;
+}
+.sourcing-keyword-table-wrap {
+  max-height: 520px;
+  margin-top: 10px;
+  overflow: auto;
+  border: 1px solid #e1e6ee;
+  border-radius: 10px;
+}
+.sourcing-keyword-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: #fff;
+}
+.sourcing-keyword-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 10px 12px;
+  background: #f2f4f7;
+  color: #475467;
+  font-size: 12px;
+  text-align: left;
+}
+.sourcing-keyword-table td {
+  padding: 9px 12px;
+  border-top: 1px solid #edf0f5;
+  color: #172033;
+  font-size: 13px;
+}
+.sourcing-keyword-table th:nth-child(2),
+.sourcing-keyword-table td:nth-child(2) {
+  width: 120px;
+  text-align: right;
+}
+.sourcing-keyword-table th:nth-child(3),
+.sourcing-keyword-table td:nth-child(3) {
+  width: 390px;
+}
+.keyword-placement-buttons {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 5px;
+}
+.keyword-placement-buttons button {
+  border: 1px solid #d0d5dd;
+  border-radius: 7px;
+  padding: 7px 5px;
+  background: #fff;
+  color: #475467;
+  font-size: 11px;
+  white-space: nowrap;
+}
+.keyword-placement-buttons button.active {
+  font-weight: 900;
+}
+.keyword-placement-buttons button.active.product_name {
+  border-color: #93b4ff;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+.keyword-placement-buttons button.active.tag {
+  border-color: #9edbbd;
+  background: #ecfdf3;
+  color: #087443;
+}
+.keyword-placement-buttons button.active.attribute {
+  border-color: #fedf89;
+  background: #fffaeb;
+  color: #7a4b0f;
+}
+.keyword-placement-buttons button.active.category {
+  border-color: #c7b9ef;
+  background: #f4f3ff;
+  color: #6941c6;
+}
+.sourcing-keyword-empty {
+  margin-top: 14px;
+  padding: 28px 16px;
+  border-radius: 10px;
+  background: #f8fafc;
+  color: var(--sourcing-muted);
+  font-size: 13px;
+  text-align: center;
+}
+.sourcing-money-input {
+  position: relative;
+}
+.sourcing-money-input input {
+  width: 100%;
+  padding-right: 38px;
+}
+.sourcing-money-input span {
+  position: absolute;
+  top: 50%;
+  right: 12px;
+  color: #667085;
+  font-size: 13px;
+  transform: translateY(-50%);
+}
 .sourcing-calculated-price {
   min-height: 42px;
   display: flex;
@@ -3734,47 +4440,473 @@ td small {
   font-size: 15px;
   font-weight: 900;
 }
-.sourcing-margin-warning { margin: 13px 0 18px; padding: 11px 13px; border-radius: 8px; background: #fff7e8; color: #7a4b0f; font-size: 13px; line-height: 1.5; }
-.sourcing-signal-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 11px; }
-.sourcing-signal { position: relative; display: grid; gap: 12px; padding: 15px; border: 1px solid #e1e6ee; border-radius: 10px; background: #fbfcfe; }
-.sourcing-signal-copy { padding-right: 78px; }
-.sourcing-signal-copy strong { color: #172033; font-size: 14px; }
-.sourcing-signal-copy p { margin: 5px 0 0; color: var(--sourcing-muted); font-size: 12px; line-height: 1.5; }
-.sourcing-signal-actions { display: flex; gap: 6px; }
-.sourcing-signal-actions button { flex: 1; padding: 7px 8px; border: 1px solid #d0d5dd; border-radius: 7px; background: #fff; color: #475467; font-size: 12px; }
-.sourcing-signal-actions button.active { border-color: #2563eb; background: #eff6ff; color: #1d4ed8; font-weight: 900; }
-.sourcing-signal-result { position: absolute; top: 13px; right: 13px; border-radius: 999px; padding: 4px 7px; font-size: 10px; font-weight: 900; }
-.sourcing-signal-result.unknown { background: #f2f4f7; color: #667085; }
-.sourcing-signal-result.favorable { background: #dcfae6; color: #087443; }
-.sourcing-signal-result.caution { background: #fee4e2; color: #b42318; }
-.sourcing-samples { display: grid; gap: 12px; }
-.sourcing-sample { padding: 16px; border: 1px solid #e1e6ee; border-radius: 10px; background: #fbfcfe; }
-.sourcing-sample-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 13px; }
-.sourcing-sample-head strong { font-size: 15px; }
-.sourcing-sample-head button { padding: 6px 9px; background: #fff; color: #b42318; }
-.sourcing-add-sample { min-height: 44px; border: 1px dashed #9db2cf; background: #f8fbff; color: #2457d6; font-weight: 800; }
-.sourcing-final-note { display: grid; gap: 4px; padding: 16px 20px; border-color: #fedf89; background: #fffcf5; }
-.sourcing-final-note strong { color: #7a2e0e; font-size: 14px; }
-.sourcing-final-note span { color: #7a4b0f; font-size: 13px; line-height: 1.5; }
-.sourcing-save-bar { position: sticky; bottom: 12px; z-index: 5; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 18px; box-shadow: 0 10px 30px #1018281f; }
-.sourcing-save-bar span { color: var(--sourcing-muted); font-size: 13px; }
-.sourcing-save-bar button { min-width: 160px; }
+.sourcing-margin-warning {
+  margin: 13px 0 18px;
+  padding: 11px 13px;
+  border-radius: 8px;
+  background: #fff7e8;
+  color: #7a4b0f;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.sourcing-review-analyzer {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 20px;
+  padding: 16px;
+  border: 1px solid #cbd8ea;
+  border-radius: 10px;
+  background: #f8fbff;
+}
+.sourcing-review-analyzer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.sourcing-review-analyzer-head > div {
+  display: grid;
+  gap: 4px;
+}
+.sourcing-review-analyzer-head strong {
+  color: #172033;
+  font-size: 15px;
+}
+.sourcing-review-analyzer-head span {
+  color: var(--sourcing-muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+.sourcing-review-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.sourcing-review-actions span {
+  color: var(--sourcing-muted);
+  font-size: 12px;
+}
+.sourcing-review-actions button,
+.sourcing-review-result > button {
+  min-height: 40px;
+  padding: 9px 14px;
+  background: #2457d6;
+  color: #fff;
+  font-weight: 900;
+}
+.sourcing-review-result {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid #b9dfca;
+  border-radius: 9px;
+  background: #f6fef9;
+}
+.sourcing-review-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.sourcing-review-stats span {
+  border-radius: 999px;
+  padding: 6px 9px;
+  background: #eef2f6;
+  color: #475467;
+  font-size: 12px;
+}
+.sourcing-review-stats span.positive {
+  background: #dcfae6;
+  color: #087443;
+}
+.sourcing-review-stats span.negative {
+  background: #fee4e2;
+  color: #b42318;
+}
+.sourcing-review-result-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.sourcing-review-result-grid > div {
+  display: grid;
+  gap: 7px;
+  padding: 11px;
+  border-radius: 8px;
+  background: #fff;
+}
+.sourcing-review-result-grid > div > strong {
+  color: #344054;
+  font-size: 13px;
+}
+.sourcing-review-result-grid > div > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.sourcing-review-result-grid span {
+  border-radius: 999px;
+  padding: 5px 8px;
+  background: #eef4ff;
+  color: #2457d6;
+  font-size: 12px;
+}
+.sourcing-review-result-grid span b {
+  margin-left: 2px;
+}
+.sourcing-review-result-grid small,
+.sourcing-review-result > p {
+  margin: 0;
+  color: var(--sourcing-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.sourcing-review-result > button {
+  width: fit-content;
+  justify-self: end;
+}
+.sourcing-signal-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 11px;
+}
+.sourcing-signal {
+  position: relative;
+  display: grid;
+  gap: 12px;
+  padding: 15px;
+  border: 1px solid #e1e6ee;
+  border-radius: 10px;
+  background: #fbfcfe;
+}
+.sourcing-signal-copy {
+  padding-right: 78px;
+}
+.sourcing-signal-copy strong {
+  color: #172033;
+  font-size: 14px;
+}
+.sourcing-signal-copy p {
+  margin: 5px 0 0;
+  color: var(--sourcing-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.sourcing-signal-actions {
+  display: flex;
+  gap: 6px;
+}
+.sourcing-signal-actions button {
+  flex: 1;
+  padding: 7px 8px;
+  border: 1px solid #d0d5dd;
+  border-radius: 7px;
+  background: #fff;
+  color: #475467;
+  font-size: 12px;
+}
+.sourcing-signal-actions button.active {
+  border-color: #2563eb;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-weight: 900;
+}
+.sourcing-signal-result {
+  position: absolute;
+  top: 13px;
+  right: 13px;
+  border-radius: 999px;
+  padding: 4px 7px;
+  font-size: 10px;
+  font-weight: 900;
+}
+.sourcing-signal-result.unknown {
+  background: #f2f4f7;
+  color: #667085;
+}
+.sourcing-signal-result.favorable {
+  background: #dcfae6;
+  color: #087443;
+}
+.sourcing-signal-result.caution {
+  background: #fee4e2;
+  color: #b42318;
+}
+.sourcing-samples {
+  display: grid;
+  gap: 12px;
+}
+.sourcing-sample {
+  padding: 16px;
+  border: 1px solid #e1e6ee;
+  border-radius: 10px;
+  background: #fbfcfe;
+}
+.sourcing-sample-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 13px;
+}
+.sourcing-sample-head strong {
+  font-size: 15px;
+}
+.sourcing-sample-head button {
+  padding: 6px 9px;
+  background: #fff;
+  color: #b42318;
+}
+.sourcing-add-sample {
+  min-height: 44px;
+  border: 1px dashed #9db2cf;
+  background: #f8fbff;
+  color: #2457d6;
+  font-weight: 800;
+}
+.sourcing-registration-rule {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 14px;
+  padding: 14px 16px;
+  border: 1px solid #f5c78b;
+  border-radius: 10px;
+  background: #fff8ed;
+}
+.sourcing-registration-rule strong {
+  color: #8a3d0f;
+  font-size: 15px;
+}
+.sourcing-registration-rule span {
+  color: #7a4b0f;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.sourcing-prepare-registration {
+  min-height: 44px;
+  padding: 10px 16px;
+  background: #172554;
+  color: #fff;
+  font-weight: 900;
+}
+.sourcing-registration-draft {
+  display: grid;
+  gap: 16px;
+  margin-top: 16px;
+  padding: 18px;
+  border: 1px solid #d8e2f0;
+  border-radius: 10px;
+  background: #f8fbff;
+}
+.sourcing-registration-draft > label,
+.sourcing-product-apply label {
+  display: grid;
+  gap: 7px;
+  color: #344054;
+  font-size: 14px;
+  font-weight: 800;
+}
+.sourcing-registration-draft > label small {
+  color: var(--sourcing-muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+.sourcing-registration-group {
+  display: grid;
+  gap: 8px;
+}
+.sourcing-registration-group > strong {
+  color: #344054;
+  font-size: 14px;
+}
+.sourcing-registration-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+.sourcing-registration-chips button,
+.sourcing-registration-chips.read-only span:not(:only-child) {
+  border: 1px solid #b9c9df;
+  border-radius: 999px;
+  padding: 6px 9px;
+  background: #fff;
+  color: #2457d6;
+  font-size: 12px;
+}
+.sourcing-registration-chips > span:only-child {
+  color: var(--sourcing-muted);
+  font-size: 13px;
+}
+.sourcing-registration-warnings {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+  padding: 12px 14px 12px 32px;
+  border-radius: 8px;
+  background: #fff7e8;
+  color: #7a4b0f;
+  font-size: 13px;
+}
+.sourcing-product-apply {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 10px;
+  padding-top: 4px;
+  border-top: 1px solid #d8e2f0;
+}
+.sourcing-product-search {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+.sourcing-product-search button {
+  background: #fff;
+  color: #2457d6;
+  border: 1px solid #9db2cf;
+}
+.sourcing-product-apply button {
+  min-height: 42px;
+  padding: 10px 16px;
+  background: #2457d6;
+  color: #fff;
+  font-weight: 900;
+}
+.sourcing-product-apply a {
+  grid-column: 1 / -1;
+  width: fit-content;
+  color: #1d4ed8;
+  font-size: 13px;
+  font-weight: 900;
+}
+.sourcing-final-note {
+  display: grid;
+  gap: 4px;
+  padding: 16px 20px;
+  border-color: #fedf89;
+  background: #fffcf5;
+}
+.sourcing-final-note strong {
+  color: #7a2e0e;
+  font-size: 14px;
+}
+.sourcing-final-note span {
+  color: #7a4b0f;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.sourcing-save-bar {
+  position: sticky;
+  bottom: 12px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 18px;
+  box-shadow: 0 10px 30px #1018281f;
+}
+.sourcing-save-bar span {
+  color: var(--sourcing-muted);
+  font-size: 13px;
+}
+.sourcing-save-bar button {
+  min-width: 160px;
+}
+.sourcing-save-actions {
+  display: flex;
+  gap: 8px;
+}
+.sourcing-save-actions button.secondary {
+  border: 1px solid #9db2cf;
+  background: #fff;
+  color: #2457d6;
+}
 @media (max-width: 1100px) {
-  .sourcing-grid.four { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .sourcing-grid.four {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 @media (max-width: 900px) {
-  .sourcing-workspace { grid-template-columns: 1fr; }
-  .sourcing-list { position: static; display: flex; max-height: none; overflow-x: auto; }
-  .sourcing-list-head { min-width: 130px; align-content: center; flex-direction: column; }
-  .sourcing-list > button { min-width: 210px; border-right: 1px solid #edf0f5; border-bottom: 0; }
-  .sourcing-grid.three { grid-template-columns: 1fr; }
+  .sourcing-workspace {
+    grid-template-columns: 1fr;
+  }
+  .sourcing-list {
+    position: static;
+    display: flex;
+    max-height: none;
+    overflow-x: auto;
+  }
+  .sourcing-list-head {
+    min-width: 130px;
+    align-content: center;
+    flex-direction: column;
+  }
+  .sourcing-list > button {
+    min-width: 210px;
+    border-right: 1px solid #edf0f5;
+    border-bottom: 0;
+  }
+  .sourcing-grid.three {
+    grid-template-columns: 1fr;
+  }
 }
 @media (max-width: 700px) {
   .sourcing-grid.two,
   .sourcing-grid.four,
-  .sourcing-signal-grid { grid-template-columns: 1fr; }
+  .sourcing-signal-grid {
+    grid-template-columns: 1fr;
+  }
   .sourcing-editor-bar,
-  .sourcing-save-bar { align-items: stretch; flex-direction: column; }
-  .sourcing-editor-bar label { justify-content: space-between; }
-  .sourcing-save-bar button { width: 100%; }
+  .sourcing-save-bar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .sourcing-editor-bar label {
+    justify-content: space-between;
+  }
+  .sourcing-save-bar button {
+    width: 100%;
+  }
+  .sourcing-save-actions {
+    flex-direction: column;
+  }
+  .sourcing-keyword-import,
+  .sourcing-keyword-tools,
+  .sourcing-review-analyzer-head,
+  .sourcing-review-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .sourcing-file-button {
+    width: 100%;
+  }
+  .sourcing-keyword-tools input {
+    min-width: 0;
+    width: 100%;
+  }
+  .sourcing-keyword-volume-filters button.sort {
+    width: 100%;
+    margin-left: 0;
+  }
+  .sourcing-keyword-table th:nth-child(3),
+  .sourcing-keyword-table td:nth-child(3) {
+    min-width: 330px;
+  }
+  .sourcing-product-apply {
+    grid-template-columns: 1fr;
+  }
+  .sourcing-product-search {
+    grid-template-columns: 1fr;
+  }
+  .sourcing-product-apply button {
+    width: 100%;
+  }
+  .sourcing-review-result-grid {
+    grid-template-columns: 1fr;
+  }
+  .sourcing-review-actions button,
+  .sourcing-review-result > button {
+    width: 100%;
+  }
 }

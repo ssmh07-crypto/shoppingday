@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { NaverCommerceError } from "@/modules/channels/naver/naver-commerce-client";
-import { createConfiguredNaverClient } from "@/modules/channels/naver/naver-category-service";
+import { createConfiguredNaverClientForUser } from "@/modules/channels/naver/naver-category-service";
 import { NaverPublicationPolicyRepository } from "@/modules/channels/naver/naver-publication-policy-repository";
 import {
   NaverPublicationRepository,
@@ -17,7 +17,10 @@ import {
 } from "@/modules/channels/naver/naver-publication-service";
 import { ProductEditRepository } from "@/modules/products/product-edit-repository";
 import { ProductNotFoundError } from "@/modules/products/product-errors";
-import { withAdminProductReadRoute, withAdminProductRoute } from "../../route-utils";
+import {
+  withAdminProductReadRoute,
+  withAdminProductRoute,
+} from "../../route-utils";
 
 const publishInputSchema = z.object({
   confirmed: z.literal(true),
@@ -55,7 +58,7 @@ export async function POST(
         new ProductEditRepository(database),
         new NaverPublicationPolicyRepository(database),
         new NaverPublicationRepository(database),
-        createConfiguredNaverClient(),
+        await createConfiguredNaverClientForUser(database, user.id),
       ).publish(id, user.id, input.payloadHash);
       return NextResponse.json(
         { success: true, result },
@@ -64,7 +67,10 @@ export async function POST(
     } catch (error) {
       if (error instanceof NaverCommerceError) {
         return NextResponse.json(
-          { success: false, error: { code: error.code, message: error.message } },
+          {
+            success: false,
+            error: { code: error.code, message: error.message },
+          },
           {
             status:
               error.responseStatus && error.responseStatus < 500

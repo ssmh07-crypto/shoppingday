@@ -28,6 +28,23 @@ export interface SourcingSample {
   features: string;
 }
 
+export type SourcingKeywordPlacement =
+  | "unclassified"
+  | "product_name"
+  | "tag"
+  | "attribute"
+  | "category";
+
+export interface SourcingRelatedKeyword {
+  id: string;
+  keyword: string;
+  normalizedKeyword: string;
+  monthlySearchVolume: number | null;
+  placement: SourcingKeywordPlacement;
+  source: "itemscout-xlsx";
+  importedAt: string;
+}
+
 export interface SourcingResearchInput {
   status: SourcingResearchStatus;
   sourcingKeyword: string;
@@ -45,12 +62,14 @@ export interface SourcingResearchInput {
   productSpecs: string;
   primaryTarget: string;
   referenceNotes: string;
+  relatedKeywords: SourcingRelatedKeyword[];
   samples: SourcingSample[];
 }
 
 export interface SourcingResearchRecord extends SourcingResearchInput {
   id: string;
   maximumPurchasePrice: number | null;
+  registrationProductId: string | null;
   createdAt: Date;
   updatedAt: Date;
 }

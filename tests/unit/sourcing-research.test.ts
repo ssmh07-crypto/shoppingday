@@ -34,6 +34,23 @@ describe("소싱 조사 규칙", () => {
       defaultSourcingSignals,
     );
   });
+
+  it("조사 중인 소싱 아이템은 키워드 없이 임시저장할 수 있다", () => {
+    expect(
+      sourcingResearchInputSchema.safeParse({
+        ...validInput(),
+        sourcingKeyword: "",
+        status: "researching",
+      }).success,
+    ).toBe(true);
+    expect(
+      sourcingResearchInputSchema.safeParse({
+        ...validInput(),
+        sourcingKeyword: "",
+        status: "candidate",
+      }).success,
+    ).toBe(false);
+  });
 });
 
 function validInput() {
@@ -54,6 +71,7 @@ function validInput() {
     productSpecs: "",
     primaryTarget: "",
     referenceNotes: "",
+    relatedKeywords: [],
     samples: [],
   };
 }

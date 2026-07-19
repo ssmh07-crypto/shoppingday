@@ -9,7 +9,8 @@ const navigation = [
   { href: "/admin/products/import", label: "상품 가져오기", icon: "download" },
   { href: "/admin/keywords", label: "성장 상품 관리", icon: "trend" },
   { href: "/admin/sourcing", label: "소싱 조사", icon: "search" },
-  { href: "/admin/channels/naver", label: "판매 채널", icon: "store" },
+  { href: "/admin/registration", label: "상품 등록관리", icon: "clipboard" },
+  { href: "/admin/channels/naver", label: "스마트스토어 설정", icon: "store" },
   { href: "/admin/settings/products", label: "설정", icon: "settings" },
 ] as const;
 
@@ -100,6 +101,12 @@ function AdminIcon({
         <path d="m20 20-4-4" />
         <path d="M8 11h6" />
         <path d="M11 8v6" />
+      </>
+    ),
+    clipboard: (
+      <>
+        <rect x="5" y="4" width="14" height="17" rx="2" />
+        <path d="M9 4.5V3h6v1.5M8 10h8M8 14h8M8 18h5" />
       </>
     ),
     settings: (

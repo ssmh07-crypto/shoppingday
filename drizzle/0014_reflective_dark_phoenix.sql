@@ -1,0 +1,1 @@
+ALTER TABLE "sourcing_researches" ADD COLUMN "related_keywords" jsonb DEFAULT '[]'::jsonb NOT NULL;

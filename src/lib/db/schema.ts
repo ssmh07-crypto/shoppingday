@@ -177,7 +177,7 @@ export const supplierProducts = pgTable(
 
 export interface SelectedImage {
   id: string;
-  source: "supplier" | "upload";
+  source: "supplier" | "upload" | "url";
   sourceUrl: string;
   storedUrl: string | null;
   altText: string;
@@ -211,12 +211,7 @@ export interface NaverProductAttribute {
 
 export type PublicationChannel = "naver";
 export type DatabaseJsonValue =
-  | string
-  | number
-  | boolean
-  | null
-  | DatabaseJsonObject
-  | DatabaseJsonValue[];
+  string | number | boolean | null | DatabaseJsonObject | DatabaseJsonValue[];
 export type DatabaseJsonObject = { [key: string]: DatabaseJsonValue };
 
 export interface NaverPublicationPolicyData {
@@ -232,18 +227,21 @@ export interface NaverPublicationPolicyData {
     content?: string;
     plural: boolean;
   } | null;
-  productInfoProvidedNotice: (DatabaseJsonObject & {
-    productInfoProvidedNoticeType: string;
-  }) | null;
+  productInfoProvidedNotice:
+    | (DatabaseJsonObject & {
+        productInfoProvidedNoticeType: string;
+      })
+    | null;
   taxType: "TAX" | "DUTYFREE" | "SMALL" | null;
   minorPurchasable: boolean | null;
   naverShoppingRegistration: boolean | null;
   channelProductDisplayStatusType: "ON" | "SUSPENSION" | null;
 }
 
-export type NaverPublicationPolicyOverrides = Partial<NaverPublicationPolicyData>;
+export type NaverPublicationPolicyOverrides =
+  Partial<NaverPublicationPolicyData>;
 
-  export interface ManagedProductInput {
+export interface ManagedProductInput {
   supplierTitle: string;
   currentTitle?: string;
   description: string;
@@ -256,21 +254,21 @@ export type NaverPublicationPolicyOverrides = Partial<NaverPublicationPolicyData
   seasons: string[];
   supplierUrl: string;
   imageUrls: string[];
-    memo: string;
-    naverCategoryId?: string;
-    naverAttributes?: Array<{
-      attributeSeq: number;
-      attributeName: string;
-      attributeValueSeq: number | null;
-      value: string;
-    }>;
-    searchTags?: string[];
-    commerceImport?: {
-      status: "success" | "failed" | "not_configured";
-      fetchedAt: string | null;
-      message: string | null;
-    };
-  }
+  memo: string;
+  naverCategoryId?: string;
+  naverAttributes?: Array<{
+    attributeSeq: number;
+    attributeName: string;
+    attributeValueSeq: number | null;
+    value: string;
+  }>;
+  searchTags?: string[];
+  commerceImport?: {
+    status: "success" | "failed" | "not_configured";
+    fetchedAt: string | null;
+    message: string | null;
+  };
+}
 
 export interface ProductAnalysisData {
   productType: string;
@@ -372,6 +370,21 @@ export const products = pgTable(
     index("products_naver_category_idx").on(table.naverCategoryId),
   ],
 );
+
+export const naverStoreSettings = pgTable("naver_store_settings", {
+  userId: uuid("user_id")
+    .primaryKey()
+    .references(() => userProfiles.userId, { onDelete: "cascade" }),
+  storeName: text("store_name").notNull(),
+  storeUrl: text("store_url").notNull(),
+  accountId: text("account_id"),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
 
 export const channelPublicationPolicies = pgTable(
   "channel_publication_policies",
@@ -516,9 +529,7 @@ export const keywordManagedProducts = pgTable(
     currentTitle: text("current_title"),
     editableTitle: text("editable_title").notNull(),
     finalTitle: text("final_title"),
-    productInput: jsonb("product_input")
-      .$type<ManagedProductInput>()
-      .notNull(),
+    productInput: jsonb("product_input").$type<ManagedProductInput>().notNull(),
     status: text("status").notNull().default("active"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
@@ -586,9 +597,12 @@ export const keywordCandidates = pgTable(
     managedProductId: uuid("managed_product_id")
       .notNull()
       .references(() => keywordManagedProducts.id, { onDelete: "cascade" }),
-    analysisId: uuid("analysis_id").references(() => productKeywordAnalyses.id, {
-      onDelete: "set null",
-    }),
+    analysisId: uuid("analysis_id").references(
+      () => productKeywordAnalyses.id,
+      {
+        onDelete: "set null",
+      },
+    ),
     keyword: text("keyword").notNull(),
     normalizedKeyword: text("normalized_keyword").notNull(),
     recommendationReason: text("ai_reason").notNull().default(""),
@@ -599,7 +613,10 @@ export const keywordCandidates = pgTable(
     recommendationOrder: integer("ai_order").notNull(),
     origin: text("origin").notNull().default("rule_combination"),
     reviewStatus: text("review_status").notNull().default("candidate"),
-    filterReasons: jsonb("filter_reasons").$type<string[]>().notNull().default([]),
+    filterReasons: jsonb("filter_reasons")
+      .$type<string[]>()
+      .notNull()
+      .default([]),
     relevanceScore: integer("relevance_score"),
     monthlyPcSearchVolume: integer("monthly_pc_search_volume"),
     monthlyMobileSearchVolume: integer("monthly_mobile_search_volume"),
@@ -721,12 +738,17 @@ export interface SourcingSampleData {
   price: number | null;
   features: string;
 }
+export interface SourcingRelatedKeywordData {
+  id: string;
+  keyword: string;
+  normalizedKeyword: string;
+  monthlySearchVolume: number | null;
+  placement: "unclassified" | "product_name" | "tag" | "attribute" | "category";
+  source: "itemscout-xlsx";
+  importedAt: string;
+}
 export type SourcingResearchStatus =
-  | "researching"
-  | "candidate"
-  | "sample_ordered"
-  | "selected"
-  | "rejected";
+  "researching" | "candidate" | "sample_ordered" | "selected" | "rejected";
 
 export const sourcingResearches = pgTable(
   "sourcing_researches",
@@ -755,7 +777,18 @@ export const sourcingResearches = pgTable(
     productSpecs: text("product_specs").notNull().default(""),
     primaryTarget: text("primary_target").notNull().default(""),
     referenceNotes: text("reference_notes").notNull().default(""),
-    samples: jsonb("samples").$type<SourcingSampleData[]>().notNull().default([]),
+    relatedKeywords: jsonb("related_keywords")
+      .$type<SourcingRelatedKeywordData[]>()
+      .notNull()
+      .default([]),
+    samples: jsonb("samples")
+      .$type<SourcingSampleData[]>()
+      .notNull()
+      .default([]),
+    registrationProductId: uuid("registration_product_id").references(
+      () => products.id,
+      { onDelete: "set null" },
+    ),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -767,6 +800,9 @@ export const sourcingResearches = pgTable(
     index("sourcing_researches_owner_updated_idx").on(
       table.ownerId,
       table.updatedAt,
+    ),
+    index("sourcing_researches_registration_product_idx").on(
+      table.registrationProductId,
     ),
     check(
       "sourcing_researches_status_check",

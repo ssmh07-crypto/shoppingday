@@ -15,6 +15,14 @@ import type {
 type EditorTab = "basic" | "content" | "market";
 type CategoryRequirements = {
   categoryId: string;
+  attributes: Array<{
+    attributeSeq: number;
+    attributeName: string;
+    attributeClassificationType?: "SINGLE_SELECT" | "MULTI_SELECT" | "RANGE";
+    unitUsable?: boolean;
+    representativeUnitCode?: string;
+    attributeValueMaxMatchingCount?: number;
+  }>;
   requiredAttributes: Array<{
     attributeSeq: number;
     attributeName: string;
@@ -116,6 +124,8 @@ export function ProductEditor({
     useState("");
   const [message, setMessage] = useState("저장됨");
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [thumbnailUrl, setThumbnailUrl] = useState("");
+  const [detailImageUrls, setDetailImageUrls] = useState("");
   const [naverCategorySearch, setNaverCategorySearch] = useState("");
   const [naverCategoryResults, setNaverCategoryResults] = useState<
     NaverCategoryOption[]
@@ -424,7 +434,9 @@ export function ProductEditor({
   async function recommendProductTitle() {
     const title = form.title.trim();
     if (title.length < 2) {
-      setTitleRecommendationStatus("판매용 상품명을 두 글자 이상 입력해 주세요.");
+      setTitleRecommendationStatus(
+        "판매용 상품명을 두 글자 이상 입력해 주세요.",
+      );
       return;
     }
     setRecommendingTitle(true);
@@ -448,7 +460,9 @@ export function ProductEditor({
             title,
             originalTitle: initial.supplier.originalName ?? "",
             categoryPath,
-            searchTags: form.searchTags.map((tag) => tag.trim()).filter(Boolean),
+            searchTags: form.searchTags
+              .map((tag) => tag.trim())
+              .filter(Boolean),
           }),
         },
       );
@@ -462,7 +476,9 @@ export function ProductEditor({
       setTitleRecommendationStatus("");
     } catch (error) {
       setTitleRecommendationStatus(
-        error instanceof Error ? error.message : "상품명을 추천하지 못했습니다.",
+        error instanceof Error
+          ? error.message
+          : "상품명을 추천하지 못했습니다.",
       );
     } finally {
       setRecommendingTitle(false);
@@ -490,7 +506,9 @@ export function ProductEditor({
       const body = await response.json().catch(() => null);
       if (!response.ok) {
         setErrors(body?.error?.errors ?? {});
-        throw new Error(body?.error?.message ?? "이미지 업로드에 실패했습니다.");
+        throw new Error(
+          body?.error?.message ?? "이미지 업로드에 실패했습니다.",
+        );
       }
       const product = body.data.product;
       const next = {
@@ -529,7 +547,8 @@ export function ProductEditor({
       const inspectionBody = await inspectionResponse.json().catch(() => null);
       if (!inspectionResponse.ok) {
         throw new Error(
-          inspectionBody?.error?.message ?? "발행 준비 상태를 확인하지 못했습니다.",
+          inspectionBody?.error?.message ??
+            "발행 준비 상태를 확인하지 못했습니다.",
         );
       }
       const inspection = inspectionBody.inspection as PublicationInspection;
@@ -537,7 +556,10 @@ export function ProductEditor({
       if (!inspection.ready || !inspection.payloadHash) {
         throw new Error("필수 상품 정보와 판매 정책을 먼저 입력해 주세요.");
       }
-      if (!inspection.action || !["create", "retry_create"].includes(inspection.action)) {
+      if (
+        !inspection.action ||
+        !["create", "retry_create"].includes(inspection.action)
+      ) {
         throw new Error(
           inspection.action === "unchanged"
             ? "이미 최신 상태로 등록된 상품입니다."
@@ -568,7 +590,9 @@ export function ProductEditor({
       const body = await response.json().catch(() => null);
       if (!response.ok) {
         setErrors(body?.error?.errors ?? {});
-        throw new Error(body?.error?.message ?? "스마트스토어 등록에 실패했습니다.");
+        throw new Error(
+          body?.error?.message ?? "스마트스토어 등록에 실패했습니다.",
+        );
       }
       const published = body.result?.publication;
       setMessage(
@@ -578,7 +602,9 @@ export function ProductEditor({
       );
       onMutated?.();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "스마트스토어 등록 실패");
+      setMessage(
+        error instanceof Error ? error.message : "스마트스토어 등록 실패",
+      );
     } finally {
       setPublishingNaver(false);
       setPublicationRefreshKey((current) => current + 1);
@@ -609,6 +635,80 @@ export function ProductEditor({
       ];
       return { ...old, selectedImages };
     });
+  }
+
+  function addThumbnailUrl() {
+    const url = normalizeHttpUrl(thumbnailUrl);
+    if (!url) {
+      setMessage("http 또는 https로 시작하는 이미지 URL을 입력해 주세요.");
+      return;
+    }
+    if (form.selectedImages.length >= 30) {
+      setMessage("썸네일 이미지는 최대 30개까지 추가할 수 있습니다.");
+      return;
+    }
+    if (form.selectedImages.some((image) => image.sourceUrl === url)) {
+      setMessage("이미 추가된 이미지 URL입니다.");
+      return;
+    }
+    setForm((old) => ({
+      ...old,
+      selectedImages: [
+        ...old.selectedImages,
+        {
+          id: crypto.randomUUID(),
+          source: "url",
+          sourceUrl: url,
+          storedUrl: null,
+          altText: old.title,
+          sortOrder: old.selectedImages.length,
+          isPrimary: !old.selectedImages.some(
+            (image) => image.enabled && image.isPrimary,
+          ),
+          enabled: true,
+        },
+      ],
+    }));
+    setThumbnailUrl("");
+    setMessage(
+      "이미지 URL을 추가했습니다. 저장 후 네이버 이미지 업로드를 진행하세요.",
+    );
+  }
+
+  function removeImage(index: number) {
+    setForm((old) => {
+      const removed = old.selectedImages[index];
+      const selectedImages = old.selectedImages
+        .filter((_, imageIndex) => imageIndex !== index)
+        .map((image, sortOrder) => ({ ...image, sortOrder }));
+      if (removed?.isPrimary) {
+        const firstEnabled = selectedImages.find((image) => image.enabled);
+        if (firstEnabled) firstEnabled.isPrimary = true;
+      }
+      return { ...old, selectedImages };
+    });
+  }
+
+  function addDetailImageUrls() {
+    const urls = detailImageUrls
+      .split(/\r?\n/)
+      .map(normalizeHttpUrl)
+      .filter((url): url is string => Boolean(url));
+    if (!urls.length) {
+      setMessage("한 줄에 하나씩 상세 이미지 URL을 입력해 주세요.");
+      return;
+    }
+    const imageHtml = [...new Set(urls)]
+      .map((url) => `<p><img src="${url}" alt="" /></p>`)
+      .join("\n");
+    setForm((old) => ({
+      ...old,
+      description: [old.description.trim(), imageHtml]
+        .filter(Boolean)
+        .join("\n"),
+    }));
+    setDetailImageUrls("");
+    setMessage(`${urls.length}개의 상세 이미지 URL을 추가했습니다.`);
   }
 
   const enabledImageCount = form.selectedImages.filter(
@@ -648,7 +748,7 @@ export function ProductEditor({
     <div className="drawer-editor">
       <div className="drawer-source-summary">
         <div>
-          <span>친구도매 상품번호</span>
+          <span>상품번호</span>
           <strong>{initial.supplier.externalProductId}</strong>
         </div>
         <div>
@@ -883,11 +983,15 @@ export function ProductEditor({
                   </small>
                 )}
                 {titleRecommendation && (
-                  <div className="drawer-title-recommendation" aria-live="polite">
+                  <div
+                    className="drawer-title-recommendation"
+                    aria-live="polite"
+                  >
                     <div className="drawer-title-recommendation-head">
                       <div>
                         <small>
-                          {titleRecommendation.source === "rules_naver_search_ad"
+                          {titleRecommendation.source ===
+                          "rules_naver_search_ad"
                             ? "규칙 분석 + 네이버 검색광고 실제 데이터"
                             : "규칙 기반 기본 모드"}
                         </small>
@@ -916,17 +1020,23 @@ export function ProductEditor({
                       <div>
                         <dt>소재·재질</dt>
                         <dd>
-                          {titleRecommendation.analysis.materials.join(", ") || "감지 안 됨"}
+                          {titleRecommendation.analysis.materials.join(", ") ||
+                            "감지 안 됨"}
                         </dd>
                       </div>
                       <div>
                         <dt>용도</dt>
-                        <dd>{titleRecommendation.analysis.uses.join(", ") || "감지 안 됨"}</dd>
+                        <dd>
+                          {titleRecommendation.analysis.uses.join(", ") ||
+                            "감지 안 됨"}
+                        </dd>
                       </div>
                       <div>
                         <dt>정리한 표현</dt>
                         <dd>
-                          {titleRecommendation.analysis.removedTerms.join(", ") || "없음"}
+                          {titleRecommendation.analysis.removedTerms.join(
+                            ", ",
+                          ) || "없음"}
                         </dd>
                       </div>
                     </dl>
@@ -936,7 +1046,8 @@ export function ProductEditor({
                         <div>
                           {titleRecommendation.keywordEvidence.map((item) => (
                             <span key={item.keyword}>
-                              {item.keyword} · {item.totalMonthlySearchVolume == null
+                              {item.keyword} ·{" "}
+                              {item.totalMonthlySearchVolume == null
                                 ? "조회 안 됨"
                                 : `월 ${item.totalMonthlySearchVolume.toLocaleString("ko-KR")}`}
                             </span>
@@ -948,7 +1059,8 @@ export function ProductEditor({
                       <p key={notice}>{notice}</p>
                     ))}
                     <small className="drawer-title-recommendation-disclaimer">
-                      검색량은 네이버 검색광고 API 값이며 추천 상품명이 검색 노출이나 매출을 보장하지 않습니다.
+                      검색량은 네이버 검색광고 API 값이며 추천 상품명이 검색
+                      노출이나 매출을 보장하지 않습니다.
                     </small>
                   </div>
                 )}
@@ -1047,7 +1159,11 @@ export function ProductEditor({
                   >
                     {uploadingImages ? "업로드 중…" : "네이버 이미지 업로드"}
                   </button>
-                  <button type="button" onClick={resetImages} disabled={saving || uploadingImages}>
+                  <button
+                    type="button"
+                    onClick={resetImages}
+                    disabled={saving || uploadingImages}
+                  >
                     원본으로 초기화
                   </button>
                 </div>
@@ -1056,6 +1172,29 @@ export function ProductEditor({
                 전체 {form.selectedImages.length}개 중 {enabledImageCount}개
                 사용
               </p>
+              <div className="drawer-url-import">
+                <label htmlFor="thumbnail-url">썸네일 이미지 URL</label>
+                <div>
+                  <input
+                    id="thumbnail-url"
+                    type="url"
+                    value={thumbnailUrl}
+                    onChange={(event) => setThumbnailUrl(event.target.value)}
+                    placeholder="https://example.com/product.jpg"
+                  />
+                  <button
+                    type="button"
+                    onClick={addThumbnailUrl}
+                    disabled={saving}
+                  >
+                    URL 추가
+                  </button>
+                </div>
+                <small>
+                  외부 이미지 주소를 추가한 뒤 네이버 이미지 업로드를
+                  실행하세요.
+                </small>
+              </div>
               <div className="drawer-images">
                 {form.selectedImages.map((image, index) => (
                   <article
@@ -1106,6 +1245,13 @@ export function ProductEditor({
                       >
                         →
                       </button>
+                      <button
+                        type="button"
+                        onClick={() => removeImage(index)}
+                        aria-label={`${index + 1}번 이미지 삭제`}
+                      >
+                        삭제
+                      </button>
                     </div>
                   </article>
                 ))}
@@ -1126,6 +1272,29 @@ export function ProductEditor({
                   setForm({ ...form, description: event.target.value })
                 }
               />
+              <div className="drawer-url-import detail">
+                <label htmlFor="detail-image-urls">상세 이미지 URL</label>
+                <textarea
+                  id="detail-image-urls"
+                  rows={4}
+                  value={detailImageUrls}
+                  onChange={(event) => setDetailImageUrls(event.target.value)}
+                  placeholder={
+                    "https://example.com/detail-01.jpg\nhttps://example.com/detail-02.jpg"
+                  }
+                />
+                <button
+                  type="button"
+                  onClick={addDetailImageUrls}
+                  disabled={saving}
+                >
+                  상세페이지에 URL 이미지 추가
+                </button>
+                <small>
+                  외부 웹페이지 전체가 아닌 공개된 http/https 이미지 URL을 상세
+                  HTML에 추가합니다.
+                </small>
+              </div>
               <div className="drawer-description-preview">
                 <span>미리보기</span>
                 <iframe
@@ -1157,15 +1326,20 @@ export function ProductEditor({
               ))}
             </div>
             <div className="drawer-category-requirements">
-              <strong>선택 카테고리 필수정보</strong>
+              <strong>네이버 카테고리별 공식 속성</strong>
+              <p>
+                최종 카테고리를 기준으로 네이버 커머스 API에서 필수 속성,
+                선택값, 단위와 표준 옵션을 불러옵니다.
+              </p>
               {categoryRequirementsStatus && (
                 <p role="status">{categoryRequirementsStatus}</p>
               )}
               {categoryRequirements && (
                 <>
                   <div>
-                    <span>필수 상품 속성</span>
+                    <span>카테고리 상품 속성</span>
                     <strong>
+                      전체 {categoryRequirements.attributes.length}개 · 필수{" "}
                       {categoryRequirements.requiredAttributes.length}개
                     </strong>
                   </div>
@@ -1186,9 +1360,9 @@ export function ProductEditor({
                       <li>필수 상품 속성 없음</li>
                     )}
                   </ul>
-                  {categoryRequirements.requiredAttributes.length > 0 && (
+                  {categoryRequirements.attributes.length > 0 && (
                     <NaverAttributeEditor
-                      attributes={categoryRequirements.requiredAttributes}
+                      attributes={categoryRequirements.attributes}
                       candidates={categoryRequirements.attributeValues}
                       units={categoryRequirements.units}
                       value={form.naverAttributes}
@@ -1268,7 +1442,8 @@ export function ProductEditor({
                   )}
                   {publicationInspection.publication?.lastErrorMessage && (
                     <p className="drawer-publication-error">
-                      최근 오류: {publicationInspection.publication.lastErrorMessage}
+                      최근 오류:{" "}
+                      {publicationInspection.publication.lastErrorMessage}
                     </p>
                   )}
                 </div>
@@ -1290,8 +1465,8 @@ export function ProductEditor({
             <div className="drawer-market-notice">
               <strong>실제 상품 등록 전 확인</strong>
               <p>
-                버튼을 누르면 최신 payload를 다시 검증하고 최종 확인창을 표시합니다.
-                확인 전에는 네이버로 상품을 전송하지 않습니다.
+                버튼을 누르면 최신 payload를 다시 검증하고 최종 확인창을
+                표시합니다. 확인 전에는 네이버로 상품을 전송하지 않습니다.
               </p>
             </div>
             <button
@@ -1452,6 +1627,16 @@ function fromInitial(initial: ProductEditorInitial) {
     editedOptions: product.editedOptions,
     naverAttributes: product.naverAttributes ?? [],
   };
+}
+
+function normalizeHttpUrl(value: string) {
+  try {
+    const url = new URL(value.trim());
+    if (!["http:", "https:"].includes(url.protocol)) return null;
+    return url.toString();
+  } catch {
+    return null;
+  }
 }
 
 function formatWon(value: string | null) {

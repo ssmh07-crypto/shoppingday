@@ -10,6 +10,7 @@ export async function GET(request: Request) {
       filter: url.searchParams.get("filter") ?? undefined,
       sort: url.searchParams.get("sort") ?? undefined,
       page: Number(url.searchParams.get("page")) || 1,
+      pageSize: Number(url.searchParams.get("pageSize")) || undefined,
     });
     return NextResponse.json({ success: true, ...data });
   });

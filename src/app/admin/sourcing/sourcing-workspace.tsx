@@ -1,8 +1,22 @@
 "use client";
 
-import { useMemo, useState, type ReactNode } from "react";
+import { useMemo, useState, type ChangeEvent, type ReactNode } from "react";
+import {
+  mergeImportedKeywords,
+  parseItemScoutWorkbook,
+} from "@/modules/sourcing/itemscout-import";
+import { buildSourcingRegistrationDraft } from "@/modules/sourcing/registration-draft";
+import {
+  analyzeReviews,
+  formatReviewEvidence,
+  parsePastedReviews,
+  parseReviewFile,
+  type SourcingReviewAnalysis,
+  type SourcingReviewEntry,
+} from "@/modules/sourcing/review-analysis";
 import {
   defaultSourcingSignals,
+  type SourcingKeywordPlacement,
   type SourcingResearchInput,
   type SourcingResearchRecord,
   type SourcingResearchSignal,
@@ -23,12 +37,36 @@ type ListItem = Pick<
   | "updatedAt"
 >;
 
+type ProductOption = {
+  id: string;
+  title: string;
+  originalName: string | null;
+  status: string;
+};
+
 const statusLabels: Record<SourcingResearchStatus, string> = {
   researching: "조사 중",
   candidate: "소싱 후보",
   sample_ordered: "샘플 확인 중",
   selected: "소싱 결정",
   rejected: "보류",
+};
+
+const keywordPlacementLabels: Record<SourcingKeywordPlacement, string> = {
+  unclassified: "미분류",
+  product_name: "상품명 키워드",
+  tag: "태그 키워드",
+  attribute: "속성 키워드",
+  category: "카테고리 키워드",
+};
+
+type KeywordVolumeFilter = "all" | "up_to_1000" | "1001_to_10000" | "over_10000";
+
+const keywordVolumeFilterLabels: Record<KeywordVolumeFilter, string> = {
+  all: "검색수 전체",
+  up_to_1000: "1,000 이하",
+  "1001_to_10000": "1,001~10,000",
+  over_10000: "10,001 이상",
 };
 
 const signalQuestions: Array<{
@@ -64,6 +102,24 @@ export function SourcingWorkspace({
   );
   const [creating, setCreating] = useState(!initialDetail);
   const [busy, setBusy] = useState(false);
+  const [importingKeywords, setImportingKeywords] = useState(false);
+  const [keywordQuery, setKeywordQuery] = useState("");
+  const [keywordPlacementFilter, setKeywordPlacementFilter] =
+    useState<SourcingKeywordPlacement | "all">("all");
+  const [keywordVolumeFilter, setKeywordVolumeFilter] =
+    useState<KeywordVolumeFilter>("all");
+  const [keywordVolumeSort, setKeywordVolumeSort] = useState<"desc" | "asc">("desc");
+  const [productOptions, setProductOptions] = useState<ProductOption[]>([]);
+  const [productSearch, setProductSearch] = useState("");
+  const [targetProductId, setTargetProductId] = useState("");
+  const [registrationTitle, setRegistrationTitle] = useState("");
+  const [registrationTags, setRegistrationTags] = useState<string[]>([]);
+  const [registrationPrepared, setRegistrationPrepared] = useState(false);
+  const [appliedProductId, setAppliedProductId] = useState<string | null>(null);
+  const [reviewRawText, setReviewRawText] = useState("");
+  const [reviewFileEntries, setReviewFileEntries] = useState<SourcingReviewEntry[]>([]);
+  const [reviewAnalysis, setReviewAnalysis] = useState<SourcingReviewAnalysis | null>(null);
+  const [reviewImporting, setReviewImporting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -75,6 +131,51 @@ export function SourcingWorkspace({
     [draft.expectedSellingPrice],
   );
 
+  const keywordCounts = useMemo(() => {
+    const counts: Record<SourcingKeywordPlacement, number> = {
+      unclassified: 0,
+      product_name: 0,
+      tag: 0,
+      attribute: 0,
+      category: 0,
+    };
+    for (const item of draft.relatedKeywords) counts[item.placement] += 1;
+    return counts;
+  }, [draft.relatedKeywords]);
+
+  const visibleRelatedKeywords = useMemo(() => {
+    const normalizedQuery = keywordQuery.trim().replace(/\s+/g, "").toLocaleLowerCase("ko-KR");
+    return draft.relatedKeywords.filter(
+      (item) => {
+        const volume = item.monthlySearchVolume;
+        const volumeMatches =
+          keywordVolumeFilter === "all" ||
+          (keywordVolumeFilter === "up_to_1000" && volume != null && volume <= 1_000) ||
+          (keywordVolumeFilter === "1001_to_10000" && volume != null && volume > 1_000 && volume <= 10_000) ||
+          (keywordVolumeFilter === "over_10000" && volume != null && volume > 10_000);
+        return (
+        (keywordPlacementFilter === "all" || item.placement === keywordPlacementFilter) &&
+          volumeMatches &&
+          (!normalizedQuery || item.normalizedKeyword.includes(normalizedQuery))
+        );
+      },
+    ).sort((left, right) => {
+      const leftVolume = left.monthlySearchVolume;
+      const rightVolume = right.monthlySearchVolume;
+      if (leftVolume == null && rightVolume == null) return left.keyword.localeCompare(right.keyword, "ko");
+      if (leftVolume == null) return 1;
+      if (rightVolume == null) return -1;
+      return keywordVolumeSort === "desc"
+        ? rightVolume - leftVolume
+        : leftVolume - rightVolume;
+    });
+  }, [draft.relatedKeywords, keywordPlacementFilter, keywordQuery, keywordVolumeFilter, keywordVolumeSort]);
+
+  const registrationDraft = useMemo(
+    () => buildSourcingRegistrationDraft(draft.sourcingKeyword, draft.relatedKeywords),
+    [draft.relatedKeywords, draft.sourcingKeyword],
+  );
+
   async function selectItem(id: string) {
     setBusy(true);
     setMessage(null);
@@ -84,6 +185,7 @@ export function SourcingWorkspace({
       setDetail(response.data!);
       setDraft(recordToInput(response.data!));
       setCreating(false);
+      resetRegistrationPreparation();
     } catch (caught) {
       setError(errorMessage(caught));
     } finally {
@@ -91,15 +193,38 @@ export function SourcingWorkspace({
     }
   }
 
-  function startNew() {
-    setDetail(null);
-    setDraft(emptyResearch());
-    setCreating(true);
+  async function startNew() {
+    setBusy(true);
     setMessage(null);
     setError(null);
+    try {
+      if (detail) {
+        await api<SourcingResearchRecord>(`/api/sourcing-researches/${detail.id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(draft),
+        });
+      }
+      const response = await api<SourcingResearchRecord>("/api/sourcing-researches", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(emptyResearch()),
+      });
+      setDetail(response.data!);
+      setDraft(recordToInput(response.data!));
+      setCreating(false);
+      resetRegistrationPreparation();
+      const listResponse = await api<never, ListItem[]>("/api/sourcing-researches");
+      setItems(listResponse.items ?? []);
+      setMessage("새 소싱 아이템을 목록에 추가했습니다.");
+    } catch (caught) {
+      setError(errorMessage(caught));
+    } finally {
+      setBusy(false);
+    }
   }
 
-  async function save() {
+  async function save(temporary = false) {
     setBusy(true);
     setMessage(null);
     setError(null);
@@ -115,7 +240,7 @@ export function SourcingWorkspace({
       setDetail(response.data!);
       setDraft(recordToInput(response.data!));
       setCreating(false);
-      setMessage("소싱 조사 내용을 저장했습니다.");
+      setMessage(temporary ? "소싱 아이템을 임시저장했습니다." : "소싱 아이템을 저장했습니다.");
       const listResponse = await api<never, ListItem[]>("/api/sourcing-researches");
       setItems(listResponse.items ?? []);
     } catch (caught) {
@@ -125,6 +250,150 @@ export function SourcingWorkspace({
     }
   }
 
+  async function importItemScoutKeywords(event: ChangeEvent<HTMLInputElement>) {
+    const input = event.currentTarget;
+    const file = input.files?.[0];
+    if (!file) return;
+    setImportingKeywords(true);
+    setMessage(null);
+    setError(null);
+    try {
+      const imported = await parseItemScoutWorkbook(file);
+      setDraft((current) => ({
+        ...current,
+        relatedKeywords: mergeImportedKeywords(
+          current.relatedKeywords,
+          imported.keywords,
+        ),
+      }));
+      setKeywordPlacementFilter("all");
+      setKeywordQuery("");
+      setMessage(
+        `${imported.sourceRowCount}행에서 키워드 ${imported.keywords.length}개를 가져왔습니다. 중복 ${imported.duplicateCount}개는 합쳤습니다.`,
+      );
+    } catch (caught) {
+      setError(errorMessage(caught));
+    } finally {
+      input.value = "";
+      setImportingKeywords(false);
+    }
+  }
+
+  async function prepareRegistration() {
+    setRegistrationTitle(registrationDraft.title);
+    setRegistrationTags(registrationDraft.searchTags);
+    setRegistrationPrepared(true);
+    setAppliedProductId(null);
+    setMessage(null);
+    setError(null);
+    if (productOptions.length) return;
+    await loadProductOptions();
+  }
+
+  async function loadProductOptions(search = productSearch) {
+    try {
+      const query = new URLSearchParams({ pageSize: "100" });
+      if (search.trim()) query.set("search", search.trim());
+      const response = await api<never, ProductOption[]>(`/api/products?${query}`);
+      setProductOptions(response.items ?? []);
+    } catch (caught) {
+      setError(errorMessage(caught));
+    }
+  }
+
+  async function applyRegistrationToProduct() {
+    if (!targetProductId || !registrationTitle.trim()) return;
+    setBusy(true);
+    setMessage(null);
+    setError(null);
+    try {
+      const saved = await api<SourcingResearchRecord>(
+        creating ? "/api/sourcing-researches" : `/api/sourcing-researches/${detail!.id}`,
+        {
+          method: creating ? "POST" : "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(draft),
+        },
+      );
+      const savedResearch = saved.data!;
+      setDetail(savedResearch);
+      setDraft(recordToInput(savedResearch));
+      setCreating(false);
+      await api(`/api/sourcing-researches/${savedResearch.id}/apply-to-product`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          productId: targetProductId,
+          title: registrationTitle,
+          searchTags: registrationTags,
+        }),
+      });
+      setAppliedProductId(targetProductId);
+      setMessage("상품명과 검색 태그를 상품 등록 초안에 반영했습니다.");
+      const listResponse = await api<never, ListItem[]>("/api/sourcing-researches");
+      setItems(listResponse.items ?? []);
+    } catch (caught) {
+      setError(errorMessage(caught));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function importReviewFile(event: ChangeEvent<HTMLInputElement>) {
+    const input = event.currentTarget;
+    const file = input.files?.[0];
+    if (!file) return;
+    setReviewImporting(true);
+    setMessage(null);
+    setError(null);
+    try {
+      const reviews = await parseReviewFile(file);
+      setReviewFileEntries(reviews);
+      setReviewAnalysis(null);
+      setMessage(`리뷰 파일에서 ${reviews.length}개를 읽었습니다. 분석 버튼을 눌러 결과를 확인하세요.`);
+    } catch (caught) {
+      setError(errorMessage(caught));
+    } finally {
+      input.value = "";
+      setReviewImporting(false);
+    }
+  }
+
+  function runReviewAnalysis() {
+    setMessage(null);
+    setError(null);
+    try {
+      const pasted = parsePastedReviews(reviewRawText);
+      setReviewAnalysis(analyzeReviews([...reviewFileEntries, ...pasted]));
+    } catch (caught) {
+      setError(errorMessage(caught));
+    }
+  }
+
+  function applyReviewAnalysis() {
+    if (!reviewAnalysis) return;
+    setDraft((current) => ({
+      ...current,
+      positiveReviews: replaceGeneratedReviewSection(
+        current.positiveReviews,
+        formatReviewEvidence(reviewAnalysis.positiveTerms, reviewAnalysis.positiveExamples),
+      ),
+      negativeReviews: replaceGeneratedReviewSection(
+        current.negativeReviews,
+        formatReviewEvidence(reviewAnalysis.negativeTerms, reviewAnalysis.negativeExamples),
+      ),
+      customerNeeds: replaceGeneratedReviewSection(
+        current.customerNeeds,
+        reviewAnalysis.customerNeedCandidates.map((item) => `- ${item}`).join("\n"),
+      ),
+      finalSellingPoint: replaceGeneratedReviewSection(
+        current.finalSellingPoint,
+        reviewAnalysis.sellingPointCandidates.map((item) => `- ${item}`).join("\n"),
+      ),
+    }));
+    setMessage("규칙 기반 리뷰 분석 결과를 조사 항목에 반영했습니다. 저장 전에 내용을 확인하세요.");
+  }
+
   return (
     <>
       <header className="inventory-topbar sourcing-topbar">
@@ -132,7 +401,10 @@ export function SourcingWorkspace({
           <strong>소싱 조사</strong>
           <span>키워드에서 시작해 국내 시장·리뷰·샘플을 순서대로 검토합니다.</span>
         </div>
-        <button type="button" onClick={startNew}>새 조사 시작</button>
+        <div className="sourcing-topbar-actions">
+          <a href="/admin/registration">상품 등록관리</a>
+          <button type="button" onClick={startNew} disabled={busy}>소싱 리스트 추가</button>
+        </div>
       </header>
       <main className="inventory-content sourcing-page">
         <section className="inventory-heading sourcing-heading">
@@ -150,7 +422,7 @@ export function SourcingWorkspace({
         <div className="sourcing-workspace">
           <aside className="sourcing-list">
             <div className="sourcing-list-head">
-              <strong>조사 목록</strong>
+              <strong>소싱 목록</strong>
               <span>{items.length}개</span>
             </div>
             {items.length ? items.map((item) => (
@@ -161,7 +433,7 @@ export function SourcingWorkspace({
                 onClick={() => selectItem(item.id)}
                 disabled={busy}
               >
-                <strong>{item.sourcingKeyword}</strong>
+                <strong>{item.sourcingKeyword || "새 소싱 아이템"}</strong>
                 <span>{statusLabels[item.status]}</span>
                 <small>
                   검색 {formatNumber(item.monthlySearchVolume)} · 6개월 {formatEok(item.sixMonthRevenue)}
@@ -175,7 +447,7 @@ export function SourcingWorkspace({
           <div className="sourcing-editor">
             <div className="sourcing-editor-bar">
               <div>
-                <strong>{creating ? "새 소싱 조사" : draft.sourcingKeyword}</strong>
+                <strong>{draft.sourcingKeyword || "새 소싱 아이템"}</strong>
                 <span>각 항목은 직접 확인한 값만 입력하세요.</span>
               </div>
               <label>
@@ -217,7 +489,81 @@ export function SourcingWorkspace({
               </div>
             </ResearchSection>
 
-            <ResearchSection number="02" title="품목 조사" description="가격 구조와 진입 위험을 확인하고, 어떤 제품을 찾아야 하는지 기준을 세웁니다.">
+            <ResearchSection number="02" title="연관 키워드 분류" description="아이템스카우트 엑셀에서 키워드와 총 검색수만 가져온 뒤, 직접 검색한 결과에 따라 사용할 위치를 표시합니다.">
+              <div className="sourcing-keyword-import">
+                <div>
+                  <strong>아이템스카우트 엑셀 가져오기</strong>
+                  <span>같은 키워드를 다시 가져오면 기존 분류를 유지하고 검색량을 새 값으로 바꿉니다.</span>
+                </div>
+                <label className="sourcing-file-button">
+                  <input
+                    type="file"
+                    accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    onChange={importItemScoutKeywords}
+                    disabled={importingKeywords}
+                  />
+                  {importingKeywords ? "엑셀 읽는 중…" : "엑셀 파일 선택"}
+                </label>
+              </div>
+
+              {draft.relatedKeywords.length ? (
+                <>
+                  <div className="sourcing-keyword-summary" aria-label="키워드 분류 현황">
+                    <button type="button" className={keywordPlacementFilter === "all" ? "active" : undefined} onClick={() => setKeywordPlacementFilter("all")}>전체 <strong>{draft.relatedKeywords.length}</strong></button>
+                    {(Object.keys(keywordPlacementLabels) as SourcingKeywordPlacement[]).map((placement) => (
+                      <button type="button" key={placement} className={keywordPlacementFilter === placement ? `active ${placement}` : placement} onClick={() => setKeywordPlacementFilter(placement)}>
+                        {keywordPlacementLabels[placement]} <strong>{keywordCounts[placement]}</strong>
+                      </button>
+                    ))}
+                  </div>
+                  <div className="sourcing-keyword-tools">
+                    <input value={keywordQuery} onChange={(event) => setKeywordQuery(event.target.value)} placeholder="키워드 검색" aria-label="가져온 키워드 검색" />
+                    <span>표시 중 {visibleRelatedKeywords.length}개</span>
+                    <button type="button" onClick={() => setDraft((current) => ({ ...current, relatedKeywords: current.relatedKeywords.map((item) => ({ ...item, placement: "unclassified" })) }))}>분류 초기화</button>
+                  </div>
+                  <div className="sourcing-keyword-volume-filters" aria-label="검색수 필터">
+                    {(Object.entries(keywordVolumeFilterLabels) as Array<[KeywordVolumeFilter, string]>).map(([value, label]) => (
+                      <button type="button" key={value} className={keywordVolumeFilter === value ? "active" : undefined} onClick={() => setKeywordVolumeFilter(value)}>{label}</button>
+                    ))}
+                    <button type="button" className="sort" onClick={() => setKeywordVolumeSort((current) => current === "desc" ? "asc" : "desc")}>
+                      검색수 {keywordVolumeSort === "desc" ? "높은순 ↓" : "낮은순 ↑"}
+                    </button>
+                  </div>
+                  <div className="sourcing-keyword-table-wrap">
+                    <table className="sourcing-keyword-table">
+                      <thead><tr><th>키워드</th><th>총 검색수</th><th>직접 분류</th></tr></thead>
+                      <tbody>
+                        {visibleRelatedKeywords.map((item) => (
+                          <tr key={item.id}>
+                            <td>{item.keyword}</td>
+                            <td>{formatNumber(item.monthlySearchVolume)}</td>
+                            <td>
+                              <div className="keyword-placement-buttons" role="group" aria-label={`${item.keyword} 사용 위치`}>
+                                {(Object.entries(keywordPlacementLabels) as Array<[SourcingKeywordPlacement, string]>).filter(([value]) => value !== "unclassified").map(([value, label]) => (
+                                  <button
+                                    type="button"
+                                    key={value}
+                                    className={item.placement === value ? `active ${value}` : value}
+                                    aria-pressed={item.placement === value}
+                                    onClick={() => updateKeywordPlacement(item.id, item.placement === value ? "unclassified" : value)}
+                                  >
+                                    {label.replace(" 키워드", "")}
+                                  </button>
+                                ))}
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              ) : (
+                <div className="sourcing-keyword-empty">엑셀을 올리면 키워드와 총 검색수가 여기에 표시됩니다.</div>
+              )}
+            </ResearchSection>
+
+            <ResearchSection number="03" title="품목 조사" description="가격 구조와 진입 위험을 확인하고, 어떤 제품을 찾아야 하는지 기준을 세웁니다.">
               <div className="sourcing-grid four sourcing-price-grid">
                 <Field label="쿠팡 평균단가"><MoneyInput value={draft.coupangAveragePrice} onChange={(value) => setField("coupangAveragePrice", value)} /></Field>
                 <Field label="네이버 평균단가"><MoneyInput value={draft.naverAveragePrice} onChange={(value) => setField("naverAveragePrice", value)} /></Field>
@@ -241,7 +587,46 @@ export function SourcingWorkspace({
               </div>
             </ResearchSection>
 
-            <ResearchSection number="03" title="상품 리뷰 조사" description="상세페이지보다 낮은 평점과 반복되는 불만을 먼저 읽고 개선 조건을 정리합니다.">
+            <ResearchSection number="04" title="상품 리뷰 조사" description="상세페이지보다 낮은 평점과 반복되는 불만을 먼저 읽고 개선 조건을 정리합니다.">
+              <div className="sourcing-review-analyzer">
+                <div className="sourcing-review-analyzer-head">
+                  <div>
+                    <strong>경쟁 상품 리뷰 가져오기</strong>
+                    <span>리뷰 원문은 브라우저에서만 처리하며 서버에 그대로 저장하지 않습니다.</span>
+                  </div>
+                  <label className="sourcing-file-button">
+                    <input type="file" accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onChange={importReviewFile} disabled={reviewImporting} />
+                    {reviewImporting ? "리뷰 읽는 중…" : "리뷰 파일 선택"}
+                  </label>
+                </div>
+                <textarea
+                  rows={8}
+                  value={reviewRawText}
+                  onChange={(event) => { setReviewRawText(event.target.value); setReviewAnalysis(null); }}
+                  placeholder={"리뷰를 한 줄에 하나씩 붙여넣으세요. 별점이 있으면 ‘1점 접착력이 약해요’처럼 입력할 수 있습니다.\n\n여러 줄 리뷰는 빈 줄로 구분하세요."}
+                  aria-label="분석할 리뷰 원문"
+                />
+                <div className="sourcing-review-actions">
+                  <span>{reviewFileEntries.length ? `파일 리뷰 ${reviewFileEntries.length}개 준비됨` : "CSV/XLSX의 리뷰 내용·평점 열을 자동으로 찾습니다."}</span>
+                  <button type="button" onClick={runReviewAnalysis} disabled={!reviewRawText.trim() && !reviewFileEntries.length}>규칙 기반 리뷰 분석</button>
+                </div>
+                {reviewAnalysis && (
+                  <div className="sourcing-review-result">
+                    <div className="sourcing-review-stats">
+                      <span>전체 <strong>{reviewAnalysis.totalCount}</strong></span>
+                      <span className="positive">장점 <strong>{reviewAnalysis.positiveCount}</strong></span>
+                      <span className="negative">단점 <strong>{reviewAnalysis.negativeCount}</strong></span>
+                      <span>중립·판단 필요 <strong>{reviewAnalysis.neutralCount}</strong></span>
+                    </div>
+                    <div className="sourcing-review-result-grid">
+                      <ReviewTermSummary title="장점 반복 표현" terms={reviewAnalysis.positiveTerms} />
+                      <ReviewTermSummary title="단점 반복 표현" terms={reviewAnalysis.negativeTerms} />
+                    </div>
+                    <p>별점이 있으면 4~5점은 장점, 1~3점은 단점으로 우선 분류합니다. 별점이 없으면 제한된 감성 사전으로 분류하므로 반드시 원문을 함께 확인하세요.</p>
+                    <button type="button" onClick={applyReviewAnalysis}>분석 결과를 아래 항목에 반영</button>
+                  </div>
+                )}
+              </div>
               <div className="sourcing-grid two">
                 <Field label="최종 소구 포인트" wide help="가져올 제품이 반드시 해결해야 할 핵심 조건을 우선순위로 적습니다.">
                   <textarea rows={5} value={draft.finalSellingPoint} onChange={(event) => setField("finalSellingPoint", event.target.value)} placeholder="예: 무타공이면서 장기간 떨어지지 않고 설치가 쉬워야 한다." />
@@ -255,7 +640,7 @@ export function SourcingWorkspace({
               </div>
             </ResearchSection>
 
-            <ResearchSection number="04" title="샘플 확인" description="1688 후보를 비교하고 국내 시장에서 찾은 소구 조건을 충족하는지 기록합니다.">
+            <ResearchSection number="05" title="샘플 확인" description="1688 후보를 비교하고 국내 시장에서 찾은 소구 조건을 충족하는지 기록합니다.">
               <div className="sourcing-samples">
                 {draft.samples.map((sample, index) => (
                   <SampleEditor key={sample.id} sample={sample} index={index} onChange={(next) => updateSample(index, next)} onRemove={() => removeSample(index)} />
@@ -264,13 +649,81 @@ export function SourcingWorkspace({
               </div>
             </ResearchSection>
 
+            <ResearchSection number="06" title="상품 등록 초안" description="직접 분류한 검색수 1,000 이하 키워드만 사용해 상품명과 검색 태그 초안을 준비합니다.">
+              <div className="sourcing-registration-rule">
+                <strong>카테고리 키워드는 상품명에 절대 포함하지 않습니다.</strong>
+                <span>속성 키워드는 네이버 공식 속성값을 확인한 뒤 상품 편집 화면에서 선택합니다.</span>
+              </div>
+              <button
+                type="button"
+                className="sourcing-prepare-registration"
+                onClick={prepareRegistration}
+                disabled={!draft.relatedKeywords.length}
+              >
+                등록 초안 만들기
+              </button>
+              {registrationPrepared && (
+                <div className="sourcing-registration-draft">
+                  <Field label="판매용 상품명 초안" help={`${registrationTitle.length}/200자 · 최종 등록 전에 직접 확인하세요.`}>
+                    <input
+                      value={registrationTitle}
+                      maxLength={200}
+                      onChange={(event) => setRegistrationTitle(event.target.value)}
+                      placeholder="상품명 키워드를 먼저 분류해 주세요."
+                    />
+                  </Field>
+                  <div className="sourcing-registration-group">
+                    <strong>검색 태그 자동 반영</strong>
+                    <div className="sourcing-registration-chips">
+                      {registrationTags.length ? registrationTags.map((tag) => (
+                        <button type="button" key={tag} onClick={() => setRegistrationTags((current) => current.filter((item) => item !== tag))}>
+                          {tag} ×
+                        </button>
+                      )) : <span>검색수 1,000 이하로 분류된 태그 키워드가 없습니다.</span>}
+                    </div>
+                  </div>
+                  <KeywordReviewGroup title="네이버 속성 확인 목록" keywords={registrationDraft.attributeKeywords} empty="분류된 속성 키워드가 없습니다." />
+                  <KeywordReviewGroup title="카테고리 선택 참고 목록 (상품명 제외)" keywords={registrationDraft.categoryKeywords} empty="분류된 카테고리 키워드가 없습니다." />
+                  {registrationDraft.warnings.length > 0 && (
+                    <ul className="sourcing-registration-warnings">
+                      {registrationDraft.warnings.map((warning) => <li key={warning}>{warning}</li>)}
+                    </ul>
+                  )}
+                  <div className="sourcing-product-apply">
+                    <div className="sourcing-product-search">
+                      <input value={productSearch} onChange={(event) => setProductSearch(event.target.value)} placeholder="상품명 또는 공급사 원본명 검색" />
+                      <button type="button" onClick={() => loadProductOptions()} disabled={busy}>상품 찾기</button>
+                    </div>
+                    <label>
+                      <span>반영할 등록 상품</span>
+                      <select value={targetProductId} onChange={(event) => setTargetProductId(event.target.value)}>
+                        <option value="">상품을 선택하세요</option>
+                        {productOptions.map((product) => (
+                          <option value={product.id} key={product.id}>
+                            {product.title || product.originalName || product.id} · {product.status}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <button type="button" onClick={applyRegistrationToProduct} disabled={busy || !targetProductId || !registrationTitle.trim()}>
+                      {busy ? "반영 중…" : "상품 초안에 반영"}
+                    </button>
+                    {appliedProductId && <a href={`/admin/products/${appliedProductId}/edit`}>상품 편집 화면 열기 →</a>}
+                  </div>
+                </div>
+              )}
+            </ResearchSection>
+
             <div className="sourcing-final-note">
               <strong>최종 판단은 직접 하세요.</strong>
               <span>검색수·매출·체크리스트는 참고 자료이며 재고 소진, 노출 순위 또는 판매 성과를 보장하지 않습니다.</span>
             </div>
             <div className="sourcing-save-bar">
               <span>{maximumPurchasePrice == null ? "예상 판매가를 입력하면 최대 구매단가를 계산합니다." : `단순 최대 구매단가 ${formatWon(maximumPurchasePrice)}`}</span>
-              <button type="button" onClick={save} disabled={busy || !draft.sourcingKeyword.trim()}>{busy ? "저장 중…" : creating ? "소싱 조사 만들기" : "조사 내용 저장"}</button>
+              <div className="sourcing-save-actions">
+                <button type="button" className="secondary" onClick={() => save(true)} disabled={busy}>{busy ? "저장 중…" : "임시저장"}</button>
+                <button type="button" onClick={() => save(false)} disabled={busy || !draft.sourcingKeyword.trim()}>{busy ? "저장 중…" : "소싱 아이템 저장"}</button>
+              </div>
             </div>
           </div>
         </div>
@@ -290,6 +743,25 @@ export function SourcingWorkspace({
   function removeSample(index: number) {
     setDraft((current) => ({ ...current, samples: current.samples.filter((_, itemIndex) => itemIndex !== index) }));
   }
+  function updateKeywordPlacement(id: string, placement: SourcingKeywordPlacement) {
+    setDraft((current) => ({
+      ...current,
+      relatedKeywords: current.relatedKeywords.map((item) =>
+        item.id === id ? { ...item, placement } : item,
+      ),
+    }));
+  }
+  function resetRegistrationPreparation() {
+    setRegistrationPrepared(false);
+    setRegistrationTitle("");
+    setRegistrationTags([]);
+    setTargetProductId("");
+    setProductSearch("");
+    setAppliedProductId(null);
+    setReviewRawText("");
+    setReviewFileEntries([]);
+    setReviewAnalysis(null);
+  }
 }
 
 function ResearchSection({ number, title, description, children }: { number: string; title: string; description: string; children: ReactNode }) {
@@ -298,6 +770,14 @@ function ResearchSection({ number, title, description, children }: { number: str
 
 function Field({ label, help, required, wide, children }: { label: string; help?: string; required?: boolean; wide?: boolean; children: ReactNode }) {
   return <label className={wide ? "wide" : undefined}><span>{label}{required ? " *" : ""}</span>{children}{help && <small>{help}</small>}</label>;
+}
+
+function KeywordReviewGroup({ title, keywords, empty }: { title: string; keywords: string[]; empty: string }) {
+  return <div className="sourcing-registration-group"><strong>{title}</strong><div className="sourcing-registration-chips read-only">{keywords.length ? keywords.map((keyword) => <span key={keyword}>{keyword}</span>) : <span>{empty}</span>}</div></div>;
+}
+
+function ReviewTermSummary({ title, terms }: { title: string; terms: Array<{ term: string; count: number }> }) {
+  return <div><strong>{title}</strong><div>{terms.length ? terms.map(({ term, count }) => <span key={term}>{term} <b>{count}</b></span>) : <small>반복 표현을 찾지 못했습니다.</small>}</div></div>;
 }
 
 function NumberInput({ value, onChange, placeholder }: { value: number | null; onChange: (value: number | null) => void; placeholder?: string }) {
@@ -320,7 +800,7 @@ function SampleEditor({ sample, index, onChange, onRemove }: { sample: SourcingS
 }
 
 function emptyResearch(): SourcingResearchInput {
-  return { status: "researching", sourcingKeyword: "", monthlySearchVolume: null, sixMonthRevenue: null, marketNotes: "", coupangAveragePrice: null, naverAveragePrice: null, expectedSellingPrice: null, signals: { ...defaultSourcingSignals }, finalSellingPoint: "", positiveReviews: "", negativeReviews: "", customerNeeds: "", productSpecs: "", primaryTarget: "", referenceNotes: "", samples: [] };
+  return { status: "researching", sourcingKeyword: "", monthlySearchVolume: null, sixMonthRevenue: null, marketNotes: "", coupangAveragePrice: null, naverAveragePrice: null, expectedSellingPrice: null, signals: { ...defaultSourcingSignals }, finalSellingPoint: "", positiveReviews: "", negativeReviews: "", customerNeeds: "", productSpecs: "", primaryTarget: "", referenceNotes: "", relatedKeywords: [], samples: [] };
 }
 function recordToInput(record: SourcingResearchRecord): SourcingResearchInput {
   return {
@@ -340,6 +820,7 @@ function recordToInput(record: SourcingResearchRecord): SourcingResearchInput {
     productSpecs: record.productSpecs,
     primaryTarget: record.primaryTarget,
     referenceNotes: record.referenceNotes,
+    relatedKeywords: record.relatedKeywords ?? [],
     samples: record.samples,
   };
 }
@@ -354,3 +835,10 @@ async function api<T, I = never>(url: string, init?: RequestInit): Promise<{ dat
   return body;
 }
 function errorMessage(error: unknown) { return error instanceof Error ? error.message : "요청을 처리하지 못했습니다."; }
+
+const generatedReviewMarker = "[규칙 기반 리뷰 분석]";
+function replaceGeneratedReviewSection(current: string, generated: string) {
+  const manual = current.split(generatedReviewMarker)[0]!.trim();
+  const section = generated.trim() ? `${generatedReviewMarker}\n${generated.trim()}` : "";
+  return [manual, section].filter(Boolean).join("\n\n");
+}

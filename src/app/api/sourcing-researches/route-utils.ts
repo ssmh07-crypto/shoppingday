@@ -3,6 +3,11 @@ import { ZodError } from "zod";
 import { AuthenticationError, requireAdmin } from "@/lib/auth/admin";
 import { withDbReadRecovery, withDbSession, type Database } from "@/lib/db";
 import { SourcingResearchError } from "@/modules/sourcing/sourcing-errors";
+import {
+  ProductConflictError,
+  ProductNotFoundError,
+  ProductValidationError,
+} from "@/modules/products/product-errors";
 
 type AdminUser = { id: string };
 
@@ -36,6 +41,25 @@ function sourcingRouteError(error: unknown) {
   }
   if (error instanceof SourcingResearchError) {
     return apiError(error.code, error.message, error.status);
+  }
+  if (error instanceof ProductNotFoundError) {
+    return apiError(error.code, error.message, 404);
+  }
+  if (error instanceof ProductConflictError) {
+    return apiError(error.code, error.message, 409);
+  }
+  if (error instanceof ProductValidationError) {
+    return NextResponse.json(
+      {
+        success: false,
+        error: {
+          code: error.code,
+          message: error.message,
+          errors: error.errors,
+        },
+      },
+      { status: 422 },
+    );
   }
   if (error instanceof ZodError) {
     return NextResponse.json(

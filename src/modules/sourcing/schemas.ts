@@ -37,6 +37,22 @@ export const sourcingSampleSchema = z.object({
   features: z.string().trim().max(3_000),
 });
 
+export const sourcingRelatedKeywordSchema = z.object({
+  id: z.uuid(),
+  keyword: z.string().trim().min(1).max(200),
+  normalizedKeyword: z.string().trim().min(1).max(200),
+  monthlySearchVolume: nullableIntegerAmount,
+  placement: z.enum([
+    "unclassified",
+    "product_name",
+    "tag",
+    "attribute",
+    "category",
+  ]),
+  source: z.literal("itemscout-xlsx"),
+  importedAt: z.iso.datetime(),
+});
+
 export const sourcingResearchInputSchema = z.object({
   status: z.enum([
     "researching",
@@ -45,7 +61,7 @@ export const sourcingResearchInputSchema = z.object({
     "selected",
     "rejected",
   ]),
-  sourcingKeyword: z.string().trim().min(1, "소싱 키워드를 입력해 주세요.").max(200),
+  sourcingKeyword: z.string().trim().max(200),
   monthlySearchVolume: nullableIntegerAmount,
   sixMonthRevenue: nullableRevenue,
   marketNotes: z.string().trim().max(5_000),
@@ -60,5 +76,20 @@ export const sourcingResearchInputSchema = z.object({
   productSpecs: z.string().trim().max(10_000),
   primaryTarget: z.string().trim().max(5_000),
   referenceNotes: z.string().trim().max(10_000),
+  relatedKeywords: z.array(sourcingRelatedKeywordSchema).max(2_000),
   samples: z.array(sourcingSampleSchema).max(10),
+}).superRefine((input, context) => {
+  if (input.status !== "researching" && !input.sourcingKeyword) {
+    context.addIssue({
+      code: "custom",
+      path: ["sourcingKeyword"],
+      message: "소싱 키워드를 입력해 주세요.",
+    });
+  }
+});
+
+export const applySourcingRegistrationDraftSchema = z.object({
+  productId: z.uuid(),
+  title: z.string().trim().min(1, "상품명 초안을 입력해 주세요.").max(200),
+  searchTags: z.array(z.string().trim().min(1).max(30)).max(20),
 });
