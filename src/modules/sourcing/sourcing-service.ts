@@ -44,6 +44,7 @@ export class SourcingResearchService {
       productSpecs: row.productSpecs,
       primaryTarget: row.primaryTarget,
       referenceNotes: row.referenceNotes,
+      reviewEntries: row.reviewEntries,
       relatedKeywords: row.relatedKeywords,
       samples: row.samples,
       createdAt: row.createdAt,
@@ -63,11 +64,13 @@ export class SourcingResearchService {
 
   async update(ownerId: string, id: string, raw: unknown) {
     const input = sourcingResearchInputSchema.parse(raw);
+    const registrationDraft = buildSourcingRegistrationInput(input);
     const updated = await this.repository.update(
       ownerId,
       id,
       input,
       calculateMaximumPurchasePrice(input.expectedSellingPrice),
+      registrationDraft,
     );
     if (!updated) {
       throw new SourcingResearchError(
@@ -88,20 +91,11 @@ export class SourcingResearchService {
         422,
       );
     }
-    const draft = buildSourcingRegistrationDraft(
-      research.sourcingKeyword,
-      research.relatedKeywords,
+    const result = await this.repository.createRegistrationProduct(
+      ownerId,
+      id,
+      buildSourcingRegistrationInput(research),
     );
-    const supplierPrices = research.samples
-      .map((sample) => sample.price)
-      .filter((price): price is number => price !== null);
-    const result = await this.repository.createRegistrationProduct(ownerId, id, {
-      title: draft.title,
-      searchTags: draft.searchTags,
-      sellingPrice: research.expectedSellingPrice,
-      originalName: research.sourcingKeyword,
-      supplierPrice: supplierPrices.length ? Math.min(...supplierPrices) : null,
-    });
     if (!result) {
       throw new SourcingResearchError(
         "not_found",
@@ -111,6 +105,28 @@ export class SourcingResearchService {
     }
     return result;
   }
+}
+
+function buildSourcingRegistrationInput(
+  research: Pick<
+    import("./types").SourcingResearchInput,
+    "sourcingKeyword" | "relatedKeywords" | "expectedSellingPrice" | "samples"
+  >,
+) {
+  const draft = buildSourcingRegistrationDraft(
+    research.sourcingKeyword,
+    research.relatedKeywords,
+  );
+  const supplierPrices = research.samples
+    .map((sample) => sample.price)
+    .filter((price): price is number => price !== null);
+  return {
+    title: draft.title,
+    searchTags: draft.searchTags,
+    sellingPrice: research.expectedSellingPrice,
+    originalName: research.sourcingKeyword,
+    supplierPrice: supplierPrices.length ? Math.min(...supplierPrices) : null,
+  };
 }
 
 export function calculateMaximumPurchasePrice(

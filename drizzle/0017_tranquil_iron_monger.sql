@@ -1,0 +1,1 @@
+ALTER TABLE "sourcing_researches" ADD COLUMN "review_entries" jsonb DEFAULT '[]'::jsonb NOT NULL;

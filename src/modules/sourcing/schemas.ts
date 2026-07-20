@@ -53,6 +53,13 @@ export const sourcingRelatedKeywordSchema = z.object({
   importedAt: z.iso.datetime(),
 });
 
+export const sourcingReviewInputSchema = z.object({
+  id: z.uuid(),
+  content: z.string().trim().max(10_000),
+  rating: z.number().int().min(1).max(5).nullable(),
+  source: z.enum(["manual", "file", "bulk"]),
+});
+
 export const sourcingResearchInputSchema = z.object({
   status: z.enum([
     "researching",
@@ -76,6 +83,9 @@ export const sourcingResearchInputSchema = z.object({
   productSpecs: z.string().trim().max(10_000),
   primaryTarget: z.string().trim().max(5_000),
   referenceNotes: z.string().trim().max(10_000),
+  reviewEntries: z.array(sourcingReviewInputSchema).max(500).default([]).transform((entries) =>
+    entries.filter((entry) => entry.content),
+  ),
   relatedKeywords: z.array(sourcingRelatedKeywordSchema).max(2_000),
   samples: z.array(sourcingSampleSchema).max(10),
 }).superRefine((input, context) => {

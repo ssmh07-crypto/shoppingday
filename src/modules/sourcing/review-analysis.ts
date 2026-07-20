@@ -26,28 +26,44 @@ export interface SourcingReviewAnalysis {
 const positiveWords = [
   "좋아요", "좋습니다", "만족", "튼튼", "편해", "편리", "깔끔", "예뻐", "이뻐",
   "추천", "빠르", "잘돼", "잘되", "좋은", "훌륭", "견고", "넉넉", "가벼",
+  "이쁜", "디자인이좋", "디자인이 좋",
 ];
 const negativeWords = [
   "불편", "별로", "아쉬", "약해", "떨어", "깨져", "부서", "휘어", "녹", "작아",
   "좁아", "커서", "무거", "냄새", "날카", "어려", "불량", "고장", "미끄러", "새어",
   "안돼", "안되", "실망", "반품", "환불", "최악",
+  "늦", "지연", "기다", "오래 걸",
+  "딱딱", "까슬", "위험", "고통", "지저분", "얇아서", "물빠짐", "실용성",
 ];
 const painPointCategories = [
-  { label: "접착력과 고정력", words: ["접착", "떨어", "고정"] },
-  { label: "내구성과 하중", words: ["깨져", "부서", "휘어", "튼튼", "약해", "고장"] },
-  { label: "내식성과 녹 방지", words: ["녹", "부식"] },
-  { label: "실사용 크기와 수납 용량", words: ["작아", "좁아", "커서", "사이즈", "수납"] },
-  { label: "설치 편의성", words: ["설치", "어려", "조립"] },
-  { label: "모서리 마감과 안전성", words: ["날카", "베이", "다쳐"] },
-  { label: "미끄럼 방지", words: ["미끄러", "미끄럼"] },
-  { label: "누수 방지", words: ["새어", "누수", "물이새"] },
-  { label: "소재 냄새", words: ["냄새"] },
+  category("물이 잘 빠지지 않고 바닥이 오래 젖어 있음", /물\s*빠짐|배수|건조|물기.{0,12}(?:안\s*없|남아|오래)|마르.{0,6}(?:않|안\s*돼)|물이?\s*고여/),
+  category("바닥이 얇아 구멍으로 물이 발에 올라옴", /바닥.{0,10}(?:얇|구멍)|구멍.{0,16}물.{0,8}(?:올라|들어)|물.{0,16}(?:역류|올라옵)/),
+  category("딱딱하거나 까슬해 오래 신기 불편함", /딱딱|까슬|착화감|발바닥.{0,10}(?:아프|불편|고통)|오래.{0,8}(?:못\s*신|신기\s*어려)/),
+  category("모서리나 표면 마감 때문에 다칠 위험이 있음", /날카|베이|다쳐|모퉁이|위험|고통/),
+  category("크기나 폭이 맞지 않아 실제 사용이 불편함", /(?:크기|사이즈).{0,8}(?:크|작)|폭.{0,8}(?:넓|좁)|너무.{0,6}(?:크|작)|작아|좁아/),
+  category("외관이나 마감이 지저분해 보임", /지저분|마감.{0,8}(?:나쁘|별로|거칠)|외관.{0,8}(?:별로|나쁘)/),
+  category("디자인은 괜찮지만 실제 사용 기능이 부족함", /기능.{0,8}(?:없|전혀)|실용성.{0,8}(?:글쎄|없|떨어)|모양만|디자인.{0,16}(?:그런데|인데|지만).{0,16}(?:불편|기능|실용)/),
+  category("가격에 비해 기능이 부족해 구매를 후회함", /비싼|가격.{0,8}(?:비싸|부담)|반품|환불|후회|돈.{0,6}(?:아깝|낭비)/),
+  category("접착력이나 고정력이 약해 쉽게 떨어짐", /접착|떨어|고정.{0,8}(?:안|약)|흔들|빠져/),
+  category("쉽게 깨지거나 휘어질 정도로 내구성이 약함", /깨져|깨짐|부서|휘어|약해|고장|망가|하중/),
+  category("물에 닿으면 녹슬거나 부식될 우려가 있음", /녹|부식/),
+  category("설치나 조립 과정이 어렵고 불편함", /설치.{0,10}(?:어려|불편|복잡)|조립.{0,10}(?:어려|불편|복잡)/),
+  category("바닥이 미끄러워 넘어질 위험이 있음", /미끄러(?:워|움|져|짐)|미끄럼.{0,8}(?:심|위험|안\s*돼|없)/),
+  category("물이 새거나 틈으로 흘러나옴", /새어|누수|물이\s*새/),
+  category("소재에서 불쾌한 냄새가 남", /냄새/),
+  category("배송이나 도착이 예상보다 늦음", /(?:배송|도착|출고|택배).{0,16}(?:늦|지연|오래|기다)|(?:늦|지연).{0,12}(?:배송|도착|출고|택배)/),
+  category("실제 색상이 사진이나 화면과 다름", /(?:색상|색깔).{0,12}(?:다르|차이)|(?:사진|화면).{0,12}(?:다르|차이)/),
+  category("구성품이 빠졌거나 수량이 부족함", /누락|구성품.{0,8}(?:빠져|부족)|수량.{0,8}(?:부족|다르)/),
 ];
-const stopWords = new Set([
-  "그리고", "그런데", "하지만", "그래서", "정말", "너무", "조금", "그냥", "제품",
-  "상품", "사용", "구매", "배송", "생각", "정도", "같아요", "있어요", "없어요", "합니다",
-  "했어요", "입니다", "이네요", "같습니다", "때문", "부분", "이번", "하나", "이거", "저거",
-]);
+const benefitCategories = [
+  category("튼튼하고 견고하다는 평가가 있음", /튼튼|견고|내구|단단/),
+  category("사용이 쉽고 편리하다는 평가가 있음", /편해|편리|쉬워|간편|잘돼|잘되/),
+  category("디자인과 외관이 좋다는 평가가 있음", /디자인.{0,8}(?:좋|괜찮|예쁘|이쁘)|모양.{0,8}(?:좋|예쁘|이쁘|이쁜)|예뻐|이뻐|이쁜|깔끔/),
+  category("크기와 수납 공간이 넉넉하다는 평가가 있음", /넉넉|수납.{0,8}(?:좋|많|넓)|용량.{0,8}(?:좋|크)/),
+  category("무게가 가벼워 사용하기 좋다는 평가가 있음", /가벼/),
+  category("배송이 빠르다는 평가가 있음", /빠른\s*배송|배송.{0,8}빠르|배송.{0,8}빨라/),
+  category("제품에 전반적으로 만족한다는 평가가 있음", /좋아요|좋습니다|만족|추천|훌륭/),
+];
 
 export async function parseReviewFile(file: File): Promise<SourcingReviewEntry[]> {
   const extension = file.name.split(".").pop()?.toLocaleLowerCase();
@@ -101,16 +117,18 @@ export function analyzeReviews(reviews: SourcingReviewEntry[]): SourcingReviewAn
   const positive = classified.filter((review) => review.sentiment === "positive");
   const negative = classified.filter((review) => review.sentiment === "negative");
   const neutral = classified.filter((review) => review.sentiment === "neutral");
-  const positiveTerms = frequentTerms(positive.map((review) => review.content));
-  const negativeTerms = frequentTerms(negative.map((review) => review.content));
-  const painPoints = categorizePainPoints(negative.map((review) => review.content));
-  const customerNeedCandidates = painPoints.length
-    ? painPoints.map(({ label, count }) => `${label} 개선 필요 (${count}개 리뷰에서 확인)`)
-    : negativeTerms.slice(0, 8).map(({ term, count }) => `${term} 관련 불편 개선 필요 (${count}회 언급)`);
-  const sellingPointCandidates = (painPoints.length
-    ? painPoints.map(({ label }) => label)
-    : negativeTerms.slice(0, 5).map(({ term }) => term)
-  ).slice(0, 5).map((point) => `${point} 항목을 샘플에서 우선 확인`);
+  // A single review can contain both a positive aspect and multiple pain
+  // points. Detect aspects across every review instead of discarding mixed
+  // sentences based on one overall sentiment label.
+  const allContents = classified.map((review) => review.content);
+  const positiveTerms = categorizeReviewTypes(allContents, benefitCategories);
+  const negativeTerms = categorizeReviewTypes(allContents, painPointCategories);
+  const customerNeedCandidates = negativeTerms.map(({ term, count }) =>
+    `${term} (${count}개 리뷰에서 확인)`,
+  );
+  const sellingPointCandidates = negativeTerms
+    .slice(0, 5)
+    .map(({ term }) => `샘플에서 확인: ${term}`);
 
   return {
     totalCount: reviews.length,
@@ -127,10 +145,14 @@ export function analyzeReviews(reviews: SourcingReviewEntry[]): SourcingReviewAn
 }
 
 export function formatReviewEvidence(terms: ReviewTerm[], examples: string[]) {
-  const lines: string[] = [];
-  if (terms.length) lines.push(`반복 표현: ${terms.map(({ term, count }) => `${term}(${count}회)`).join(", ")}`);
-  if (examples.length) lines.push(...examples.map((example) => `- ${example}`));
-  return lines.join("\n");
+  if (!terms.length) {
+    return examples.length
+      ? "분류된 유형 없음 · 원문 근거를 직접 확인하세요."
+      : "";
+  }
+  return terms
+    .map(({ term, count }) => `- ${term}: ${count}개 리뷰에서 확인${count >= 2 ? " (반복)" : " (개별)"}`)
+    .join("\n");
 }
 
 function sentimentOf(review: SourcingReviewEntry) {
@@ -145,34 +167,26 @@ function sentimentOf(review: SourcingReviewEntry) {
   return "neutral" as const;
 }
 
-function frequentTerms(contents: string[]) {
-  const counts = new Map<string, number>();
-  for (const content of contents) {
-    const tokens = new Set(
-      content.normalize("NFKC").toLocaleLowerCase("ko-KR")
-        .match(/[가-힣a-z0-9]{2,}/g)
-        ?.filter((token) => !stopWords.has(token)) ?? [],
-    );
-    for (const token of tokens) counts.set(token, (counts.get(token) ?? 0) + 1);
-  }
-  return [...counts.entries()]
-    .filter(([, count]) => count >= (contents.length >= 5 ? 2 : 1))
-    .sort(([leftTerm, leftCount], [rightTerm, rightCount]) =>
-      rightCount - leftCount || leftTerm.localeCompare(rightTerm, "ko"),
-    )
-    .slice(0, 10)
-    .map(([term, count]) => ({ term, count }));
-}
-
-function categorizePainPoints(contents: string[]) {
-  return painPointCategories
+function categorizeReviewTypes(
+  contents: string[],
+  categories: ReadonlyArray<{ label: string; matches: (content: string) => boolean }>,
+) {
+  return categories
     .map((category) => ({
-      label: category.label,
-      count: contents.filter((content) => category.words.some((word) => content.includes(word))).length,
+      term: category.label,
+      count: contents.filter((content) => category.matches(normalizeReview(content))).length,
     }))
     .filter(({ count }) => count > 0)
-    .sort((left, right) => right.count - left.count || left.label.localeCompare(right.label, "ko"))
-    .slice(0, 8);
+    .sort((left, right) => right.count - left.count || left.term.localeCompare(right.term, "ko"))
+    .slice(0, 10);
+}
+
+function category(label: string, pattern: RegExp) {
+  return { label, matches: (content: string) => pattern.test(content) };
+}
+
+function normalizeReview(content: string) {
+  return content.normalize("NFKC").toLocaleLowerCase("ko-KR").replace(/\s+/g, " ");
 }
 
 function representativeExamples(reviews: Array<SourcingReviewEntry & { sentiment: string }>) {

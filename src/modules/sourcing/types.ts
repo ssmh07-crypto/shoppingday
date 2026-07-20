@@ -28,6 +28,13 @@ export interface SourcingSample {
   features: string;
 }
 
+export interface SourcingReviewInput {
+  id: string;
+  content: string;
+  rating: number | null;
+  source: "manual" | "file" | "bulk";
+}
+
 export type SourcingKeywordPlacement =
   | "unclassified"
   | "product_name"
@@ -62,6 +69,7 @@ export interface SourcingResearchInput {
   productSpecs: string;
   primaryTarget: string;
   referenceNotes: string;
+  reviewEntries: SourcingReviewInput[];
   relatedKeywords: SourcingRelatedKeyword[];
   samples: SourcingSample[];
 }

@@ -37,16 +37,81 @@ describe("소싱 조사 화면", () => {
     fireEvent.change(screen.getByLabelText("분석할 리뷰 원문"), {
       target: { value: "5점 튼튼하고 좋아요\n1점 접착력이 약해 떨어져요\n2점 접착력이 약해 또 떨어져요" },
     });
+    fireEvent.click(screen.getByRole("button", { name: "입력 목록에 추가" }));
     fireEvent.click(screen.getByRole("button", { name: "규칙 기반 리뷰 분석" }));
 
     expect(screen.getByText("전체").parentElement).toHaveTextContent("3");
-    expect(screen.getByText("단점 반복 표현").parentElement).toHaveTextContent("접착력이");
+    expect(screen.getByText("확인된 불편 유형").parentElement).toHaveTextContent("접착력이나 고정력이 약해 쉽게 떨어짐");
     fireEvent.click(screen.getByRole("button", { name: "분석 결과를 아래 항목에 반영" }));
 
     const negativeField = screen.getByText("단점 리뷰").closest("label")!;
     const analyzedValue = negativeField.querySelector("textarea")!.value;
     expect(analyzedValue).toContain("[규칙 기반 리뷰 분석]");
-    expect(analyzedValue).toContain("접착력이");
+    expect(analyzedValue).toContain("접착력이나 고정력이 약해 쉽게 떨어짐");
+    expect(analyzedValue).not.toContain("접착력이 약해 떨어져요");
+  });
+
+  it("리뷰 입력란을 추가하고 한 줄씩 붙여넣어 함께 분석한다", () => {
+    render(<SourcingWorkspace initialItems={[]} initialDetail={null} />);
+
+    fireEvent.change(screen.getByLabelText("리뷰 1"), {
+      target: { value: "5점 튼튼하고 좋아요" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "+ 리뷰 추가" }));
+    fireEvent.change(screen.getByLabelText("리뷰 2"), {
+      target: { value: "1점 접착력이 약해 떨어져요" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "전체 리뷰 접기" }));
+    expect(screen.queryByLabelText("리뷰 1")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("리뷰 2")).not.toBeInTheDocument();
+    expect(screen.getByText(/리뷰 2개가 접혀 있습니다/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "전체 리뷰 펼치기 (2개)" }));
+    expect(screen.getByLabelText("리뷰 2")).toHaveValue("1점 접착력이 약해 떨어져요");
+    fireEvent.click(screen.getByRole("button", { name: "규칙 기반 리뷰 분석" }));
+
+    expect(screen.getByText("전체").parentElement).toHaveTextContent("2");
+    expect(screen.getByText("장점").parentElement).toHaveTextContent("1");
+    expect(screen.getByText("단점").parentElement).toHaveTextContent("1");
+
+    fireEvent.click(screen.getByRole("button", { name: "리뷰 2 삭제" }));
+    expect(screen.queryByLabelText("리뷰 2")).not.toBeInTheDocument();
+  });
+
+  it("리뷰 원문을 임시저장 요청에 포함하고 다시 연 화면에 복원한다", async () => {
+    const initial = {
+      ...researchWithKeywords(),
+      reviewEntries: [{
+        id: "00000000-0000-4000-8000-000000000099",
+        content: "기존에 저장한 리뷰",
+        rating: null,
+        source: "manual" as const,
+      }],
+    };
+    const saved = {
+      ...initial,
+      reviewEntries: [{
+        ...initial.reviewEntries[0],
+        content: "임시저장할 리뷰 원문",
+      }],
+    };
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ data: saved }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ items: [] }) });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<SourcingWorkspace initialItems={[]} initialDetail={initial} />);
+    expect(screen.getByLabelText("리뷰 1")).toHaveValue("기존에 저장한 리뷰");
+    fireEvent.change(screen.getByLabelText("리뷰 1"), {
+      target: { value: "임시저장할 리뷰 원문" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "임시저장" }));
+
+    expect(await screen.findByText("소싱 아이템을 임시저장했습니다.")).toBeInTheDocument();
+    const request = fetchMock.mock.calls[0]![1] as RequestInit;
+    expect(JSON.parse(request.body as string).reviewEntries).toEqual([
+      expect.objectContaining({ content: "임시저장할 리뷰 원문" }),
+    ]);
+    expect(screen.getByLabelText("리뷰 1")).toHaveValue("임시저장할 리뷰 원문");
   });
 
   it("소싱 리스트 추가를 누르면 빈 소싱 아이템을 저장하고 목록에 표시한다", async () => {
@@ -82,8 +147,34 @@ describe("소싱 조사 화면", () => {
     fireEvent.change(expectedPrice.querySelector("input")!, {
       target: { value: "30000" },
     });
+    expect(expectedPrice.querySelector("input")).toHaveValue("30,000");
     expect(screen.getAllByText("21,000원").length).toBeGreaterThan(0);
     expect(screen.getByText(/수수료·배송비·관부가세/)).toBeInTheDocument();
+  });
+
+  it("검색수와 가격은 천 단위 쉼표로, 6개월 매출은 만원 단위로 입력한다", () => {
+    render(<SourcingWorkspace initialItems={[]} initialDetail={null} />);
+
+    const searchVolume = screen.getByText("월간 검색수").closest("label")!;
+    fireEvent.change(searchVolume.querySelector("input")!, {
+      target: { value: "12820" },
+    });
+    expect(searchVolume.querySelector("input")).toHaveValue("12,820");
+
+    const revenue = screen.getByText("최근 6개월 매출").closest("label")!;
+    fireEvent.change(revenue.querySelector("input")!, {
+      target: { value: "12,345" },
+    });
+    expect(revenue.querySelector("input")).toHaveValue("12,345");
+    expect(within(revenue).getByText("만원")).toBeInTheDocument();
+
+    for (const label of ["쿠팡 평균단가", "네이버 평균단가", "내 예상 판매단가"]) {
+      const field = screen.getByText(label).closest("label")!;
+      fireEvent.change(field.querySelector("input")!, {
+        target: { value: "19900" },
+      });
+      expect(field.querySelector("input")).toHaveValue("19,900");
+    }
   });
 
   it("1688 샘플 후보를 여러 개 추가할 수 있다", () => {
@@ -130,6 +221,7 @@ function researchWithKeywords(): SourcingResearchRecord {
     productSpecs: "",
     primaryTarget: "",
     referenceNotes: "",
+    reviewEntries: [],
     relatedKeywords: [
       {
         id: "00000000-0000-4000-8000-000000000002",

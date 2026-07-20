@@ -189,7 +189,7 @@ function formatNumber(value: number | null) {
 function formatRevenue(value: number | null) {
   return value == null
     ? "미입력"
-    : `${(value / 100_000_000).toLocaleString("ko-KR", { maximumFractionDigits: 1 })}억원`;
+    : `${(value / 10_000).toLocaleString("ko-KR", { maximumFractionDigits: 1 })}만원`;
 }
 function formatWon(value: number | null) {
   return value == null ? "미입력" : `${value.toLocaleString("ko-KR")}원`;

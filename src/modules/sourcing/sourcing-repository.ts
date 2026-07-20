@@ -1,14 +1,24 @@
 import "server-only";
+import { randomUUID } from "node:crypto";
 import { and, desc, eq, sql } from "drizzle-orm";
 import type { Database } from "@/lib/db";
 import {
   productSupplierLinks,
+  productAuditLogs,
   products,
   sourcingResearches,
   supplierProducts,
   suppliers,
 } from "@/lib/db/schema";
 import type { SourcingResearchInput } from "./types";
+
+type RegistrationProductInput = {
+  title: string;
+  searchTags: string[];
+  sellingPrice: number | null;
+  originalName: string;
+  supplierPrice: number | null;
+};
 
 export class SourcingResearchRepository {
   constructor(private readonly database: Database) {}
@@ -86,30 +96,106 @@ export class SourcingResearchRepository {
     id: string,
     input: SourcingResearchInput,
     maximumPurchasePrice: number | null,
+    registrationInput: RegistrationProductInput,
   ) {
-    const [row] = await this.database
-      .update(sourcingResearches)
-      .set({ ...input, maximumPurchasePrice, updatedAt: new Date() })
-      .where(
-        and(
-          eq(sourcingResearches.ownerId, ownerId),
-          eq(sourcingResearches.id, id),
-        ),
-      )
-      .returning({ id: sourcingResearches.id });
-    return row ?? null;
+    return this.database.transaction(async (tx) => {
+      const [row] = await tx
+        .update(sourcingResearches)
+        .set({ ...input, maximumPurchasePrice, updatedAt: new Date() })
+        .where(
+          and(
+            eq(sourcingResearches.ownerId, ownerId),
+            eq(sourcingResearches.id, id),
+          ),
+        )
+        .returning({
+          id: sourcingResearches.id,
+          registrationProductId: sourcingResearches.registrationProductId,
+        });
+      if (!row?.registrationProductId) return row ?? null;
+
+      const [current] = await tx
+        .select({
+          title: products.title,
+          searchTags: products.searchTags,
+          sellingPrice: products.sellingPrice,
+          status: products.status,
+        })
+        .from(products)
+        .where(
+          and(
+            eq(products.id, row.registrationProductId),
+            eq(products.ownerId, ownerId),
+          ),
+        )
+        .limit(1)
+        .for("update");
+      if (!current) return row;
+
+      const changedFields = (["title", "searchTags", "sellingPrice"] as const)
+        .filter((field) => JSON.stringify(current[field]) !== JSON.stringify(registrationInput[field]));
+      if (changedFields.length) {
+        const [updatedProduct] = await tx
+          .update(products)
+          .set({
+            title: registrationInput.title,
+            searchTags: registrationInput.searchTags,
+            sellingPrice: registrationInput.sellingPrice,
+            status: current.status === "ready" ? "editing" : current.status,
+            readyAt: current.status === "ready" ? null : undefined,
+            draftVersion: sql`${products.draftVersion} + 1`,
+            updatedAt: new Date(),
+          })
+          .where(eq(products.id, row.registrationProductId))
+          .returning({
+            title: products.title,
+            searchTags: products.searchTags,
+            sellingPrice: products.sellingPrice,
+          });
+        await tx.insert(productAuditLogs).values({
+          actorId: ownerId,
+          entityId: row.registrationProductId,
+          action: "sourcing_registration_draft_synced",
+          changedFields: [...changedFields],
+          oldValues: Object.fromEntries(changedFields.map((field) => [field, current[field]])),
+          newValues: Object.fromEntries(changedFields.map((field) => [field, updatedProduct![field]])),
+          requestId: randomUUID(),
+        });
+      }
+
+      const [supplierLink] = await tx
+        .select({ supplierProductId: productSupplierLinks.supplierProductId })
+        .from(productSupplierLinks)
+        .innerJoin(supplierProducts, eq(supplierProducts.id, productSupplierLinks.supplierProductId))
+        .innerJoin(suppliers, eq(suppliers.id, supplierProducts.supplierId))
+        .where(
+          and(
+            eq(productSupplierLinks.productId, row.registrationProductId),
+            eq(productSupplierLinks.isPrimary, true),
+            eq(suppliers.code, "sourcing"),
+          ),
+        )
+        .limit(1);
+      if (supplierLink) {
+        await tx
+          .update(supplierProducts)
+          .set({
+            originalName: registrationInput.originalName,
+            supplierPrice: registrationInput.supplierPrice === null
+              ? null
+              : String(registrationInput.supplierPrice),
+            updatedAt: new Date(),
+          })
+          .where(eq(supplierProducts.id, supplierLink.supplierProductId));
+      }
+      return row;
+    });
   }
 
   async createRegistrationProduct(
     ownerId: string,
     researchId: string,
-    input: {
-      title: string;
-      searchTags: string[];
-      sellingPrice: number | null;
-      originalName: string;
-      supplierPrice: number | null;
-    },
+    input: RegistrationProductInput,
   ) {
     return this.database.transaction(async (tx) => {
       const [research] = await tx

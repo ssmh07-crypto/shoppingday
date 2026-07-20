@@ -6,6 +6,39 @@ import { SourcingResearchService } from "@/modules/sourcing/sourcing-service";
 import { defaultSourcingSignals, type SourcingResearchRecord } from "@/modules/sourcing/types";
 
 describe("소싱 아이템 상품 등록 초안", () => {
+  it("소싱 조사 변경을 연결된 등록 상품 초안 입력으로 함께 전달한다", async () => {
+    const update = vi.fn().mockResolvedValue({ id: research().id });
+    const repository = {
+      update,
+      find: vi.fn().mockResolvedValue({
+        ...research(),
+        sourcingKeyword: "바뀐 값",
+      }),
+    };
+    const service = new SourcingResearchService(repository as never);
+    const input = {
+      ...research(),
+      sourcingKeyword: "욕실화",
+      expectedSellingPrice: 25_000,
+    };
+
+    await service.update("owner", research().id, input);
+
+    expect(update).toHaveBeenCalledWith(
+      "owner",
+      research().id,
+      expect.objectContaining({ expectedSellingPrice: 25_000 }),
+      17_500,
+      expect.objectContaining({
+        title: "미끄럼방지 욕실화",
+        searchTags: ["욕실슬리퍼"],
+        sellingPrice: 25_000,
+        originalName: "욕실화",
+        supplierPrice: 2_900,
+      }),
+    );
+  });
+
   it("분류된 상품명·태그와 예상 판매가를 실제 상품 초안 입력으로 전달한다", async () => {
     const createRegistrationProduct = vi.fn().mockResolvedValue({
       productId: "00000000-0000-4000-8000-000000000099",
@@ -69,6 +102,7 @@ function research(): SourcingResearchRecord {
     productSpecs: "",
     primaryTarget: "",
     referenceNotes: "",
+    reviewEntries: [],
     relatedKeywords: [
       related("미끄럼방지욕실화", 800, "product_name"),
       related("욕실슬리퍼", 600, "tag"),

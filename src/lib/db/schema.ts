@@ -747,6 +747,12 @@ export interface SourcingRelatedKeywordData {
   source: "itemscout-xlsx";
   importedAt: string;
 }
+export interface SourcingReviewInputData {
+  id: string;
+  content: string;
+  rating: number | null;
+  source: "manual" | "file" | "bulk";
+}
 export type SourcingResearchStatus =
   "researching" | "candidate" | "sample_ordered" | "selected" | "rejected";
 
@@ -777,6 +783,10 @@ export const sourcingResearches = pgTable(
     productSpecs: text("product_specs").notNull().default(""),
     primaryTarget: text("primary_target").notNull().default(""),
     referenceNotes: text("reference_notes").notNull().default(""),
+    reviewEntries: jsonb("review_entries")
+      .$type<SourcingReviewInputData[]>()
+      .notNull()
+      .default([]),
     relatedKeywords: jsonb("related_keywords")
       .$type<SourcingRelatedKeywordData[]>()
       .notNull()

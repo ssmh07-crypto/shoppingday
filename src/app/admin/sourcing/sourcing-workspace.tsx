@@ -12,7 +12,6 @@ import {
   parsePastedReviews,
   parseReviewFile,
   type SourcingReviewAnalysis,
-  type SourcingReviewEntry,
 } from "@/modules/sourcing/review-analysis";
 import {
   defaultSourcingSignals,
@@ -22,6 +21,7 @@ import {
   type SourcingResearchSignal,
   type SourcingResearchSignals,
   type SourcingResearchStatus,
+  type SourcingReviewInput,
   type SourcingSample,
 } from "@/modules/sourcing/types";
 
@@ -117,7 +117,7 @@ export function SourcingWorkspace({
   const [registrationPrepared, setRegistrationPrepared] = useState(false);
   const [appliedProductId, setAppliedProductId] = useState<string | null>(null);
   const [reviewRawText, setReviewRawText] = useState("");
-  const [reviewFileEntries, setReviewFileEntries] = useState<SourcingReviewEntry[]>([]);
+  const [reviewListExpanded, setReviewListExpanded] = useState(true);
   const [reviewAnalysis, setReviewAnalysis] = useState<SourcingReviewAnalysis | null>(null);
   const [reviewImporting, setReviewImporting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -348,9 +348,16 @@ export function SourcingWorkspace({
     setError(null);
     try {
       const reviews = await parseReviewFile(file);
-      setReviewFileEntries(reviews);
+      setDraft((current) => ({
+        ...current,
+        reviewEntries: appendReviewEntries(
+          current.reviewEntries,
+          reviews.map((review) => storedReview(review.content, review.rating, "file")),
+        ),
+      }));
+      setReviewListExpanded(true);
       setReviewAnalysis(null);
-      setMessage(`리뷰 파일에서 ${reviews.length}개를 읽었습니다. 분석 버튼을 눌러 결과를 확인하세요.`);
+      setMessage(`리뷰 파일에서 ${reviews.length}개를 읽어 입력 목록에 추가했습니다.`);
     } catch (caught) {
       setError(errorMessage(caught));
     } finally {
@@ -363,8 +370,32 @@ export function SourcingWorkspace({
     setMessage(null);
     setError(null);
     try {
-      const pasted = parsePastedReviews(reviewRawText);
-      setReviewAnalysis(analyzeReviews([...reviewFileEntries, ...pasted]));
+      const reviews = draft.reviewEntries.flatMap((entry) =>
+        entry.rating == null
+          ? parsePastedReviews(entry.content)
+          : [{ content: entry.content, rating: entry.rating }],
+      );
+      setReviewAnalysis(analyzeReviews(reviews));
+    } catch (caught) {
+      setError(errorMessage(caught));
+    }
+  }
+
+  function addBulkReviews() {
+    try {
+      const reviews = parsePastedReviews(reviewRawText);
+      if (!reviews.length) return;
+      setDraft((current) => ({
+        ...current,
+        reviewEntries: appendReviewEntries(
+          current.reviewEntries,
+          reviews.map((review) => storedReview(review.content, review.rating, "bulk")),
+        ),
+      }));
+      setReviewRawText("");
+      setReviewListExpanded(true);
+      setReviewAnalysis(null);
+      setMessage(`${reviews.length}개 리뷰를 입력 목록에 추가했습니다.`);
     } catch (caught) {
       setError(errorMessage(caught));
     }
@@ -436,7 +467,7 @@ export function SourcingWorkspace({
                 <strong>{item.sourcingKeyword || "새 소싱 아이템"}</strong>
                 <span>{statusLabels[item.status]}</span>
                 <small>
-                  검색 {formatNumber(item.monthlySearchVolume)} · 6개월 {formatEok(item.sixMonthRevenue)}
+                  검색 {formatNumber(item.monthlySearchVolume)} · 6개월 {formatManwon(item.sixMonthRevenue)}
                 </small>
               </button>
             )) : (
@@ -469,19 +500,19 @@ export function SourcingWorkspace({
                   <input value={draft.sourcingKeyword} onChange={(event) => setField("sourcingKeyword", event.target.value)} placeholder="예: 욕실 선반" />
                 </Field>
                 <Field label="월간 검색수" help="10,000 이상은 선호 기준으로 표시합니다.">
-                  <NumberInput value={draft.monthlySearchVolume} onChange={(value) => setField("monthlySearchVolume", value)} placeholder="10000" />
+                  <NumberInput value={draft.monthlySearchVolume} onChange={(value) => setField("monthlySearchVolume", value)} placeholder="10,000" />
                   <PreferenceBadge met={(draft.monthlySearchVolume ?? 0) >= 10_000} metText="선호 검색수 충족" pendingText="선호 기준 10,000" />
                 </Field>
-                <Field label="최근 6개월 매출" help="억원 단위로 입력합니다. 실제 확인값만 기록하세요.">
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.1"
-                    value={draft.sixMonthRevenue == null ? "" : draft.sixMonthRevenue / 100_000_000}
-                    onChange={(event) => setField("sixMonthRevenue", event.target.value === "" ? null : Math.round(Number(event.target.value) * 100_000_000))}
-                    placeholder="1.0"
-                  />
-                  <PreferenceBadge met={(draft.sixMonthRevenue ?? 0) >= 100_000_000} metText="선호 매출 충족" pendingText="선호 기준 1억원" />
+                <Field label="최근 6개월 매출" help="만원 단위로 입력합니다. 실제 확인값만 기록하세요.">
+                  <div className="sourcing-money-input">
+                    <FormattedNumberInput
+                      value={draft.sixMonthRevenue == null ? null : Math.round(draft.sixMonthRevenue / 10_000)}
+                      onChange={(value) => setField("sixMonthRevenue", value == null ? null : value * 10_000)}
+                      placeholder="10,000"
+                    />
+                    <span>만원</span>
+                  </div>
+                  <PreferenceBadge met={(draft.sixMonthRevenue ?? 0) >= 100_000_000} metText="선호 매출 충족" pendingText="선호 기준 10,000만원" />
                 </Field>
                 <Field label="시장 조사 메모" wide>
                   <textarea rows={4} value={draft.marketNotes} onChange={(event) => setField("marketNotes", event.target.value)} placeholder="데이터 출처, 조회일, 상위 상품 특징 등을 기록하세요." />
@@ -591,24 +622,86 @@ export function SourcingWorkspace({
               <div className="sourcing-review-analyzer">
                 <div className="sourcing-review-analyzer-head">
                   <div>
-                    <strong>경쟁 상품 리뷰 가져오기</strong>
-                    <span>리뷰 원문은 브라우저에서만 처리하며 서버에 그대로 저장하지 않습니다.</span>
+                    <strong>경쟁 상품 리뷰 한 줄씩 입력</strong>
+                    <span>입력한 리뷰 원문은 이 소싱 아이템에 저장되며 분석 근거로 다시 사용할 수 있습니다.</span>
                   </div>
-                  <label className="sourcing-file-button">
-                    <input type="file" accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onChange={importReviewFile} disabled={reviewImporting} />
-                    {reviewImporting ? "리뷰 읽는 중…" : "리뷰 파일 선택"}
-                  </label>
+                  <div className="sourcing-review-head-actions">
+                    <button type="button" onClick={() => setReviewListExpanded((current) => !current)} aria-expanded={reviewListExpanded}>
+                      {reviewListExpanded ? "전체 리뷰 접기" : `전체 리뷰 펼치기 (${draft.reviewEntries.filter((entry) => entry.content.trim()).length}개)`}
+                    </button>
+                    <button type="button" className="sourcing-review-add" onClick={() => {
+                      setDraft((current) => ({ ...current, reviewEntries: [...current.reviewEntries, storedReview()] }));
+                      setReviewListExpanded(true);
+                    }}>
+                      + 리뷰 추가
+                    </button>
+                  </div>
                 </div>
-                <textarea
-                  rows={8}
-                  value={reviewRawText}
-                  onChange={(event) => { setReviewRawText(event.target.value); setReviewAnalysis(null); }}
-                  placeholder={"리뷰를 한 줄에 하나씩 붙여넣으세요. 별점이 있으면 ‘1점 접착력이 약해요’처럼 입력할 수 있습니다.\n\n여러 줄 리뷰는 빈 줄로 구분하세요."}
-                  aria-label="분석할 리뷰 원문"
-                />
+                {reviewListExpanded ? (
+                  <div className="sourcing-review-rows">
+                    {draft.reviewEntries.map((entry, index) => (
+                      <div key={entry.id} className="sourcing-review-row">
+                        <span>{index + 1}</span>
+                        <input
+                          value={entry.content}
+                          onChange={(event) => {
+                            const content = event.target.value;
+                            setDraft((current) => ({
+                              ...current,
+                              reviewEntries: current.reviewEntries.map((item) => item.id === entry.id ? { ...item, content } : item),
+                            }));
+                            setReviewAnalysis(null);
+                          }}
+                          placeholder="리뷰 한 건을 붙여넣으세요. 예: 1점 접착력이 약해요"
+                          aria-label={`리뷰 ${index + 1}`}
+                        />
+                        <small>{entry.rating ? `별점 ${entry.rating}` : ""}</small>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDraft((current) => ({
+                              ...current,
+                              reviewEntries: current.reviewEntries.length === 1
+                                ? [storedReview()]
+                                : current.reviewEntries.filter((item) => item.id !== entry.id),
+                            }));
+                            setReviewAnalysis(null);
+                          }}
+                          aria-label={`리뷰 ${index + 1} 삭제`}
+                          title="리뷰 입력란 삭제"
+                        >
+                          −
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <button type="button" className="sourcing-review-list-preview" onClick={() => setReviewListExpanded(true)}>
+                    리뷰 {draft.reviewEntries.filter((entry) => entry.content.trim()).length}개가 접혀 있습니다. 눌러서 전체 펼치기
+                  </button>
+                )}
+                <details className="sourcing-review-import-options">
+                  <summary>여러 줄 붙여넣기 또는 파일 가져오기</summary>
+                  <textarea
+                    rows={6}
+                    value={reviewRawText}
+                    onChange={(event) => { setReviewRawText(event.target.value); setReviewAnalysis(null); }}
+                    placeholder={"여러 리뷰를 한 줄에 하나씩 붙여넣으세요. 여러 줄로 된 리뷰는 빈 줄로 구분하세요."}
+                    aria-label="분석할 리뷰 원문"
+                  />
+                  <div className="sourcing-review-import-actions">
+                    <button type="button" onClick={addBulkReviews} disabled={!reviewRawText.trim()}>입력 목록에 추가</button>
+                    <label className="sourcing-file-button">
+                      <input type="file" accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onChange={importReviewFile} disabled={reviewImporting} />
+                      {reviewImporting ? "리뷰 읽는 중…" : "리뷰 파일 선택"}
+                    </label>
+                  </div>
+                </details>
                 <div className="sourcing-review-actions">
-                  <span>{reviewFileEntries.length ? `파일 리뷰 ${reviewFileEntries.length}개 준비됨` : "CSV/XLSX의 리뷰 내용·평점 열을 자동으로 찾습니다."}</span>
-                  <button type="button" onClick={runReviewAnalysis} disabled={!reviewRawText.trim() && !reviewFileEntries.length}>규칙 기반 리뷰 분석</button>
+                  <span>
+                    저장 대상 리뷰 {draft.reviewEntries.filter((entry) => entry.content.trim()).length}개
+                  </span>
+                  <button type="button" onClick={runReviewAnalysis} disabled={!draft.reviewEntries.some((entry) => entry.content.trim())}>규칙 기반 리뷰 분석</button>
                 </div>
                 {reviewAnalysis && (
                   <div className="sourcing-review-result">
@@ -619,10 +712,17 @@ export function SourcingWorkspace({
                       <span>중립·판단 필요 <strong>{reviewAnalysis.neutralCount}</strong></span>
                     </div>
                     <div className="sourcing-review-result-grid">
-                      <ReviewTermSummary title="장점 반복 표현" terms={reviewAnalysis.positiveTerms} />
-                      <ReviewTermSummary title="단점 반복 표현" terms={reviewAnalysis.negativeTerms} />
+                      <ReviewTypeSummary title="확인된 장점 유형" types={reviewAnalysis.positiveTerms} />
+                      <ReviewTypeSummary title="확인된 불편 유형" types={reviewAnalysis.negativeTerms} />
                     </div>
-                    <p>별점이 있으면 4~5점은 장점, 1~3점은 단점으로 우선 분류합니다. 별점이 없으면 제한된 감성 사전으로 분류하므로 반드시 원문을 함께 확인하세요.</p>
+                    <details className="sourcing-review-evidence">
+                      <summary>분류 근거 원문 보기</summary>
+                      <div>
+                        <ReviewEvidenceList title="장점으로 분류된 리뷰" examples={reviewAnalysis.positiveExamples} />
+                        <ReviewEvidenceList title="단점으로 분류된 리뷰" examples={reviewAnalysis.negativeExamples} />
+                      </div>
+                    </details>
+                    <p>유형별 2건 이상은 반복 확인, 1건은 개별 확인으로 표시합니다. 별점이 있으면 4~5점은 장점, 1~3점은 단점으로 우선 분류하며 유형에 맞지 않는 일반 단어는 표시하지 않습니다.</p>
                     <button type="button" onClick={applyReviewAnalysis}>분석 결과를 아래 항목에 반영</button>
                   </div>
                 )}
@@ -759,9 +859,32 @@ export function SourcingWorkspace({
     setProductSearch("");
     setAppliedProductId(null);
     setReviewRawText("");
-    setReviewFileEntries([]);
+    setReviewListExpanded(true);
     setReviewAnalysis(null);
   }
+}
+
+function storedReview(
+  content = "",
+  rating: number | null = null,
+  source: SourcingReviewInput["source"] = "manual",
+): SourcingReviewInput {
+  return { id: crypto.randomUUID(), content, rating, source };
+}
+
+function appendReviewEntries(
+  current: SourcingReviewInput[],
+  additions: SourcingReviewInput[],
+) {
+  const seen = new Set(
+    current.map((entry) => entry.content.replace(/\s+/g, "").toLocaleLowerCase("ko-KR")),
+  );
+  return [...current, ...additions.filter((entry) => {
+    const key = entry.content.replace(/\s+/g, "").toLocaleLowerCase("ko-KR");
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  })].slice(0, 500);
 }
 
 function ResearchSection({ number, title, description, children }: { number: string; title: string; description: string; children: ReactNode }) {
@@ -776,12 +899,22 @@ function KeywordReviewGroup({ title, keywords, empty }: { title: string; keyword
   return <div className="sourcing-registration-group"><strong>{title}</strong><div className="sourcing-registration-chips read-only">{keywords.length ? keywords.map((keyword) => <span key={keyword}>{keyword}</span>) : <span>{empty}</span>}</div></div>;
 }
 
-function ReviewTermSummary({ title, terms }: { title: string; terms: Array<{ term: string; count: number }> }) {
-  return <div><strong>{title}</strong><div>{terms.length ? terms.map(({ term, count }) => <span key={term}>{term} <b>{count}</b></span>) : <small>반복 표현을 찾지 못했습니다.</small>}</div></div>;
+function ReviewTypeSummary({ title, types }: { title: string; types: Array<{ term: string; count: number }> }) {
+  return <div><strong>{title}</strong><div>{types.length ? types.map(({ term, count }) => <span key={term}>{term} <b>{count}건 · {count >= 2 ? "반복" : "개별"}</b></span>) : <small>분류된 유형이 없습니다. 원문을 직접 확인하세요.</small>}</div></div>;
 }
 
+function ReviewEvidenceList({ title, examples }: { title: string; examples: string[] }) {
+  return <section><strong>{title}</strong>{examples.length ? <ul>{examples.map((example, index) => <li key={`${index}-${example}`}>{example}</li>)}</ul> : <small>해당 리뷰가 없습니다.</small>}</section>;
+}
+
+function FormattedNumberInput({ value, onChange, placeholder }: { value: number | null; onChange: (value: number | null) => void; placeholder?: string }) {
+  return <input inputMode="numeric" value={value == null ? "" : formatNumber(value)} onChange={(event) => {
+    const digits = event.target.value.replace(/\D/g, "");
+    onChange(digits ? Number(digits) : null);
+  }} placeholder={placeholder} />;
+}
 function NumberInput({ value, onChange, placeholder }: { value: number | null; onChange: (value: number | null) => void; placeholder?: string }) {
-  return <input type="number" min="0" step="1" value={value ?? ""} onChange={(event) => onChange(event.target.value === "" ? null : Number(event.target.value))} placeholder={placeholder} />;
+  return <FormattedNumberInput value={value} onChange={onChange} placeholder={placeholder} />;
 }
 function MoneyInput({ value, onChange }: { value: number | null; onChange: (value: number | null) => void }) {
   return <div className="sourcing-money-input"><NumberInput value={value} onChange={onChange} placeholder="0" /><span>원</span></div>;
@@ -800,7 +933,7 @@ function SampleEditor({ sample, index, onChange, onRemove }: { sample: SourcingS
 }
 
 function emptyResearch(): SourcingResearchInput {
-  return { status: "researching", sourcingKeyword: "", monthlySearchVolume: null, sixMonthRevenue: null, marketNotes: "", coupangAveragePrice: null, naverAveragePrice: null, expectedSellingPrice: null, signals: { ...defaultSourcingSignals }, finalSellingPoint: "", positiveReviews: "", negativeReviews: "", customerNeeds: "", productSpecs: "", primaryTarget: "", referenceNotes: "", relatedKeywords: [], samples: [] };
+  return { status: "researching", sourcingKeyword: "", monthlySearchVolume: null, sixMonthRevenue: null, marketNotes: "", coupangAveragePrice: null, naverAveragePrice: null, expectedSellingPrice: null, signals: { ...defaultSourcingSignals }, finalSellingPoint: "", positiveReviews: "", negativeReviews: "", customerNeeds: "", productSpecs: "", primaryTarget: "", referenceNotes: "", reviewEntries: [storedReview()], relatedKeywords: [], samples: [] };
 }
 function recordToInput(record: SourcingResearchRecord): SourcingResearchInput {
   return {
@@ -820,12 +953,13 @@ function recordToInput(record: SourcingResearchRecord): SourcingResearchInput {
     productSpecs: record.productSpecs,
     primaryTarget: record.primaryTarget,
     referenceNotes: record.referenceNotes,
+    reviewEntries: record.reviewEntries.length ? record.reviewEntries : [storedReview()],
     relatedKeywords: record.relatedKeywords ?? [],
     samples: record.samples,
   };
 }
 function formatNumber(value: number | null) { return value == null ? "미입력" : new Intl.NumberFormat("ko-KR").format(value); }
-function formatEok(value: number | null) { return value == null ? "미입력" : `${(value / 100_000_000).toLocaleString("ko-KR", { maximumFractionDigits: 1 })}억`; }
+function formatManwon(value: number | null) { return value == null ? "미입력" : `${(value / 10_000).toLocaleString("ko-KR", { maximumFractionDigits: 1 })}만원`; }
 function formatWon(value: number | null) { return value == null ? "미계산" : `${new Intl.NumberFormat("ko-KR").format(value)}원`; }
 
 async function api<T, I = never>(url: string, init?: RequestInit): Promise<{ data?: T; items?: I }> {
