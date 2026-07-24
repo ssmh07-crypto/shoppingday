@@ -59,6 +59,20 @@ describe("판매 상품 도메인", () => {
       }),
     ).toHaveProperty("selectedImages");
   });
+  it("사용자가 직접 추가한 공개 이미지 URL을 허용한다", () => {
+    const result = draftInputSchema.parse({
+      ...base,
+      selectedImages: [
+        {
+          ...base.selectedImages[0]!,
+          id: "url-image",
+          source: "url",
+          sourceUrl: "https://example.test/direct.jpg",
+        },
+      ],
+    });
+    expect(result.selectedImages[0]?.source).toBe("url");
+  });
   it("활성 대표 이미지가 정확히 하나인지 검증한다", () => {
     const parsed = draftInputSchema.parse(base);
     expect(

@@ -35,7 +35,7 @@ const safeUrl = z
   );
 export const imageSchema = z.object({
   id: z.string().min(1).max(100),
-  source: z.enum(["supplier", "upload"]),
+  source: z.enum(["supplier", "upload", "url"]),
   sourceUrl: safeUrl,
   storedUrl: safeUrl.nullable(),
   altText: z.string().max(200),

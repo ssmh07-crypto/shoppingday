@@ -3,7 +3,9 @@ import { requireAdminPage } from "@/lib/auth/admin";
 import { withDbReadRecovery, type Database } from "@/lib/db";
 import { NaverCategoryRepository } from "@/modules/channels/naver/naver-category-repository";
 import { isNaverCommerceConfigured } from "@/modules/channels/naver/naver-category-service";
+import { NaverStoreSettingsRepository } from "@/modules/channels/naver/naver-store-settings-repository";
 import { NaverCategorySyncButton } from "./naver-category-sync-button";
+import { NaverStoreSettingsForm } from "./naver-store-settings-form";
 
 export const dynamic = "force-dynamic";
 
@@ -21,38 +23,50 @@ async function renderPage(
   database: Database,
   searchParams: Promise<SearchParams>,
 ) {
-  await requireAdminPage(database);
+  const user = await requireAdminPage(database);
   const params = await searchParams;
-  const repository = new NaverCategoryRepository(database);
-  const [summary, categories] = await Promise.all([
-    repository.summary(),
-    repository.list({ search: params.search, leafOnly: true, limit: 100 }),
+  const categoryRepository = new NaverCategoryRepository(database);
+  const [summary, categories, storeSettings] = await Promise.all([
+    categoryRepository.summary(),
+    categoryRepository.list({
+      search: params.search,
+      leafOnly: true,
+      limit: 100,
+    }),
+    new NaverStoreSettingsRepository(database).get(user.id),
   ]);
   const configured = isNaverCommerceConfigured();
 
   return (
     <main className="naver-channel-page">
       <div className="naver-channel-shell">
-        <Link className="naver-channel-back" href="/admin/products">
-          ← 상품 관리
+        <Link className="naver-channel-back" href="/admin/registration">
+          ← 상품 등록관리
         </Link>
         <header className="naver-channel-heading">
           <div>
-            <span>판매 채널</span>
-            <h1>네이버 스마트스토어</h1>
+            <span>스마트스토어 설정</span>
+            <h1>등록할 네이버 스마트스토어</h1>
             <p>
-              커머스API 카테고리를 저장해 상품의 최적 카테고리 추천과 등록에
-              사용합니다.
+              등록 대상 스토어를 지정하고 네이버 공식 카테고리·속성 정보를
+              동기화합니다.
             </p>
           </div>
           <NaverCategorySyncButton configured={configured} />
         </header>
 
-        {!configured && (
+        <NaverStoreSettingsForm initial={storeSettings} />
+
+        {!configured ? (
           <section className="naver-channel-alert">
             서버에 <code>NAVER_COMMERCE_CLIENT_ID</code>와{" "}
-            <code>NAVER_COMMERCE_CLIENT_SECRET</code>을 설정하면 동기화할 수
-            있습니다.
+            <code>NAVER_COMMERCE_CLIENT_SECRET</code>을 설정하면 실제 API와
+            연동됩니다.
+          </section>
+        ) : (
+          <section className="naver-channel-alert success">
+            네이버 커머스 API 인증정보가 서버에 연결되어 있습니다. 비밀키는
+            화면이나 데이터베이스에 노출하지 않습니다.
           </section>
         )}
 
@@ -76,8 +90,8 @@ async function renderPage(
             <div>
               <h2>최종 카테고리 검색</h2>
               <p>
-                상품 등록에 사용할 수 있는 최하위 카테고리를 최대 100개
-                표시합니다.
+                상품 편집에서 카테고리를 선택하면 해당 카테고리의 필수 속성,
+                허용값, 단위와 표준 옵션을 자동으로 불러옵니다.
               </p>
             </div>
             <form action="/admin/channels/naver">

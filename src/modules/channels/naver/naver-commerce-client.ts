@@ -1,5 +1,6 @@
 import bcrypt from "bcryptjs";
 import { z } from "zod";
+import type { NaverProductPayload } from "./naver-product-payload";
 
 const tokenSchema = z.object({
   access_token: z.string().min(1),
@@ -51,6 +52,7 @@ const productAttributeValueSchema = z.object({
   maxAttributeValue: z.string().optional(),
   maxAttributeValueUnitCode: z.string().optional(),
   exposureOrder: z.number().int().optional(),
+  attributeValueName: z.string().trim().optional(),
 });
 const productAttributeValuesSchema = z.array(productAttributeValueSchema);
 
@@ -72,6 +74,56 @@ const standardOptionsSchema = z.object({
   useStandardOption: z.boolean().default(false),
   standardOptionCategoryGroups: z.array(standardOptionGroupSchema).default([]),
 });
+const providedNoticeFieldSchema = z.object({
+  fieldType: z.string().default(""),
+  fieldName: z.string().min(1),
+  fieldDescription: z.string().default(""),
+  fieldAddDescription: z.string().default(""),
+  fieldMaxLength: z.number().int().nonnegative().default(0),
+});
+const providedNoticeSchema = z.object({
+  productInfoProvidedNoticeType: z.string().min(1),
+  productInfoProvidedNoticeTypeName: z.string().min(1),
+  productInfoProvidedNoticeContents: z.array(providedNoticeFieldSchema).default([]),
+});
+const providedNoticesSchema = z.array(providedNoticeSchema);
+const uploadedImageSchema = z.object({ url: z.string().url() });
+const uploadedImagesSchema = z.object({ images: z.array(uploadedImageSchema).min(1).max(10) });
+const createdProductSchema = z.object({
+  originProductNo: z.union([z.string(), z.number().int()]).transform(String),
+  smartstoreChannelProductNo: z
+    .union([z.string(), z.number().int()])
+    .transform(String),
+});
+const relayedCreatedProductSchema = z.object({
+  originProductNo: z.string().regex(/^\d+$/),
+  channelProductNo: z.string().regex(/^\d+$/),
+});
+const channelProductAttributeSchema = z.looseObject({
+  attributeSeq: z.number().int(),
+  attributeValueSeq: z.number().int().nullable().optional(),
+  attributeValueName: z.string().trim().optional(),
+  attributeRealValue: z.union([z.string(), z.number()]).optional(),
+  attributeRealValueUnitCode: z.string().trim().optional(),
+});
+const channelProductSellerTagSchema = z.looseObject({
+  code: z.number().int().optional(),
+  text: z.string().trim().min(1),
+});
+const channelProductSchema = z.looseObject({
+  originProduct: z.looseObject({
+    leafCategoryId: z.string().min(1),
+    name: z.string().trim().min(1),
+    detailAttribute: z.looseObject({
+      productAttributes: z.array(channelProductAttributeSchema).default([]),
+      seoInfo: z
+        .looseObject({
+          sellerTags: z.array(channelProductSellerTagSchema).default([]),
+        })
+        .optional(),
+    }),
+  }),
+});
 
 export type NaverCommerceCategory = z.infer<typeof categorySchema>;
 export type NaverCommerceProductModel = z.infer<typeof productModelSchema>;
@@ -87,6 +139,19 @@ export type NaverCommerceProductAttributeUnit = z.infer<
 export type NaverCommerceStandardOptions = z.infer<
   typeof standardOptionsSchema
 >;
+export type NaverCommerceProvidedNotice = z.infer<typeof providedNoticeSchema>;
+export type NaverCommerceUploadedImage = z.infer<typeof uploadedImageSchema>;
+export type NaverCommerceCreatedProduct = z.infer<
+  typeof relayedCreatedProductSchema
+>;
+export type NaverCommerceChannelProduct = z.infer<
+  typeof channelProductSchema
+>;
+export type NaverImageUploadFile = {
+  name: string;
+  type: "image/jpeg" | "image/png";
+  bytes: Uint8Array;
+};
 
 export async function parseNaverCommerceCategories(response: Response) {
   const json = await parseJson(response);
@@ -149,6 +214,47 @@ export async function parseNaverCommerceStandardOptions(response: Response) {
     response,
     standardOptionsSchema,
     "네이버 표준 옵션 응답 형식이 올바르지 않습니다.",
+  );
+}
+
+export async function parseNaverCommerceProvidedNotices(response: Response) {
+  return parseResponse(
+    response,
+    providedNoticesSchema,
+    "네이버 상품정보제공고시 응답 형식이 올바르지 않습니다.",
+  );
+}
+
+export async function parseNaverCommerceProvidedNotice(response: Response) {
+  return parseResponse(
+    response,
+    providedNoticeSchema,
+    "네이버 상품정보제공고시 응답 형식이 올바르지 않습니다.",
+  );
+}
+
+export async function parseNaverCommerceUploadedImages(response: Response) {
+  const parsed = await parseResponse(
+    response,
+    uploadedImagesSchema,
+    "네이버 이미지 업로드 응답 형식이 올바르지 않습니다.",
+  );
+  return parsed.images;
+}
+
+export async function parseNaverCommerceCreatedProduct(response: Response) {
+  return parseResponse(
+    response,
+    relayedCreatedProductSchema,
+    "네이버 상품 등록 응답 형식이 올바르지 않습니다.",
+  );
+}
+
+export async function parseNaverCommerceChannelProduct(response: Response) {
+  return parseResponse(
+    response,
+    channelProductSchema,
+    "네이버 채널 상품 조회 응답 형식이 올바르지 않습니다.",
   );
 }
 
@@ -253,6 +359,66 @@ export class NaverCommerceClient {
     return parseNaverCommerceStandardOptions(response);
   }
 
+  async fetchProvidedNotices(categoryId?: string) {
+    const url = new URL(`${this.config.apiUrl}/v1/products-for-provided-notice`);
+    if (categoryId) url.searchParams.set("categoryId", categoryId);
+    return parseNaverCommerceProvidedNotices(await this.authorizedFetch(url));
+  }
+
+  async fetchProvidedNotice(productInfoProvidedNoticeType: string) {
+    const url = new URL(
+      `${this.config.apiUrl}/v1/products-for-provided-notice/${encodeURIComponent(productInfoProvidedNoticeType)}`,
+    );
+    return parseNaverCommerceProvidedNotice(
+      await this.authorizedFetch(url, { allowNotFound: true }),
+    );
+  }
+
+  async fetchChannelProduct(channelProductNo: string) {
+    if (!/^\d{1,20}$/.test(channelProductNo)) {
+      throw new NaverCommerceError(
+        "request_failed",
+        "네이버 채널 상품 번호 형식이 올바르지 않습니다.",
+      );
+    }
+    const url = new URL(
+      `${this.config.apiUrl}/v2/products/channel-products/${channelProductNo}`,
+    );
+    return parseNaverCommerceChannelProduct(await this.authorizedFetch(url));
+  }
+
+  async uploadProductImages(files: NaverImageUploadFile[]) {
+    const form = new FormData();
+    for (const file of files) {
+      form.append(
+        "imageFiles",
+        new Blob([file.bytes as BlobPart], { type: file.type }),
+        file.name,
+      );
+    }
+    const response = await this.authorizedMultipartFetch(
+      new URL(`${this.config.apiUrl}/v1/product-images/upload`),
+      form,
+    );
+    return parseNaverCommerceUploadedImages(response);
+  }
+
+  async createProduct(payload: NaverProductPayload) {
+    const response = await this.authorizedJsonPost(
+      new URL(`${this.config.apiUrl}/v2/products`),
+      payload,
+    );
+    const parsed = await parseResponse(
+      response,
+      createdProductSchema,
+      "네이버 상품 등록 응답 형식이 올바르지 않습니다.",
+    );
+    return {
+      originProductNo: parsed.originProductNo,
+      channelProductNo: parsed.smartstoreChannelProductNo,
+    };
+  }
+
   private async authorizedFetch(
     url: URL,
     options: { allowNotFound?: boolean } = {},
@@ -287,6 +453,48 @@ export class NaverCommerceClient {
       false,
       allowedStatuses,
     );
+  }
+
+  private async authorizedMultipartFetch(url: URL, body: FormData) {
+    const request = async (token: string, allowUnauthorized: boolean) =>
+      this.request(
+        url,
+        {
+          method: "POST",
+          headers: {
+            accept: "application/json;charset=UTF-8",
+            authorization: `Bearer ${token}`,
+          },
+          body,
+        },
+        allowUnauthorized,
+      );
+    const response = await request(await this.getAccessToken(), true);
+    if (response.status !== 401) return response;
+    this.token = undefined;
+    return request(await this.getAccessToken(), false);
+  }
+
+  private async authorizedJsonPost(url: URL, value: unknown) {
+    const body = JSON.stringify(value);
+    const request = async (token: string, allowUnauthorized: boolean) =>
+      this.request(
+        url,
+        {
+          method: "POST",
+          headers: {
+            accept: "application/json;charset=UTF-8",
+            authorization: `Bearer ${token}`,
+            "content-type": "application/json;charset=UTF-8",
+          },
+          body,
+        },
+        allowUnauthorized,
+      );
+    const response = await request(await this.getAccessToken(), true);
+    if (response.status !== 401) return response;
+    this.token = undefined;
+    return request(await this.getAccessToken(), false);
   }
 
   private async getAccessToken() {
@@ -364,8 +572,8 @@ export class NaverCommerceClient {
       }
       if (allowedStatuses.includes(response.status)) return response;
       if (!response.ok) {
-        const gatewayCode = await readGatewayErrorCode(response);
-        if (gatewayCode === "GW.IP_NOT_ALLOWED") {
+        const gatewayError = await readGatewayError(response);
+        if (gatewayError?.code === "GW.IP_NOT_ALLOWED") {
           throw new NaverCommerceError(
             "ip_not_allowed",
             "현재 서버의 공인 IP가 네이버 커머스API 호출 IP에 등록되지 않았습니다.",
@@ -378,7 +586,8 @@ export class NaverCommerceClient {
             : "request_failed",
           response.status === 401 || response.status === 403
             ? "네이버 커머스API 인증 또는 권한을 확인해 주세요."
-            : "네이버 커머스API 요청에 실패했습니다.",
+            : gatewayError?.message?.trim().slice(0, 1000) ||
+                "네이버 커머스API 요청에 실패했습니다.",
           response.status,
         );
       }
@@ -401,12 +610,20 @@ export class NaverCommerceClient {
   }
 }
 
-async function readGatewayErrorCode(response: Response) {
+async function readGatewayError(response: Response) {
   const contentType = response.headers.get("content-type") ?? "";
   if (!contentType.toLowerCase().includes("application/json")) return undefined;
   try {
-    const body = (await response.clone().json()) as { code?: unknown };
-    return typeof body.code === "string" ? body.code : undefined;
+    const body = (await response.clone().json()) as {
+      code?: unknown;
+      message?: unknown;
+    };
+    return typeof body.code === "string"
+      ? {
+          code: body.code,
+          message: typeof body.message === "string" ? body.message : undefined,
+        }
+      : undefined;
   } catch {
     return undefined;
   }

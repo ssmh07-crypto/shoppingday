@@ -1,5 +1,6 @@
 import {
   boolean,
+  bigint,
   check,
   date,
   integer,
@@ -41,6 +42,36 @@ export const supplierSyncJobStatusEnum = pgEnum("supplier_sync_job_status", [
   "running",
   "succeeded",
   "failed",
+]);
+export const productPublicationStatusEnum = pgEnum(
+  "product_publication_status",
+  ["publishing", "published", "failed", "deleting", "deleted"],
+);
+export const keywordSizeEnum = pgEnum("keyword_size", [
+  "small",
+  "medium",
+  "large",
+  "unclassified",
+]);
+export const keywordCompetitionEnum = pgEnum("keyword_competition", [
+  "low",
+  "medium",
+  "high",
+  "unknown",
+]);
+export const keywordMetricsStatusEnum = pgEnum("keyword_metrics_status", [
+  "pending",
+  "success",
+  "not_found",
+  "error",
+]);
+export const externalDataSourceEnum = pgEnum("external_data_source", [
+  "rules",
+  // 과거 레코드 호환용. 애플리케이션 실행 경로에서는 생성하지 않는다.
+  "openai",
+  "naver_search_ad",
+  "naver_api_hub",
+  "mock",
 ]);
 
 export const userProfiles = pgTable("user_profiles", {
@@ -146,7 +177,7 @@ export const supplierProducts = pgTable(
 
 export interface SelectedImage {
   id: string;
-  source: "supplier" | "upload";
+  source: "supplier" | "upload" | "url";
   sourceUrl: string;
   storedUrl: string | null;
   altText: string;
@@ -176,6 +207,101 @@ export interface NaverProductAttribute {
   minValue: string;
   maxValue: string;
   unitCode: string | null;
+}
+
+export type PublicationChannel = "naver";
+export type DatabaseJsonValue =
+  string | number | boolean | null | DatabaseJsonObject | DatabaseJsonValue[];
+export type DatabaseJsonObject = { [key: string]: DatabaseJsonValue };
+
+export interface NaverPublicationPolicyData {
+  singleStockQuantity: number | null;
+  deliveryInfo: DatabaseJsonObject | null;
+  afterServiceInfo: {
+    afterServiceTelephoneNumber: string;
+    afterServiceGuideContent: string;
+  } | null;
+  originAreaInfo: {
+    originAreaCode: "00" | "01" | "02" | "03" | "04" | "05";
+    importer?: string;
+    content?: string;
+    plural: boolean;
+  } | null;
+  productInfoProvidedNotice:
+    | (DatabaseJsonObject & {
+        productInfoProvidedNoticeType: string;
+      })
+    | null;
+  taxType: "TAX" | "DUTYFREE" | "SMALL" | null;
+  minorPurchasable: boolean | null;
+  naverShoppingRegistration: boolean | null;
+  channelProductDisplayStatusType: "ON" | "SUSPENSION" | null;
+}
+
+export type NaverPublicationPolicyOverrides =
+  Partial<NaverPublicationPolicyData>;
+
+export interface ManagedProductInput {
+  supplierTitle: string;
+  currentTitle?: string;
+  description: string;
+  category: string;
+  features: string[];
+  materials: string[];
+  colors: string[];
+  sizes: string[];
+  target: string;
+  seasons: string[];
+  supplierUrl: string;
+  imageUrls: string[];
+  memo: string;
+  naverCategoryId?: string;
+  naverAttributes?: Array<{
+    attributeSeq: number;
+    attributeName: string;
+    attributeValueSeq: number | null;
+    value: string;
+  }>;
+  searchTags?: string[];
+  commerceImport?: {
+    status: "success" | "failed" | "not_configured";
+    fetchedAt: string | null;
+    message: string | null;
+  };
+}
+
+export interface ProductAnalysisData {
+  productType: string;
+  productTypes: string[];
+  primaryProductType: string | null;
+  productTypeStatus: "rule_confirmed" | "review_required" | "user_confirmed";
+  targetCustomers: string[];
+  materials: string[];
+  purposes: string[];
+  forms: string[];
+  features: string[];
+  colors: string[];
+  sizes: string[];
+  styles: string[];
+  seasons: string[];
+  useCases: string[];
+  categoryTerms: string[];
+  unclassifiedTerms: string[];
+  searchConcepts: string[];
+  analysisSource: "rule-based";
+  userReviewedAt: string | null;
+}
+
+export interface CachedKeywordMetrics {
+  keyword: string;
+  monthlyPcSearchVolume: number | null;
+  monthlyMobileSearchVolume: number | null;
+  totalMonthlySearchVolume: number | null;
+  rawMonthlyPcSearchVolume: string | number | null;
+  rawMonthlyMobileSearchVolume: string | number | null;
+  competition: "low" | "medium" | "high" | "unknown";
+  source: "naver-search-ad" | "mock";
+  status: "success" | "not-found" | "error";
 }
 
 export const productCategories = pgTable("product_categories", {
@@ -242,6 +368,465 @@ export const products = pgTable(
     ),
     index("products_owner_updated_idx").on(table.ownerId, table.updatedAt),
     index("products_naver_category_idx").on(table.naverCategoryId),
+  ],
+);
+
+export const naverStoreSettings = pgTable("naver_store_settings", {
+  userId: uuid("user_id")
+    .primaryKey()
+    .references(() => userProfiles.userId, { onDelete: "cascade" }),
+  storeName: text("store_name").notNull(),
+  storeUrl: text("store_url").notNull(),
+  accountId: text("account_id"),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+export const channelPublicationPolicies = pgTable(
+  "channel_publication_policies",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => userProfiles.userId, { onDelete: "cascade" }),
+    channel: text("channel").$type<PublicationChannel>().notNull(),
+    policy: jsonb("policy")
+      .$type<NaverPublicationPolicyData>()
+      .notNull()
+      .default({
+        singleStockQuantity: null,
+        deliveryInfo: null,
+        afterServiceInfo: null,
+        originAreaInfo: null,
+        productInfoProvidedNotice: null,
+        taxType: null,
+        minorPurchasable: null,
+        naverShoppingRegistration: null,
+        channelProductDisplayStatusType: null,
+      }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("channel_publication_policies_user_channel_uidx").on(
+      table.userId,
+      table.channel,
+    ),
+    check(
+      "channel_publication_policies_channel_check",
+      sql`${table.channel} in ('naver')`,
+    ),
+  ],
+);
+
+export const productPublicationPolicyOverrides = pgTable(
+  "product_publication_policy_overrides",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    productId: uuid("product_id")
+      .notNull()
+      .references(() => products.id, { onDelete: "cascade" }),
+    channel: text("channel").$type<PublicationChannel>().notNull(),
+    policy: jsonb("policy")
+      .$type<NaverPublicationPolicyOverrides>()
+      .notNull()
+      .default({}),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("product_publication_policy_overrides_product_channel_uidx").on(
+      table.productId,
+      table.channel,
+    ),
+    check(
+      "product_publication_policy_overrides_channel_check",
+      sql`${table.channel} in ('naver')`,
+    ),
+  ],
+);
+
+export const productPublications = pgTable(
+  "product_publications",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    productId: uuid("product_id")
+      .notNull()
+      .references(() => products.id, { onDelete: "cascade" }),
+    channel: text("channel").$type<PublicationChannel>().notNull(),
+    status: productPublicationStatusEnum("status").notNull(),
+    originProductNo: text("origin_product_no"),
+    channelProductNo: text("channel_product_no"),
+    lastPayloadHash: text("last_payload_hash"),
+    attemptedPayloadHash: text("attempted_payload_hash").notNull(),
+    lastRequestId: uuid("last_request_id").notNull(),
+    attemptCount: integer("attempt_count").notNull().default(1),
+    lastErrorCode: text("last_error_code"),
+    lastErrorMessage: text("last_error_message"),
+    lastErrorHttpStatus: integer("last_error_http_status"),
+    lastAttemptedAt: timestamp("last_attempted_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    publishedAt: timestamp("published_at", { withTimezone: true }),
+    lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("product_publications_product_channel_uidx").on(
+      table.productId,
+      table.channel,
+    ),
+    index("product_publications_status_idx").on(table.status, table.updatedAt),
+    check(
+      "product_publications_channel_check",
+      sql`${table.channel} in ('naver')`,
+    ),
+    check(
+      "product_publications_last_payload_hash_check",
+      sql`${table.lastPayloadHash} is null or ${table.lastPayloadHash} ~ '^[0-9a-f]{64}$'`,
+    ),
+    check(
+      "product_publications_attempted_payload_hash_check",
+      sql`${table.attemptedPayloadHash} ~ '^[0-9a-f]{64}$'`,
+    ),
+    check(
+      "product_publications_attempt_count_positive",
+      sql`${table.attemptCount} > 0`,
+    ),
+  ],
+);
+
+export const keywordManagedProducts = pgTable(
+  "keyword_managed_products",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    ownerId: uuid("owner_id")
+      .notNull()
+      .references(() => userProfiles.userId, { onDelete: "cascade" }),
+    linkedProductId: uuid("linked_product_id").references(() => products.id, {
+      onDelete: "set null",
+    }),
+    smartstoreUrl: text("smartstore_url").notNull(),
+    channelProductNo: text("channel_product_no"),
+    supplierTitle: text("supplier_title").notNull(),
+    currentTitle: text("current_title"),
+    editableTitle: text("editable_title").notNull(),
+    finalTitle: text("final_title"),
+    productInput: jsonb("product_input").$type<ManagedProductInput>().notNull(),
+    status: text("status").notNull().default("active"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("keyword_managed_products_owner_updated_idx").on(
+      table.ownerId,
+      table.updatedAt,
+    ),
+    uniqueIndex("keyword_managed_products_owner_channel_uidx")
+      .on(table.ownerId, table.channelProductNo)
+      .where(sql`${table.channelProductNo} is not null`),
+    check(
+      "keyword_managed_products_status_check",
+      sql`${table.status} in ('active', 'archived')`,
+    ),
+  ],
+);
+
+export const productKeywordAnalyses = pgTable(
+  "product_keyword_analyses",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    ownerId: uuid("owner_id")
+      .notNull()
+      .references(() => userProfiles.userId, { onDelete: "cascade" }),
+    managedProductId: uuid("managed_product_id")
+      .notNull()
+      .references(() => keywordManagedProducts.id, { onDelete: "cascade" }),
+    inputHash: text("input_hash").notNull(),
+    analysis: jsonb("analysis").$type<ProductAnalysisData>().notNull(),
+    model: text("model").notNull(),
+    source: externalDataSourceEnum("source").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("product_keyword_analyses_product_created_idx").on(
+      table.managedProductId,
+      table.createdAt,
+    ),
+    index("product_keyword_analyses_owner_idx").on(table.ownerId),
+    check(
+      "product_keyword_analyses_input_hash_check",
+      sql`${table.inputHash} ~ '^[0-9a-f]{64}$'`,
+    ),
+  ],
+);
+
+export const keywordCandidates = pgTable(
+  "keyword_candidates",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    ownerId: uuid("owner_id")
+      .notNull()
+      .references(() => userProfiles.userId, { onDelete: "cascade" }),
+    managedProductId: uuid("managed_product_id")
+      .notNull()
+      .references(() => keywordManagedProducts.id, { onDelete: "cascade" }),
+    analysisId: uuid("analysis_id").references(
+      () => productKeywordAnalyses.id,
+      {
+        onDelete: "set null",
+      },
+    ),
+    keyword: text("keyword").notNull(),
+    normalizedKeyword: text("normalized_keyword").notNull(),
+    recommendationReason: text("ai_reason").notNull().default(""),
+    sourceConcepts: jsonb("source_concepts")
+      .$type<string[]>()
+      .notNull()
+      .default([]),
+    recommendationOrder: integer("ai_order").notNull(),
+    origin: text("origin").notNull().default("rule_combination"),
+    reviewStatus: text("review_status").notNull().default("candidate"),
+    filterReasons: jsonb("filter_reasons")
+      .$type<string[]>()
+      .notNull()
+      .default([]),
+    relevanceScore: integer("relevance_score"),
+    monthlyPcSearchVolume: integer("monthly_pc_search_volume"),
+    monthlyMobileSearchVolume: integer("monthly_mobile_search_volume"),
+    totalMonthlySearchVolume: integer("total_monthly_search_volume"),
+    rawMonthlyPcSearchVolume: text("raw_monthly_pc_search_volume"),
+    rawMonthlyMobileSearchVolume: text("raw_monthly_mobile_search_volume"),
+    competition: keywordCompetitionEnum("competition")
+      .notNull()
+      .default("unknown"),
+    keywordSize: keywordSizeEnum("keyword_size")
+      .notNull()
+      .default("unclassified"),
+    metricsStatus: keywordMetricsStatusEnum("metrics_status")
+      .notNull()
+      .default("pending"),
+    metricsSource: externalDataSourceEnum("metrics_source"),
+    metricsFetchedAt: timestamp("metrics_fetched_at", { withTimezone: true }),
+    isSelected: boolean("is_selected").notNull().default(false),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("keyword_candidates_product_normalized_uidx").on(
+      table.managedProductId,
+      table.normalizedKeyword,
+    ),
+    index("keyword_candidates_product_order_idx").on(
+      table.managedProductId,
+      table.recommendationOrder,
+    ),
+    index("keyword_candidates_owner_idx").on(table.ownerId),
+    check(
+      "keyword_candidates_ai_order_non_negative",
+      sql`${table.recommendationOrder} >= 0`,
+    ),
+    check(
+      "keyword_candidates_origin_check",
+      sql`${table.origin} in ('rule_combination', 'naver_related', 'manual')`,
+    ),
+    check(
+      "keyword_candidates_review_status_check",
+      sql`${table.reviewStatus} in ('candidate', 'accepted', 'rejected', 'review')`,
+    ),
+    check(
+      "keyword_candidates_metrics_non_negative",
+      sql`(${table.monthlyPcSearchVolume} is null or ${table.monthlyPcSearchVolume} >= 0)
+        and (${table.monthlyMobileSearchVolume} is null or ${table.monthlyMobileSearchVolume} >= 0)
+        and (${table.totalMonthlySearchVolume} is null or ${table.totalMonthlySearchVolume} >= 0)`,
+    ),
+  ],
+);
+
+export const generatedTitles = pgTable(
+  "generated_titles",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    ownerId: uuid("owner_id")
+      .notNull()
+      .references(() => userProfiles.userId, { onDelete: "cascade" }),
+    managedProductId: uuid("managed_product_id")
+      .notNull()
+      .references(() => keywordManagedProducts.id, { onDelete: "cascade" }),
+    selectedKeywords: jsonb("selected_keywords")
+      .$type<string[]>()
+      .notNull()
+      .default([]),
+    generatedTitle: text("generated_title").notNull(),
+    editedTitle: text("edited_title").notNull(),
+    model: text("model").notNull(),
+    source: externalDataSourceEnum("source").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("generated_titles_product_created_idx").on(
+      table.managedProductId,
+      table.createdAt,
+    ),
+    index("generated_titles_owner_idx").on(table.ownerId),
+  ],
+);
+
+export const keywordMetricCache = pgTable(
+  "keyword_metric_cache",
+  {
+    normalizedKeyword: text("normalized_keyword").primaryKey(),
+    metrics: jsonb("metrics").$type<CachedKeywordMetrics>().notNull(),
+    fetchedAt: timestamp("fetched_at", { withTimezone: true }).notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [index("keyword_metric_cache_expires_idx").on(table.expiresAt)],
+);
+
+export type SourcingResearchSignal = "yes" | "no" | "unknown";
+export interface SourcingResearchSignals {
+  widePriceSpectrum: SourcingResearchSignal;
+  manyCustomerPainPoints: SourcingResearchSignal;
+  mainKeywordDominant: SourcingResearchSignal;
+  strongBrandMarket: SourcingResearchSignal;
+  expertiseRequired: SourcingResearchSignal;
+  trendDriven: SourcingResearchSignal;
+  domesticProductsDominant: SourcingResearchSignal;
+  manySkus: SourcingResearchSignal;
+  seasonal: SourcingResearchSignal;
+  bulky: SourcingResearchSignal;
+  certificationRequired: SourcingResearchSignal;
+}
+export interface SourcingSampleData {
+  id: string;
+  url: string;
+  price: number | null;
+  features: string;
+}
+export interface SourcingRelatedKeywordData {
+  id: string;
+  keyword: string;
+  normalizedKeyword: string;
+  monthlySearchVolume: number | null;
+  placement: "unclassified" | "product_name" | "tag" | "attribute" | "category";
+  source: "itemscout-xlsx" | "manual";
+  importedAt: string;
+}
+export interface SourcingReviewInputData {
+  id: string;
+  content: string;
+  rating: number | null;
+  source: "manual" | "file" | "bulk";
+}
+export type SourcingResearchStatus =
+  "researching" | "candidate" | "sample_ordered" | "selected" | "rejected";
+
+export const sourcingResearches = pgTable(
+  "sourcing_researches",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    ownerId: uuid("owner_id")
+      .notNull()
+      .references(() => userProfiles.userId, { onDelete: "cascade" }),
+    status: text("status")
+      .$type<SourcingResearchStatus>()
+      .notNull()
+      .default("researching"),
+    sourcingKeyword: text("sourcing_keyword").notNull(),
+    monthlySearchVolume: integer("monthly_search_volume"),
+    sixMonthRevenue: bigint("six_month_revenue", { mode: "number" }),
+    marketNotes: text("market_notes").notNull().default(""),
+    coupangAveragePrice: integer("coupang_average_price"),
+    naverAveragePrice: integer("naver_average_price"),
+    expectedSellingPrice: integer("expected_selling_price"),
+    maximumPurchasePrice: integer("maximum_purchase_price"),
+    signals: jsonb("signals").$type<SourcingResearchSignals>().notNull(),
+    finalSellingPoint: text("final_selling_point").notNull().default(""),
+    positiveReviews: text("positive_reviews").notNull().default(""),
+    negativeReviews: text("negative_reviews").notNull().default(""),
+    customerNeeds: text("customer_needs").notNull().default(""),
+    productSpecs: text("product_specs").notNull().default(""),
+    primaryTarget: text("primary_target").notNull().default(""),
+    referenceNotes: text("reference_notes").notNull().default(""),
+    reviewEntries: jsonb("review_entries")
+      .$type<SourcingReviewInputData[]>()
+      .notNull()
+      .default([]),
+    relatedKeywords: jsonb("related_keywords")
+      .$type<SourcingRelatedKeywordData[]>()
+      .notNull()
+      .default([]),
+    samples: jsonb("samples")
+      .$type<SourcingSampleData[]>()
+      .notNull()
+      .default([]),
+    registrationProductId: uuid("registration_product_id").references(
+      () => products.id,
+      { onDelete: "set null" },
+    ),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("sourcing_researches_owner_updated_idx").on(
+      table.ownerId,
+      table.updatedAt,
+    ),
+    index("sourcing_researches_registration_product_idx").on(
+      table.registrationProductId,
+    ),
+    check(
+      "sourcing_researches_status_check",
+      sql`${table.status} in ('researching', 'candidate', 'sample_ordered', 'selected', 'rejected')`,
+    ),
+    check(
+      "sourcing_researches_amounts_non_negative",
+      sql`(${table.monthlySearchVolume} is null or ${table.monthlySearchVolume} >= 0)
+        and (${table.sixMonthRevenue} is null or ${table.sixMonthRevenue} >= 0)
+        and (${table.coupangAveragePrice} is null or ${table.coupangAveragePrice} >= 0)
+        and (${table.naverAveragePrice} is null or ${table.naverAveragePrice} >= 0)
+        and (${table.expectedSellingPrice} is null or ${table.expectedSellingPrice} >= 0)
+        and (${table.maximumPurchasePrice} is null or ${table.maximumPurchasePrice} >= 0)`,
+    ),
   ],
 );
 
@@ -398,6 +983,7 @@ export const productAuditLogs = pgTable(
 );
 
 export type ProductRow = typeof products.$inferSelect;
+export type ProductPublicationRow = typeof productPublications.$inferSelect;
 
 export type SupplierProductRow = typeof supplierProducts.$inferSelect;
 

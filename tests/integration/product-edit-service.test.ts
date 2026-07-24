@@ -147,6 +147,24 @@ describe("상품 편집 서비스", () => {
       errors: { naverCategoryId: expect.any(String) },
     });
   });
+  it("소싱 등록 상품명은 서버 저장에서도 50자를 넘길 수 없다", async () => {
+    const { service, repo } = setup();
+    repo.find.mockResolvedValue({
+      ...record,
+      supplier: { ...record.supplier, code: "sourcing" },
+    });
+
+    await expect(
+      service.saveDraft("p1", "u1", {
+        ...draft,
+        title: "가".repeat(51),
+      }),
+    ).rejects.toMatchObject({
+      code: "product_validation",
+      errors: { title: expect.stringContaining("50자") },
+    });
+    expect(repo.save).not.toHaveBeenCalled();
+  });
   it("필수값이 없으면 ready 저장을 호출하지 않는다", async () => {
     const { service, repo } = setup();
     await expect(

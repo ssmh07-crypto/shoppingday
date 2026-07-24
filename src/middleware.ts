@@ -49,5 +49,6 @@ export const config = {
     "/api/integrations/:path*",
     "/api/suppliers/:path*",
     "/api/products/:path*",
+    "/api/keyword-products/:path*",
   ],
 };

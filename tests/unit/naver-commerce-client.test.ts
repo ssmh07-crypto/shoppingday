@@ -39,6 +39,33 @@ function json(value: unknown, status = 200) {
 }
 
 describe("네이버 커머스API 클라이언트", () => {
+  it("v2 상품 등록 응답의 원상품번호와 채널상품번호를 저장 형식으로 변환한다", async () => {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        json({ access_token: "token", expires_in: 10800, token_type: "Bearer" }),
+      )
+      .mockResolvedValueOnce(
+        json({
+          originProductNo: 100000001,
+          smartstoreChannelProductNo: 200000001,
+        }),
+      );
+    const client = new NaverCommerceClient(config, fetcher, () => now);
+
+    await expect(client.createProduct({} as never)).resolves.toEqual({
+      originProductNo: "100000001",
+      channelProductNo: "200000001",
+    });
+    expect(String(fetcher.mock.calls[1]?.[0])).toBe(
+      "https://api.example.test/external/v2/products",
+    );
+    expect(fetcher.mock.calls[1]?.[1]).toMatchObject({
+      method: "POST",
+      body: "{}",
+    });
+  });
+
   it("공식 bcrypt+Base64 방식으로 전자서명을 만든다", async () => {
     const signature = await createNaverCommerceSignature(
       clientId,
@@ -234,6 +261,99 @@ describe("네이버 커머스API 클라이언트", () => {
     );
     expect(String(fetcher.mock.calls[2]?.[0])).toContain(
       "/v1/product-attributes/attribute-value-units",
+    );
+  });
+
+  it("대카테고리별 상품정보제공고시 목록과 단건을 조회한다", async () => {
+    const notice = {
+      productInfoProvidedNoticeType: "ETC",
+      productInfoProvidedNoticeTypeName: "기타 재화",
+      productInfoProvidedNoticeContents: [
+        {
+          fieldType: "STRING",
+          fieldName: "itemName",
+          fieldDescription: "품명",
+          fieldAddDescription: "",
+          fieldMaxLength: 100,
+        },
+      ],
+    };
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        json({ access_token: "token", expires_in: 10800, token_type: "Bearer" }),
+      )
+      .mockResolvedValueOnce(json([notice]))
+      .mockResolvedValueOnce(json(notice));
+    const client = new NaverCommerceClient(config, fetcher, () => now);
+
+    await expect(client.fetchProvidedNotices("50000000")).resolves.toEqual([notice]);
+    await expect(client.fetchProvidedNotice("ETC")).resolves.toEqual(notice);
+    expect(String(fetcher.mock.calls[1]?.[0])).toContain(
+      "/v1/products-for-provided-notice?categoryId=50000000",
+    );
+    expect(String(fetcher.mock.calls[2]?.[0])).toContain(
+      "/v1/products-for-provided-notice/ETC",
+    );
+  });
+
+  it("이미지를 imageFiles multipart 필드로 업로드한다", async () => {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        json({ access_token: "token", expires_in: 10800, token_type: "Bearer" }),
+      )
+      .mockResolvedValueOnce(
+        json({ images: [{ url: "https://shop-phinf.pstatic.net/uploaded.jpg" }] }),
+      );
+    const client = new NaverCommerceClient(config, fetcher, () => now);
+
+    await expect(
+      client.uploadProductImages([
+        {
+          name: "product.jpg",
+          type: "image/jpeg",
+          bytes: new Uint8Array([0xff, 0xd8, 0xff, 0xd9]),
+        },
+      ]),
+    ).resolves.toEqual([
+      { url: "https://shop-phinf.pstatic.net/uploaded.jpg" },
+    ]);
+    expect(String(fetcher.mock.calls[1]?.[0])).toContain(
+      "/v1/product-images/upload",
+    );
+    const body = fetcher.mock.calls[1]?.[1]?.body;
+    expect(body).toBeInstanceOf(FormData);
+    expect((body as FormData).getAll("imageFiles")).toHaveLength(1);
+  });
+
+  it("채널 상품에서 카테고리와 등록 속성 및 판매자 태그를 읽는다", async () => {
+    const channelProduct = {
+      originProduct: {
+        leafCategoryId: "50000805",
+        name: "린넨 여름 원피스",
+        detailAttribute: {
+          productAttributes: [
+            { attributeSeq: 10, attributeValueSeq: 100 },
+          ],
+          seoInfo: { sellerTags: [{ code: 1, text: "여름원피스" }] },
+        },
+      },
+    };
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        json({ access_token: "token", expires_in: 10800, token_type: "Bearer" }),
+      )
+      .mockResolvedValueOnce(json(channelProduct));
+
+    await expect(
+      new NaverCommerceClient(config, fetcher, () => now).fetchChannelProduct(
+        "200000001",
+      ),
+    ).resolves.toEqual(channelProduct);
+    expect(String(fetcher.mock.calls[1]?.[0])).toBe(
+      "https://api.example.test/external/v2/products/channel-products/200000001",
     );
   });
 });

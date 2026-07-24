@@ -20,6 +20,9 @@ const optionalUrl = z.preprocess(
 
 const serverEnvSchema = z
   .object({
+    NODE_ENV: z
+      .enum(["development", "test", "production"])
+      .default("development"),
     NEXT_PUBLIC_SUPABASE_URL: z.url(),
     NEXT_PUBLIC_SUPABASE_ANON_KEY: z.string().min(1),
     SUPABASE_SERVICE_ROLE_KEY: optionalString,
@@ -66,8 +69,51 @@ const serverEnvSchema = z
       .min(1000)
       .max(60_000)
       .default(15_000),
+    USE_MOCK_EXTERNAL_APIS: booleanString,
+    NAVER_SEARCH_AD_API_URL: z
+      .url()
+      .default("https://api.searchad.naver.com"),
+    NAVER_SEARCH_AD_API_KEY: optionalString,
+    NAVER_SEARCH_AD_SECRET_KEY: optionalString,
+    NAVER_SEARCH_AD_CUSTOMER_ID: optionalString,
+    NAVER_SEARCH_AD_TIMEOUT_MS: z.coerce
+      .number()
+      .int()
+      .min(1000)
+      .max(60_000)
+      .default(15_000),
+    NAVER_API_HUB_BASE_URL: z
+      .url()
+      .default("https://naverapihub.apigw.ntruss.com"),
+    NAVER_API_HUB_CLIENT_ID: optionalString,
+    NAVER_API_HUB_CLIENT_SECRET: optionalString,
+    KEYWORD_METRICS_CACHE_HOURS: z.coerce
+      .number()
+      .int()
+      .min(1)
+      .max(24 * 30)
+      .default(24),
+    KEYWORD_CANDIDATE_COUNT: z.coerce
+      .number()
+      .int()
+      .min(10)
+      .max(50)
+      .default(30),
+    GENERATED_TITLE_MAX_LENGTH: z.coerce
+      .number()
+      .int()
+      .min(20)
+      .max(100)
+      .default(60),
   })
   .superRefine((env, ctx) => {
+    if (env.NODE_ENV === "production" && env.USE_MOCK_EXTERNAL_APIS) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["USE_MOCK_EXTERNAL_APIS"],
+        message: "USE_MOCK_EXTERNAL_APIS cannot be enabled in production",
+      });
+    }
     if (!env.DOME_API_MOCK_MODE && (!env.DOME_API_ID || !env.DOME_API_KEY)) {
       ctx.addIssue({
         code: "custom",
@@ -119,6 +165,30 @@ const serverEnvSchema = z
         path: ["NAVER_COMMERCE_RELAY_SHARED_SECRET"],
         message:
           "NAVER_COMMERCE_RELAY_SHARED_SECRET must be at least 32 characters",
+      });
+    }
+    const searchAdCredentials = [
+      env.NAVER_SEARCH_AD_API_KEY,
+      env.NAVER_SEARCH_AD_SECRET_KEY,
+      env.NAVER_SEARCH_AD_CUSTOMER_ID,
+    ].filter(Boolean).length;
+    if (searchAdCredentials !== 0 && searchAdCredentials !== 3) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["NAVER_SEARCH_AD_API_KEY"],
+        message:
+          "NAVER_SEARCH_AD_API_KEY, NAVER_SEARCH_AD_SECRET_KEY and NAVER_SEARCH_AD_CUSTOMER_ID must be configured together",
+      });
+    }
+    if (
+      Boolean(env.NAVER_API_HUB_CLIENT_ID) !==
+      Boolean(env.NAVER_API_HUB_CLIENT_SECRET)
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["NAVER_API_HUB_CLIENT_ID"],
+        message:
+          "NAVER_API_HUB_CLIENT_ID and NAVER_API_HUB_CLIENT_SECRET must be configured together",
       });
     }
   });

@@ -1,6 +1,6 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
-import { and, asc, desc, eq, ilike, isNull, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, ilike, isNull, ne, or, sql } from "drizzle-orm";
 import { getDb, type Database } from "@/lib/db";
 import {
   productAuditLogs,
@@ -41,6 +41,7 @@ export type ProductEditorRecord = {
     wholeCategoryName: string;
   } | null;
   supplier: {
+    code?: string;
     name: string;
     externalProductId: string;
     originalName: string | null;
@@ -70,7 +71,7 @@ export class ProductEditRepository {
       isNull(products.ownerId),
     )!;
     const search = query.search?.trim();
-    const conditions = [ownership];
+    const conditions = [ownership, ne(suppliers.code, "sourcing")];
     if (search)
       conditions.push(
         or(
@@ -175,7 +176,7 @@ export class ProductEditRepository {
           supplierProducts,
           eq(supplierProducts.id, productSupplierLinks.supplierProductId),
         )
-        .where(ownership),
+        .where(and(ownership, ne(suppliers.code, "sourcing"))),
     ]);
     return {
       items,
@@ -217,6 +218,7 @@ export class ProductEditRepository {
           wholeCategoryName: naverCommerceCategories.wholeCategoryName,
         },
         supplier: {
+          code: suppliers.code,
           name: suppliers.name,
           externalProductId: supplierProducts.externalProductId,
           originalName: supplierProducts.originalName,
@@ -376,6 +378,72 @@ export class ProductEditRepository {
         action:
           kind === "images" ? "product_images_reset" : "product_options_reset",
         changedFields: [kind === "images" ? "selectedImages" : "editedOptions"],
+        requestId: randomUUID(),
+      });
+      return { kind: "ok" as const, product };
+    });
+  }
+
+  async saveNaverImageUrls(
+    id: string,
+    ownerId: string,
+    version: number,
+    uploads: Array<{ imageId: string; sourceUrl: string; storedUrl: string }>,
+  ) {
+    return this.database.transaction(async (tx) => {
+      const [old] = await tx
+        .select()
+        .from(products)
+        .where(
+          and(
+            eq(products.id, id),
+            or(eq(products.ownerId, ownerId), isNull(products.ownerId)),
+          ),
+        )
+        .limit(1);
+      if (!old) return { kind: "not_found" as const };
+      if (old.draftVersion !== version) return { kind: "conflict" as const };
+      if (
+        !uploads.every((upload) =>
+          old.selectedImages.some(
+            (image) =>
+              image.id === upload.imageId && image.sourceUrl === upload.sourceUrl,
+          ),
+        )
+      ) {
+        return { kind: "conflict" as const };
+      }
+      const byId = new Map(uploads.map((upload) => [upload.imageId, upload]));
+      const selectedImages = old.selectedImages.map((image) => {
+        const upload = byId.get(image.id);
+        return upload && upload.sourceUrl === image.sourceUrl
+          ? { ...image, storedUrl: upload.storedUrl }
+          : image;
+      });
+      const [product] = await tx
+        .update(products)
+        .set({
+          ownerId,
+          selectedImages,
+          status: "editing",
+          readyAt: null,
+          draftVersion: sql`${products.draftVersion}+1`,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(products.id, id),
+            eq(products.draftVersion, version),
+            or(eq(products.ownerId, ownerId), isNull(products.ownerId)),
+          ),
+        )
+        .returning();
+      if (!product) return { kind: "conflict" as const };
+      await tx.insert(productAuditLogs).values({
+        actorId: ownerId,
+        entityId: id,
+        action: "naver_product_images_uploaded",
+        changedFields: ["selectedImages"],
         requestId: randomUUID(),
       });
       return { kind: "ok" as const, product };

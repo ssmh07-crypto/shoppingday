@@ -101,7 +101,10 @@ export function ProductEditorDrawer({
   useEffect(() => {
     if (!initialProductId) return;
     const version = ++requestVersion.current;
-    void loadEditor(initialProductId).then(
+    // A direct edit link can be opened immediately after a sourcing draft sync.
+    // Always bypass the short hover-prefetch cache so the editor shows the
+    // latest title, tags, and price from the database.
+    void loadEditor(initialProductId, true).then(
       (data) => {
         if (version === requestVersion.current) setEditor(data);
       },
