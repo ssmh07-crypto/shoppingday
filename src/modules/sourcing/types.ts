@@ -48,7 +48,7 @@ export interface SourcingRelatedKeyword {
   normalizedKeyword: string;
   monthlySearchVolume: number | null;
   placement: SourcingKeywordPlacement;
-  source: "itemscout-xlsx";
+  source: "itemscout-xlsx" | "manual";
   importedAt: string;
 }
 

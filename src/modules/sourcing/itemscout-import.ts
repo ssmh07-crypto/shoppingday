@@ -1,11 +1,16 @@
 import type {
-  SourcingKeywordPlacement,
   SourcingRelatedKeyword,
 } from "./types";
 
 type SpreadsheetCell = string | number | boolean | Date | null | undefined;
 
 export interface ItemScoutImportResult {
+  keywords: SourcingRelatedKeyword[];
+  sourceRowCount: number;
+  duplicateCount: number;
+}
+
+export interface ManualKeywordInputResult {
   keywords: SourcingRelatedKeyword[];
   sourceRowCount: number;
   duplicateCount: number;
@@ -112,13 +117,74 @@ export function mergeImportedKeywords(
   current: SourcingRelatedKeyword[],
   imported: SourcingRelatedKeyword[],
 ) {
-  const placements = new Map<string, SourcingKeywordPlacement>(
-    current.map((item) => [item.normalizedKeyword, item.placement]),
+  const merged = new Map(
+    current.map((item) => [item.normalizedKeyword, item]),
   );
-  return imported.map((item) => ({
-    ...item,
-    placement: placements.get(item.normalizedKeyword) ?? item.placement,
-  }));
+
+  for (const item of imported) {
+    const existing = merged.get(item.normalizedKeyword);
+    merged.set(item.normalizedKeyword, existing
+      ? {
+          ...existing,
+          keyword: item.keyword,
+          monthlySearchVolume:
+            item.monthlySearchVolume ?? existing.monthlySearchVolume,
+          source: item.source,
+          importedAt: item.importedAt,
+        }
+      : item);
+  }
+
+  return Array.from(merged.values()).sort(compareRelatedKeywords);
+}
+
+export function parseManualRelatedKeywords(
+  value: string,
+  now = new Date(),
+  idFactory = () => crypto.randomUUID(),
+): ManualKeywordInputResult {
+  const importedAt = now.toISOString();
+  const unique = new Map<string, SourcingRelatedKeyword>();
+  let sourceRowCount = 0;
+
+  for (const rawLine of value.split(/\r?\n/)) {
+    const line = rawLine.normalize("NFKC").trim();
+    if (!line) continue;
+    sourceRowCount += 1;
+
+    const match = line.match(/^(.*?)(?:\s*[,	]\s*([\d,]+))?$/);
+    const keyword = match?.[1]?.trim() ?? "";
+    const normalizedKeyword = normalizeRelatedKeyword(keyword);
+    if (!normalizedKeyword) continue;
+    const monthlySearchVolume = match?.[2]
+      ? numberValue(match[2])
+      : null;
+    const existing = unique.get(normalizedKeyword);
+
+    if (existing) {
+      if (monthlySearchVolume != null) {
+        existing.monthlySearchVolume = monthlySearchVolume;
+      }
+      continue;
+    }
+
+    unique.set(normalizedKeyword, {
+      id: idFactory(),
+      keyword,
+      normalizedKeyword,
+      monthlySearchVolume,
+      placement: "unclassified",
+      source: "manual",
+      importedAt,
+    });
+  }
+
+  const keywords = Array.from(unique.values()).sort(compareRelatedKeywords);
+  return {
+    keywords,
+    sourceRowCount,
+    duplicateCount: sourceRowCount - keywords.length,
+  };
 }
 
 export function normalizeRelatedKeyword(value: string) {
@@ -147,4 +213,14 @@ function numberValue(value: SpreadsheetCell) {
 function sumNullable(left: number | null, right: number | null) {
   if (left == null && right == null) return null;
   return (left ?? 0) + (right ?? 0);
+}
+
+function compareRelatedKeywords(
+  left: SourcingRelatedKeyword,
+  right: SourcingRelatedKeyword,
+) {
+  return (
+    (right.monthlySearchVolume ?? -1) - (left.monthlySearchVolume ?? -1) ||
+    left.keyword.localeCompare(right.keyword, "ko")
+  );
 }

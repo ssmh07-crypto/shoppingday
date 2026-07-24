@@ -2920,6 +2920,151 @@ td small {
   font-size: 13px;
   font-weight: 900;
 }
+.registration-editor-page {
+  width: min(1180px, calc(100% - 32px));
+  margin: 0 auto;
+  padding: 24px 0 40px;
+}
+.registration-editor-heading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 16px;
+}
+.registration-editor-heading span {
+  color: #2457d6;
+  font-size: 12px;
+  font-weight: 900;
+}
+.registration-editor-heading h1 {
+  margin: 5px 0 7px;
+  color: #172033;
+  font-size: 26px;
+}
+.registration-editor-heading p {
+  max-width: 760px;
+  margin: 0;
+  color: #667085;
+  font-size: 14px;
+  line-height: 1.6;
+}
+.registration-editor-heading > a {
+  flex: none;
+  border: 1px solid #9db2cf;
+  border-radius: 8px;
+  padding: 9px 12px;
+  background: #fff;
+  color: #2457d6;
+  font-size: 12px;
+  font-weight: 900;
+}
+.registration-editor-shell {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid #dfe4ee;
+  border-radius: 12px;
+  background: #f7f8fb;
+  box-shadow: 0 8px 24px #1f29370d;
+}
+.registration-editor-shell .drawer-editor {
+  position: relative;
+  height: calc(100vh - 190px);
+  min-height: 680px;
+}
+.registration-editor-state {
+  display: grid;
+  min-height: 360px;
+  place-items: center;
+  padding: 30px;
+  border: 1px solid #dfe4ee;
+  border-radius: 12px;
+  background: #fff;
+  color: #667085;
+}
+.registration-editor-state.error {
+  color: #b42318;
+}
+.registration-title-basis {
+  display: grid;
+  gap: 7px;
+  padding: 13px;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  background: #eff6ff;
+  color: #1e3a8a;
+  font-size: 13px;
+  font-weight: 800;
+}
+.registration-title-basis select {
+  background: #fff;
+}
+.registration-title-basis small {
+  color: #4b5f86;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.5;
+}
+.registration-title-length-warning {
+  color: #b45309;
+  font-weight: 700;
+}
+.registration-tag-selector {
+  display: grid;
+  gap: 9px;
+  padding: 14px;
+  border: 1px solid #d8e2f0;
+  border-radius: 8px;
+  background: #f8fbff;
+}
+.registration-tag-selector > strong {
+  color: #344054;
+  font-size: 14px;
+}
+.registration-tag-selector > p {
+  margin: 0;
+  color: #667085;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.registration-tag-selector > div {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 7px;
+}
+.registration-tag-selector > div > label {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 2px 8px;
+  padding: 8px 9px;
+  border: 1px solid #d0d5dd;
+  border-radius: 7px;
+  background: #fff;
+  cursor: pointer;
+}
+.registration-tag-selector > div > label.selected {
+  border-color: #2563eb;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+.registration-tag-selector > div > label input {
+  grid-row: 1 / 3;
+}
+.registration-tag-selector > div > label span {
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  font-weight: 800;
+}
+.registration-tag-selector > div > label small {
+  color: #667085;
+  font-size: 10px;
+}
+.registration-tag-selector > div > label:has(input:disabled) {
+  background: #f2f4f7;
+  color: #98a2b3;
+  cursor: not-allowed;
+}
 @media (max-width: 760px) {
   .registration-heading {
     align-items: flex-start;
@@ -2930,6 +3075,21 @@ td small {
   }
   .registration-alert {
     grid-template-columns: 1fr;
+  }
+  .registration-editor-page {
+    width: min(100% - 20px, 1180px);
+    padding-top: 16px;
+  }
+  .registration-editor-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .registration-editor-heading > a {
+    text-align: center;
+  }
+  .registration-editor-shell .drawer-editor {
+    height: calc(100vh - 220px);
+    min-height: 620px;
   }
 }
 
@@ -4230,6 +4390,44 @@ td small {
   font-size: 13px;
   line-height: 1.5;
 }
+.sourcing-keyword-manual {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  margin-top: 10px;
+  padding: 14px 16px;
+  border: 1px solid #d8e2f0;
+  border-radius: 10px;
+  background: #fff;
+}
+.sourcing-keyword-manual > div {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 4px;
+}
+.sourcing-keyword-manual strong {
+  color: #172033;
+  font-size: 14px;
+}
+.sourcing-keyword-manual span {
+  color: var(--sourcing-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.sourcing-keyword-manual textarea {
+  min-height: 90px;
+  resize: vertical;
+}
+.sourcing-keyword-manual button {
+  align-self: end;
+  min-height: 42px;
+  padding: 10px 16px;
+  border: 0;
+  border-radius: 8px;
+  background: #2457d6;
+  color: #fff;
+  font-weight: 900;
+}
 .sourcing-file-button {
   position: relative;
   min-width: 132px;
@@ -4855,6 +5053,49 @@ td small {
   color: var(--sourcing-muted);
   font-size: 13px;
 }
+.sourcing-registration-tag-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 8px;
+}
+.sourcing-registration-tag-options label {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 2px 8px;
+  padding: 9px 10px;
+  border: 1px solid #d0d5dd;
+  border-radius: 8px;
+  background: #fff;
+  color: #344054;
+  cursor: pointer;
+}
+.sourcing-registration-tag-options label.selected {
+  border-color: #2563eb;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+.sourcing-registration-tag-options input {
+  grid-row: 1 / 3;
+}
+.sourcing-registration-tag-options span {
+  overflow-wrap: anywhere;
+  font-size: 13px;
+  font-weight: 800;
+}
+.sourcing-registration-tag-options small {
+  color: var(--sourcing-muted);
+  font-size: 11px;
+}
+.sourcing-registration-tag-options label:has(input:disabled) {
+  background: #f2f4f7;
+  color: #98a2b3;
+  cursor: not-allowed;
+}
+.sourcing-registration-empty {
+  color: var(--sourcing-muted);
+  font-size: 13px;
+}
 .sourcing-registration-warnings {
   display: grid;
   gap: 5px;
@@ -4998,6 +5239,12 @@ td small {
     flex-direction: column;
   }
   .sourcing-file-button {
+    width: 100%;
+  }
+  .sourcing-keyword-manual {
+    grid-template-columns: 1fr;
+  }
+  .sourcing-keyword-manual button {
     width: 100%;
   }
   .sourcing-keyword-tools input {

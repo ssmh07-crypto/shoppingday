@@ -3,6 +3,7 @@ import type {
   NaverProductAttribute,
   SelectedImage,
 } from "@/lib/db/schema";
+import type { SourcingRelatedKeyword } from "@/modules/sourcing/types";
 import type { ProductProcessingSettings } from "@/modules/products/product-processing-settings";
 import type { NaverPublicationPolicyData, NaverPublicationPolicyOverrides } from "@/lib/db/schema";
 
@@ -52,4 +53,10 @@ export type NaverCategoryOption = {
   name: string;
   wholeCategoryName: string;
   last: boolean;
+};
+
+export type SourcingRegistrationContext = {
+  researchId: string;
+  sourcingKeyword: string;
+  relatedKeywords: SourcingRelatedKeyword[];
 };

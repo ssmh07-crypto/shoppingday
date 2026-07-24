@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   mergeImportedKeywords,
   parseItemScoutRows,
+  parseManualRelatedKeywords,
 } from "@/modules/sourcing/itemscout-import";
 
 describe("아이템스카우트 엑셀 가져오기", () => {
@@ -59,5 +60,47 @@ describe("아이템스카우트 엑셀 가져오기", () => {
       monthlySearchVolume: 12820,
       placement: "product_name",
     });
+  });
+
+  it("다른 엑셀을 추가로 가져와도 기존 키워드를 보존한다", () => {
+    const previous = parseItemScoutRows(
+      [["키워드", "총 검색수"], ["욕실화", 12000]],
+      new Date("2026-07-18T00:00:00.000Z"),
+      () => "00000000-0000-4000-8000-000000000001",
+    ).keywords.map((item) => ({ ...item, placement: "product_name" as const }));
+    const next = parseItemScoutRows(
+      [["키워드", "총 검색수"], ["물빠짐 욕실화", 420]],
+      new Date("2026-07-19T00:00:00.000Z"),
+      () => "00000000-0000-4000-8000-000000000002",
+    ).keywords;
+
+    expect(mergeImportedKeywords(previous, next)).toEqual([
+      expect.objectContaining({ keyword: "욕실화", placement: "product_name" }),
+      expect.objectContaining({ keyword: "물빠짐 욕실화", placement: "unclassified" }),
+    ]);
+  });
+
+  it("직접 입력한 키워드와 선택적인 검색수를 읽어 누적할 수 있다", () => {
+    let id = 0;
+    const parsed = parseManualRelatedKeywords(
+      "욕실 미끄럼방지\n물빠짐 욕실화, 1,200\n욕실 미끄럼방지",
+      new Date("2026-07-20T00:00:00.000Z"),
+      () => `00000000-0000-4000-8000-${String(++id).padStart(12, "0")}`,
+    );
+
+    expect(parsed.sourceRowCount).toBe(3);
+    expect(parsed.duplicateCount).toBe(1);
+    expect(parsed.keywords).toEqual([
+      expect.objectContaining({
+        keyword: "물빠짐 욕실화",
+        monthlySearchVolume: 1200,
+        source: "manual",
+      }),
+      expect.objectContaining({
+        keyword: "욕실 미끄럼방지",
+        monthlySearchVolume: null,
+        source: "manual",
+      }),
+    ]);
   });
 });

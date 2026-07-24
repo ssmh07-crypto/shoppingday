@@ -744,7 +744,7 @@ export interface SourcingRelatedKeywordData {
   normalizedKeyword: string;
   monthlySearchVolume: number | null;
   placement: "unclassified" | "product_name" | "tag" | "attribute" | "category";
-  source: "itemscout-xlsx";
+  source: "itemscout-xlsx" | "manual";
   importedAt: string;
 }
 export interface SourcingReviewInputData {

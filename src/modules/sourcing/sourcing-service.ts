@@ -15,6 +15,10 @@ export class SourcingResearchService {
     return this.repository.listRegistrations(ownerId);
   }
 
+  findRegistrationIdByProduct(ownerId: string, productId: string) {
+    return this.repository.findRegistrationIdByProduct(ownerId, productId);
+  }
+
   async get(ownerId: string, id: string) {
     const row = await this.repository.find(ownerId, id);
     if (!row) {

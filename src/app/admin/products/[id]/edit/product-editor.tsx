@@ -7,9 +7,11 @@ import { OptionEditor } from "./option-editor";
 import { MarginCalculator } from "./margin-calculator";
 import { NaverAttributeEditor } from "./naver-attribute-editor";
 import { NaverPublicationPolicyForm } from "@/app/admin/components/naver-publication-policy-form";
+import { buildSourcingRegistrationDraft } from "@/modules/sourcing/registration-draft";
 import type {
   NaverCategoryOption,
   ProductEditorInitial,
+  SourcingRegistrationContext,
 } from "./product-editor-types";
 
 type EditorTab = "basic" | "content" | "market";
@@ -78,7 +80,7 @@ type PublicationInspection = {
 
 type TitleRecommendation = {
   title: string;
-  source: "rules" | "rules_naver_search_ad";
+  source: "rules" | "rules_naver_search_ad" | "sourcing_rules";
   analysis: {
     productType: string;
     materials: string[];
@@ -103,10 +105,12 @@ export function ProductEditor({
   initial,
   onMutated,
   onDirtyChange,
+  registrationContext,
 }: {
   initial: ProductEditorInitial;
   onMutated?: () => void;
   onDirtyChange?: (dirty: boolean) => void;
+  registrationContext?: SourcingRegistrationContext;
 }) {
   const [form, setForm] = useState(() => fromInitial(initial));
   const [baseline, setBaseline] = useState(() =>
@@ -122,6 +126,9 @@ export function ProductEditor({
     useState<TitleRecommendation | null>(null);
   const [titleRecommendationStatus, setTitleRecommendationStatus] =
     useState("");
+  const [preferredSourcingTitleKeyword, setPreferredSourcingTitleKeyword] =
+    useState("");
+  const [tagSelectionStatus, setTagSelectionStatus] = useState("");
   const [message, setMessage] = useState("저장됨");
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [thumbnailUrl, setThumbnailUrl] = useState("");
@@ -159,6 +166,16 @@ export function ProductEditor({
         ? form.sellingPrice - Number(initial.supplier.supplierPrice)
         : null,
     [form.sellingPrice, initial.supplier.supplierPrice],
+  );
+  const sourcingRegistrationDraft = useMemo(
+    () =>
+      registrationContext
+        ? buildSourcingRegistrationDraft(
+            registrationContext.sourcingKeyword,
+            registrationContext.relatedKeywords,
+          )
+        : null,
+    [registrationContext],
   );
 
   useEffect(() => {
@@ -355,6 +372,13 @@ export function ProductEditor({
   ]);
 
   async function submit(action: "draft" | "ready" | "revert-to-draft") {
+    if (registrationContext && form.title.trim().length > 50) {
+      setErrors({
+        title: "상품명은 50자를 넘길 수 없습니다.",
+      });
+      setMessage("상품명을 50자 이하로 줄여 주세요.");
+      return null;
+    }
     setSaving(true);
     setErrors({});
     setMessage("저장 중…");
@@ -433,6 +457,53 @@ export function ProductEditor({
 
   async function recommendProductTitle() {
     const title = form.title.trim();
+    if (registrationContext && sourcingRegistrationDraft) {
+      setRecommendingTitle(true);
+      setTitleRecommendation(null);
+      setTitleRecommendationStatus("소싱 키워드 분류와 검색 품질 규칙을 적용하는 중입니다.");
+      const draft = buildSourcingRegistrationDraft(
+        registrationContext.sourcingKeyword,
+        registrationContext.relatedKeywords,
+        { preferredTitleKeyword: preferredSourcingTitleKeyword },
+      );
+      if (!draft.title) {
+        setTitleRecommendationStatus(
+          "검색수 1,000 이하로 분류된 상품명 키워드를 먼저 선택해 주세요.",
+        );
+        setRecommendingTitle(false);
+        return;
+      }
+      setTitleRecommendation({
+        title: draft.title,
+        source: "sourcing_rules",
+        analysis: {
+          productType: registrationContext.sourcingKeyword,
+          materials: [],
+          uses: [],
+          modifiers: [],
+          removedTerms: [],
+        },
+        keywordEvidence: draft.usedTitleKeywords.map((keyword) => {
+          const source = registrationContext.relatedKeywords.find(
+            (item) =>
+              item.placement === "product_name" && item.keyword === keyword,
+          );
+          return {
+            keyword,
+            totalMonthlySearchVolume: source?.monthlySearchVolume ?? null,
+            competition: "unknown" as const,
+            status: source?.monthlySearchVolume == null
+              ? "not-found" as const
+              : "success" as const,
+          };
+        }),
+        relatedKeywords: [],
+        notices: draft.warnings,
+      });
+      setTitleRecommendationStatus("");
+      setRecommendingTitle(false);
+      return;
+    }
     if (title.length < 2) {
       setTitleRecommendationStatus(
         "판매용 상품명을 두 글자 이상 입력해 주세요.",
@@ -483,6 +554,29 @@ export function ProductEditor({
     } finally {
       setRecommendingTitle(false);
     }
+  }
+
+  function toggleSourcingTag(tag: string) {
+    setForm((current) => {
+      const normalized = tag.trim();
+      const selected = current.searchTags.includes(normalized);
+      if (selected) {
+        setTagSelectionStatus("");
+        return {
+          ...current,
+          searchTags: current.searchTags.filter((item) => item !== normalized),
+        };
+      }
+      if (current.searchTags.filter((item) => item.trim()).length >= 20) {
+        setTagSelectionStatus("검색 태그는 최대 20개까지 선택할 수 있습니다.");
+        return current;
+      }
+      setTagSelectionStatus("");
+      return {
+        ...current,
+        searchTags: [...current.searchTags.filter((item) => item.trim()), normalized],
+      };
+    });
   }
 
   async function uploadNaverImages() {
@@ -948,11 +1042,50 @@ export function ProductEditor({
                 )}
               </div>
               <div className="drawer-product-title-field">
+                {sourcingRegistrationDraft && (
+                  <label className="registration-title-basis">
+                    기준 상품명 검색어
+                    <select
+                      value={preferredSourcingTitleKeyword}
+                      onChange={(event) => {
+                        setPreferredSourcingTitleKeyword(event.target.value);
+                        setTitleRecommendation(null);
+                        setTitleRecommendationStatus("");
+                      }}
+                    >
+                      <option value="">검색수 높은 순으로 자동 조합</option>
+                      {sourcingRegistrationDraft.titleCandidates.map((keyword) => {
+                        const source = registrationContext?.relatedKeywords.find(
+                          (item) =>
+                            item.placement === "product_name" &&
+                            item.keyword === keyword,
+                        );
+                        return (
+                          <option value={keyword} key={keyword}>
+                            {keyword}
+                            {source?.monthlySearchVolume == null
+                              ? ""
+                              : ` · 월 ${source.monthlySearchVolume.toLocaleString("ko-KR")}`}
+                          </option>
+                        );
+                      })}
+                    </select>
+                    <small>
+                      검색수 1,000 이하 상품명 후보가 여러 개면 하나를 골라
+                      해당 표현을 우선한 추천을 만들 수 있습니다.
+                    </small>
+                  </label>
+                )}
                 <div className="drawer-product-title-heading">
                   <label htmlFor="product-selling-title">판매용 상품명</label>
                   <button
                     type="button"
-                    disabled={recommendingTitle || form.title.trim().length < 2}
+                    disabled={
+                      recommendingTitle ||
+                      (sourcingRegistrationDraft
+                        ? !sourcingRegistrationDraft.titleCandidates.length
+                        : form.title.trim().length < 2)
+                    }
                     onClick={() => void recommendProductTitle()}
                   >
                     {recommendingTitle ? "추천 분석 중…" : "상품명 추천"}
@@ -961,7 +1094,7 @@ export function ProductEditor({
                 <input
                   id="product-selling-title"
                   value={form.title}
-                  maxLength={200}
+                  maxLength={registrationContext ? 50 : 200}
                   onChange={(event) => {
                     setForm({ ...form, title: event.target.value });
                     setTitleRecommendation(null);
@@ -972,7 +1105,18 @@ export function ProductEditor({
                       void recommendNaverCategory(form.title);
                   }}
                 />
-                <small>{form.title.length}/200자</small>
+                <small>
+                  {form.title.length}/{registrationContext ? 50 : 200}자
+                </small>
+                {registrationContext && form.title.length > 40 && (
+                  <small className="registration-title-length-warning">
+                    40자를 넘었습니다. 핵심 상품과 수식어가 바로 이해되는지
+                    검토해 주세요. 최대 50자까지 입력할 수 있습니다.
+                  </small>
+                )}
+                {errors.title && (
+                  <small className="field-error">{errors.title}</small>
+                )}
                 <span className="drawer-original-title">
                   <small>원본 상품명</small>
                   <strong>{initial.supplier.originalName ?? "-"}</strong>
@@ -990,8 +1134,10 @@ export function ProductEditor({
                     <div className="drawer-title-recommendation-head">
                       <div>
                         <small>
-                          {titleRecommendation.source ===
-                          "rules_naver_search_ad"
+                          {titleRecommendation.source === "sourcing_rules"
+                            ? "소싱 분류 + 검색 품질 규칙"
+                            : titleRecommendation.source ===
+                                "rules_naver_search_ad"
                             ? "규칙 분석 + 네이버 검색광고 실제 데이터"
                             : "규칙 기반 기본 모드"}
                         </small>
@@ -1012,37 +1158,57 @@ export function ProductEditor({
                         이 상품명 적용
                       </button>
                     </div>
-                    <dl>
-                      <div>
-                        <dt>상품 유형</dt>
-                        <dd>{titleRecommendation.analysis.productType}</dd>
-                      </div>
-                      <div>
-                        <dt>소재·재질</dt>
-                        <dd>
-                          {titleRecommendation.analysis.materials.join(", ") ||
-                            "감지 안 됨"}
-                        </dd>
-                      </div>
-                      <div>
-                        <dt>용도</dt>
-                        <dd>
-                          {titleRecommendation.analysis.uses.join(", ") ||
-                            "감지 안 됨"}
-                        </dd>
-                      </div>
-                      <div>
-                        <dt>정리한 표현</dt>
-                        <dd>
-                          {titleRecommendation.analysis.removedTerms.join(
-                            ", ",
-                          ) || "없음"}
-                        </dd>
-                      </div>
-                    </dl>
+                    {titleRecommendation.source === "sourcing_rules" ? (
+                      <dl>
+                        <div>
+                          <dt>기본 상품 유형</dt>
+                          <dd>{titleRecommendation.analysis.productType}</dd>
+                        </div>
+                        <div>
+                          <dt>우선 기준 검색어</dt>
+                          <dd>
+                            {preferredSourcingTitleKeyword ||
+                              "검색수 높은 순 자동 조합"}
+                          </dd>
+                        </div>
+                      </dl>
+                    ) : (
+                      <dl>
+                        <div>
+                          <dt>상품 유형</dt>
+                          <dd>{titleRecommendation.analysis.productType}</dd>
+                        </div>
+                        <div>
+                          <dt>소재·재질</dt>
+                          <dd>
+                            {titleRecommendation.analysis.materials.join(", ") ||
+                              "감지 안 됨"}
+                          </dd>
+                        </div>
+                        <div>
+                          <dt>용도</dt>
+                          <dd>
+                            {titleRecommendation.analysis.uses.join(", ") ||
+                              "감지 안 됨"}
+                          </dd>
+                        </div>
+                        <div>
+                          <dt>정리한 표현</dt>
+                          <dd>
+                            {titleRecommendation.analysis.removedTerms.join(
+                              ", ",
+                            ) || "없음"}
+                          </dd>
+                        </div>
+                      </dl>
+                    )}
                     {titleRecommendation.keywordEvidence.length > 0 && (
                       <div className="drawer-title-keyword-evidence">
-                        <small>네이버 키워드 근거</small>
+                        <small>
+                          {titleRecommendation.source === "sourcing_rules"
+                            ? `추천에 사용한 상품명 키워드 (${titleRecommendation.keywordEvidence.length}개)`
+                            : "네이버 키워드 근거"}
+                        </small>
                         <div>
                           {titleRecommendation.keywordEvidence.map((item) => (
                             <span key={item.keyword}>
@@ -1059,26 +1225,68 @@ export function ProductEditor({
                       <p key={notice}>{notice}</p>
                     ))}
                     <small className="drawer-title-recommendation-disclaimer">
-                      검색량은 네이버 검색광고 API 값이며 추천 상품명이 검색
-                      노출이나 매출을 보장하지 않습니다.
+                      {titleRecommendation.source === "sourcing_rules"
+                        ? "검색수는 아이템스카우트에서 가져오거나 사용자가 입력한 값입니다. 추천 상품명은 검색 노출이나 매출을 보장하지 않습니다."
+                        : "검색량은 네이버 검색광고 API 값이며 추천 상품명이 검색 노출이나 매출을 보장하지 않습니다."}
                     </small>
                   </div>
                 )}
               </div>
-              <label>
-                검색 키워드
-                <input
-                  value={form.searchTags.join(", ")}
-                  placeholder="쉼표로 구분해 입력"
-                  onChange={(event) =>
-                    setForm({
-                      ...form,
-                      searchTags: event.target.value.split(","),
-                    })
-                  }
-                />
-                <small>최대 20개까지 입력할 수 있습니다.</small>
-              </label>
+              {sourcingRegistrationDraft ? (
+                <div className="registration-tag-selector">
+                  <strong>
+                    검색 태그 선택 (
+                    {form.searchTags.filter((tag) => tag.trim()).length}/20)
+                  </strong>
+                  <p>
+                    소싱 조사에서 태그로 분류한 후보입니다. 검색수와 관계없이
+                    실제 등록할 태그를 직접 선택하세요.
+                  </p>
+                  {sourcingRegistrationDraft.tagCandidates.length ? (
+                    <div>
+                      {sourcingRegistrationDraft.tagCandidates.map((tag) => {
+                        const tooLong = tag.length > 30;
+                        const selected = form.searchTags.includes(tag);
+                        return (
+                          <label
+                            key={tag}
+                            className={selected ? "selected" : undefined}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={selected}
+                              disabled={tooLong}
+                              onChange={() => toggleSourcingTag(tag)}
+                            />
+                            <span>{tag}</span>
+                            <small>{tooLong ? "30자 초과" : "태그 후보"}</small>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <small>소싱 조사에서 태그로 분류한 키워드가 없습니다.</small>
+                  )}
+                  {tagSelectionStatus && (
+                    <small className="field-error">{tagSelectionStatus}</small>
+                  )}
+                </div>
+              ) : (
+                <label>
+                  검색 키워드
+                  <input
+                    value={form.searchTags.join(", ")}
+                    placeholder="쉼표로 구분해 입력"
+                    onChange={(event) =>
+                      setForm({
+                        ...form,
+                        searchTags: event.target.value.split(","),
+                      })
+                    }
+                  />
+                  <small>최대 20개까지 입력할 수 있습니다.</small>
+                </label>
+              )}
               <div className="drawer-price-grid">
                 <label>
                   공급가

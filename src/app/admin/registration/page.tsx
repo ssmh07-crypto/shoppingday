@@ -121,7 +121,7 @@ async function renderPage(database: Database) {
                       {item.registrationProductId ? (
                         <Link
                           className="registration-edit-link"
-                          href={`/admin/products/${item.registrationProductId}/edit`}
+                          href={`/admin/registration/${item.id}/edit`}
                         >
                           등록 정보 편집
                         </Link>

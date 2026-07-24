@@ -49,7 +49,7 @@ export const sourcingRelatedKeywordSchema = z.object({
     "attribute",
     "category",
   ]),
-  source: z.literal("itemscout-xlsx"),
+  source: z.enum(["itemscout-xlsx", "manual"]),
   importedAt: z.iso.datetime(),
 });
 

@@ -65,6 +65,20 @@ export class SourcingResearchRepository {
       .orderBy(desc(sourcingResearches.updatedAt));
   }
 
+  async findRegistrationIdByProduct(ownerId: string, productId: string) {
+    const [row] = await this.database
+      .select({ id: sourcingResearches.id })
+      .from(sourcingResearches)
+      .where(
+        and(
+          eq(sourcingResearches.ownerId, ownerId),
+          eq(sourcingResearches.registrationProductId, productId),
+        ),
+      )
+      .limit(1);
+    return row?.id ?? null;
+  }
+
   async find(ownerId: string, id: string) {
     const [row] = await this.database
       .select()
@@ -134,15 +148,15 @@ export class SourcingResearchRepository {
 
       const changedFields = (["title", "searchTags", "sellingPrice"] as const)
         .filter((field) => JSON.stringify(current[field]) !== JSON.stringify(registrationInput[field]));
-      if (changedFields.length) {
+      // Once registration editing has started, the user's selected title,
+      // tags, and price take precedence over later sourcing-note changes.
+      if (current.status === "draft" && changedFields.length) {
         const [updatedProduct] = await tx
           .update(products)
           .set({
             title: registrationInput.title,
             searchTags: registrationInput.searchTags,
             sellingPrice: registrationInput.sellingPrice,
-            status: current.status === "ready" ? "editing" : current.status,
-            readyAt: current.status === "ready" ? null : undefined,
             draftVersion: sql`${products.draftVersion} + 1`,
             updatedAt: new Date(),
           })

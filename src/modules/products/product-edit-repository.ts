@@ -1,6 +1,6 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
-import { and, asc, desc, eq, ilike, isNull, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, ilike, isNull, ne, or, sql } from "drizzle-orm";
 import { getDb, type Database } from "@/lib/db";
 import {
   productAuditLogs,
@@ -41,6 +41,7 @@ export type ProductEditorRecord = {
     wholeCategoryName: string;
   } | null;
   supplier: {
+    code?: string;
     name: string;
     externalProductId: string;
     originalName: string | null;
@@ -70,7 +71,7 @@ export class ProductEditRepository {
       isNull(products.ownerId),
     )!;
     const search = query.search?.trim();
-    const conditions = [ownership];
+    const conditions = [ownership, ne(suppliers.code, "sourcing")];
     if (search)
       conditions.push(
         or(
@@ -175,7 +176,7 @@ export class ProductEditRepository {
           supplierProducts,
           eq(supplierProducts.id, productSupplierLinks.supplierProductId),
         )
-        .where(ownership),
+        .where(and(ownership, ne(suppliers.code, "sourcing"))),
     ]);
     return {
       items,
@@ -217,6 +218,7 @@ export class ProductEditRepository {
           wholeCategoryName: naverCommerceCategories.wholeCategoryName,
         },
         supplier: {
+          code: suppliers.code,
           name: suppliers.name,
           externalProductId: supplierProducts.externalProductId,
           originalName: supplierProducts.originalName,

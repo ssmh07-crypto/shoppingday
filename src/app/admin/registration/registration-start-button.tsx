@@ -29,7 +29,7 @@ export function RegistrationStartButton({
       if (!response.ok || !body?.data?.productId) {
         throw new Error(body?.error?.message ?? "상품 등록 초안을 만들지 못했습니다.");
       }
-      router.push(`/admin/products/${body.data.productId}/edit`);
+      router.push(`/admin/registration/${researchId}/edit`);
       router.refresh();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "상품 등록 초안을 만들지 못했습니다.");

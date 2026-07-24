@@ -4,6 +4,7 @@ import { useMemo, useState, type ChangeEvent, type ReactNode } from "react";
 import {
   mergeImportedKeywords,
   parseItemScoutWorkbook,
+  parseManualRelatedKeywords,
 } from "@/modules/sourcing/itemscout-import";
 import { buildSourcingRegistrationDraft } from "@/modules/sourcing/registration-draft";
 import {
@@ -103,6 +104,7 @@ export function SourcingWorkspace({
   const [creating, setCreating] = useState(!initialDetail);
   const [busy, setBusy] = useState(false);
   const [importingKeywords, setImportingKeywords] = useState(false);
+  const [manualKeywordText, setManualKeywordText] = useState("");
   const [keywordQuery, setKeywordQuery] = useState("");
   const [keywordPlacementFilter, setKeywordPlacementFilter] =
     useState<SourcingKeywordPlacement | "all">("all");
@@ -269,7 +271,7 @@ export function SourcingWorkspace({
       setKeywordPlacementFilter("all");
       setKeywordQuery("");
       setMessage(
-        `${imported.sourceRowCount}행에서 키워드 ${imported.keywords.length}개를 가져왔습니다. 중복 ${imported.duplicateCount}개는 합쳤습니다.`,
+        `${imported.sourceRowCount}행에서 키워드 ${imported.keywords.length}개를 누적 목록에 반영했습니다. 파일 내부 중복 ${imported.duplicateCount}개는 합쳤습니다.`,
       );
     } catch (caught) {
       setError(errorMessage(caught));
@@ -277,6 +279,28 @@ export function SourcingWorkspace({
       input.value = "";
       setImportingKeywords(false);
     }
+  }
+
+  function addManualKeywords() {
+    const parsed = parseManualRelatedKeywords(manualKeywordText);
+    if (!parsed.keywords.length) {
+      setError("추가할 연관키워드를 한 줄에 하나씩 입력해 주세요.");
+      return;
+    }
+    setDraft((current) => ({
+      ...current,
+      relatedKeywords: mergeImportedKeywords(
+        current.relatedKeywords,
+        parsed.keywords,
+      ),
+    }));
+    setManualKeywordText("");
+    setKeywordPlacementFilter("all");
+    setKeywordQuery("");
+    setError(null);
+    setMessage(
+      `직접 입력한 키워드 ${parsed.keywords.length}개를 누적 목록에 반영했습니다.`,
+    );
   }
 
   async function prepareRegistration() {
@@ -288,6 +312,21 @@ export function SourcingWorkspace({
     setError(null);
     if (productOptions.length) return;
     await loadProductOptions();
+  }
+
+  function toggleRegistrationTag(tag: string) {
+    setRegistrationTags((current) => {
+      if (current.includes(tag)) {
+        setError(null);
+        return current.filter((item) => item !== tag);
+      }
+      if (current.length >= 20) {
+        setError("검색 태그는 최대 20개까지 선택할 수 있습니다.");
+        return current;
+      }
+      setError(null);
+      return [...current, tag];
+    });
   }
 
   async function loadProductOptions(search = productSearch) {
@@ -523,8 +562,8 @@ export function SourcingWorkspace({
             <ResearchSection number="02" title="연관 키워드 분류" description="아이템스카우트 엑셀에서 키워드와 총 검색수만 가져온 뒤, 직접 검색한 결과에 따라 사용할 위치를 표시합니다.">
               <div className="sourcing-keyword-import">
                 <div>
-                  <strong>아이템스카우트 엑셀 가져오기</strong>
-                  <span>같은 키워드를 다시 가져오면 기존 분류를 유지하고 검색량을 새 값으로 바꿉니다.</span>
+                  <strong>아이템스카우트 엑셀 추가 가져오기</strong>
+                  <span>기존 키워드를 지우지 않고 새 키워드를 누적합니다. 같은 키워드는 기존 분류를 유지하고 검색량만 갱신합니다.</span>
                 </div>
                 <label className="sourcing-file-button">
                   <input
@@ -535,6 +574,22 @@ export function SourcingWorkspace({
                   />
                   {importingKeywords ? "엑셀 읽는 중…" : "엑셀 파일 선택"}
                 </label>
+              </div>
+              <div className="sourcing-keyword-manual">
+                <div>
+                  <strong>연관키워드 직접 추가</strong>
+                  <span>한 줄에 하나씩 입력하세요. 검색수를 함께 기록하려면 <code>키워드, 1200</code> 형식도 사용할 수 있습니다.</span>
+                </div>
+                <textarea
+                  rows={4}
+                  value={manualKeywordText}
+                  onChange={(event) => setManualKeywordText(event.target.value)}
+                  placeholder={"욕실 미끄럼방지\n물빠짐 욕실화, 420"}
+                  aria-label="직접 추가할 연관키워드"
+                />
+                <button type="button" onClick={addManualKeywords} disabled={!manualKeywordText.trim()}>
+                  키워드 추가
+                </button>
               </div>
 
               {draft.relatedKeywords.length ? (
@@ -749,7 +804,7 @@ export function SourcingWorkspace({
               </div>
             </ResearchSection>
 
-            <ResearchSection number="06" title="상품 등록 초안" description="직접 분류한 검색수 1,000 이하 키워드만 사용해 상품명과 검색 태그 초안을 준비합니다.">
+            <ResearchSection number="06" title="상품 등록 초안" description="상품명은 직접 분류한 검색수 1,000 이하 키워드로 만들고, 태그 후보는 검색수와 관계없이 모두 추출해 직접 선택합니다.">
               <div className="sourcing-registration-rule">
                 <strong>카테고리 키워드는 상품명에 절대 포함하지 않습니다.</strong>
                 <span>속성 키워드는 네이버 공식 속성값을 확인한 뒤 상품 편집 화면에서 선택합니다.</span>
@@ -764,7 +819,7 @@ export function SourcingWorkspace({
               </button>
               {registrationPrepared && (
                 <div className="sourcing-registration-draft">
-                  <Field label="판매용 상품명 초안" help={`${registrationTitle.length}/200자 · 최종 등록 전에 직접 확인하세요.`}>
+                  <Field label="판매용 상품명 초안" help={`${registrationTitle.length}/200자 · 정확성, 반복, 홍보어와 관련성을 최종 확인하세요.`}>
                     <input
                       value={registrationTitle}
                       maxLength={200}
@@ -773,14 +828,27 @@ export function SourcingWorkspace({
                     />
                   </Field>
                   <div className="sourcing-registration-group">
-                    <strong>검색 태그 자동 반영</strong>
-                    <div className="sourcing-registration-chips">
-                      {registrationTags.length ? registrationTags.map((tag) => (
-                        <button type="button" key={tag} onClick={() => setRegistrationTags((current) => current.filter((item) => item !== tag))}>
-                          {tag} ×
-                        </button>
-                      )) : <span>검색수 1,000 이하로 분류된 태그 키워드가 없습니다.</span>}
-                    </div>
+                    <strong>검색 태그 선택 ({registrationTags.length}/20)</strong>
+                    {registrationDraft.tagCandidates.length ? (
+                      <div className="sourcing-registration-tag-options">
+                        {registrationDraft.tagCandidates.map((tag) => {
+                          const tooLong = tag.length > 30;
+                          const selected = registrationTags.includes(tag);
+                          return (
+                            <label key={tag} className={selected ? "selected" : undefined}>
+                              <input
+                                type="checkbox"
+                                checked={selected}
+                                disabled={tooLong}
+                                onChange={() => toggleRegistrationTag(tag)}
+                              />
+                              <span>{tag}</span>
+                              <small>{tooLong ? "30자 초과" : "태그 후보"}</small>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    ) : <span className="sourcing-registration-empty">분류된 태그 키워드가 없습니다.</span>}
                   </div>
                   <KeywordReviewGroup title="네이버 속성 확인 목록" keywords={registrationDraft.attributeKeywords} empty="분류된 속성 키워드가 없습니다." />
                   <KeywordReviewGroup title="카테고리 선택 참고 목록 (상품명 제외)" keywords={registrationDraft.categoryKeywords} empty="분류된 카테고리 키워드가 없습니다." />
@@ -855,6 +923,7 @@ export function SourcingWorkspace({
     setRegistrationPrepared(false);
     setRegistrationTitle("");
     setRegistrationTags([]);
+    setManualKeywordText("");
     setTargetProductId("");
     setProductSearch("");
     setAppliedProductId(null);

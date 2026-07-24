@@ -25,6 +25,7 @@ describe("소싱 조사 화면", () => {
     expect(screen.getByText("메인 키워드가 명확하고 대다수 상품이 일치하는가?")).toBeInTheDocument();
     expect(screen.getByText("인증이 필요한 제품인가?")).toBeInTheDocument();
     expect(screen.getByText("엑셀 파일 선택")).toBeInTheDocument();
+    expect(screen.getByLabelText("직접 추가할 연관키워드")).toBeInTheDocument();
     expect(screen.getByText("소싱 목록")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "소싱 리스트 추가" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "임시저장" })).toBeInTheDocument();
@@ -197,6 +198,18 @@ describe("소싱 조사 화면", () => {
     const keywordTable = screen.getByRole("table");
     expect(within(keywordTable).queryByText("욕실화")).not.toBeInTheDocument();
     expect(within(keywordTable).getByText("낮은 욕실화")).toBeInTheDocument();
+  });
+
+  it("직접 입력한 연관키워드를 기존 목록에 누적한다", () => {
+    render(<SourcingWorkspace initialItems={[]} initialDetail={researchWithKeywords()} />);
+
+    fireEvent.change(screen.getByLabelText("직접 추가할 연관키워드"), {
+      target: { value: "물빠짐 욕실화, 420" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "키워드 추가" }));
+
+    expect(within(screen.getByRole("table")).getByText("물빠짐 욕실화")).toBeInTheDocument();
+    expect(within(screen.getByRole("table")).getByText("욕실화")).toBeInTheDocument();
   });
 });
 
