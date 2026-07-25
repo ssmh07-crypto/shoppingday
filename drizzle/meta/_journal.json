@@ -134,6 +134,13 @@
       "when": 1784966366322,
       "tag": "0018_hard_big_bertha",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1784969539244,
+      "tag": "0019_serious_ezekiel_stane",
+      "breakpoints": true
     }
   ]
 }

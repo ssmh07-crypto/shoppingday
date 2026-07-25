@@ -125,6 +125,10 @@ export function ProductEditor({
     initial.naverStoreConnectionId ?? "",
   );
   const [savingStoreTarget, setSavingStoreTarget] = useState(false);
+  const [selectedDeliveryPolicyId, setSelectedDeliveryPolicyId] = useState(
+    initial.naverPublicationPolicy?.deliveryPolicy?.id ?? "",
+  );
+  const [savingDeliveryPolicy, setSavingDeliveryPolicy] = useState(false);
   const [recommendingTitle, setRecommendingTitle] = useState(false);
   const [titleRecommendation, setTitleRecommendation] =
     useState<TitleRecommendation | null>(null);
@@ -211,6 +215,42 @@ export function ProductEditor({
           : "발행 대상 스토어를 변경하지 못했습니다.",
       );
       setSavingStoreTarget(false);
+    }
+  }
+
+  async function selectDeliveryPolicy(deliveryPolicyId: string) {
+    const previousDeliveryPolicyId = selectedDeliveryPolicyId;
+    setSelectedDeliveryPolicyId(deliveryPolicyId);
+    setSavingDeliveryPolicy(true);
+    setMessage("배송정책을 변경하는 중입니다.");
+    try {
+      const response = await fetch(
+        `/api/products/${initial.product.id}/naver-delivery-policy`,
+        {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ deliveryPolicyId }),
+        },
+      );
+      const body = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(
+          body?.error?.message ?? "배송정책을 변경하지 못했습니다.",
+        );
+      }
+      setMessage(
+        `배송정책 ${body.policy.policyCode} · ${body.policy.name}을 선택했습니다.`,
+      );
+      setPublicationRefreshKey((current) => current + 1);
+    } catch (error) {
+      setSelectedDeliveryPolicyId(previousDeliveryPolicyId);
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : "배송정책을 변경하지 못했습니다.",
+      );
+    } finally {
+      setSavingDeliveryPolicy(false);
     }
   }
   const sourcingRegistrationDraft = useMemo(
@@ -1836,6 +1876,43 @@ export function ProductEditor({
                   </p>
                 )}
               </div>
+              <div className="naver-store-target-field">
+                <strong>배송정책 관리번호</strong>
+                {(initial.naverDeliveryPolicies ?? []).length ? (
+                  <>
+                    <select
+                      aria-label="배송정책 관리번호"
+                      value={selectedDeliveryPolicyId}
+                      disabled={
+                        savingDeliveryPolicy ||
+                        savingStoreTarget ||
+                        publishingNaver
+                      }
+                      onChange={(event) =>
+                        void selectDeliveryPolicy(event.target.value)
+                      }
+                    >
+                      <option value="">배송정책을 선택해 주세요</option>
+                      {(initial.naverDeliveryPolicies ?? []).map((policy) => (
+                        <option key={policy.id} value={policy.id}>
+                          {policy.policyCode} · {policy.name}
+                        </option>
+                      ))}
+                    </select>
+                    <small>
+                      선택한 관리번호에 저장된 출고지·반품지·택배사·배송비
+                      정보가 실제 등록에 사용됩니다.
+                    </small>
+                  </>
+                ) : (
+                  <p>
+                    선택한 스토어에 저장된 배송정책이 없습니다.{" "}
+                    <a href="/admin/channels/naver">
+                      스마트스토어 설정에서 배송정책 만들기
+                    </a>
+                  </p>
+                )}
+              </div>
               {publicationInspectionStatus && (
                 <p role="status">{publicationInspectionStatus}</p>
               )}
@@ -1901,7 +1978,6 @@ export function ProductEditor({
                 initialDefaults={initial.naverPublicationPolicy.defaults}
                 initialOverrides={initial.naverPublicationPolicy.overrides}
                 categoryId={form.naverCategoryId}
-                storeConnectionId={selectedStoreId}
                 onSaved={() =>
                   setPublicationRefreshKey((current) => current + 1)
                 }

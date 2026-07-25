@@ -77,7 +77,6 @@ export default async function ProductSettingsPage({
                   : "/api/settings/channels/naver"
               }
               initialDefaults={naverPolicy}
-              storeConnectionId={selectedStore?.id}
             />
           </section>
         </div>

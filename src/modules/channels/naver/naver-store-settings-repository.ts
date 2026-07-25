@@ -1,7 +1,11 @@
 import "server-only";
-import { and, asc, count, desc, eq } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray } from "drizzle-orm";
 import type { Database } from "@/lib/db";
-import { naverStoreConnections } from "@/lib/db/schema";
+import {
+  naverDeliveryPolicyTemplates,
+  naverStoreConnections,
+  productNaverDeliveryPolicySelections,
+} from "@/lib/db/schema";
 import type { NaverStoreSettingsInput } from "./naver-store-settings";
 
 export class NaverStoreSettingsRepository {
@@ -121,6 +125,22 @@ export class NaverStoreSettingsRepository {
 
   async remove(userId: string, id: string) {
     return this.database.transaction(async (tx) => {
+      await tx
+        .delete(productNaverDeliveryPolicySelections)
+        .where(
+          inArray(
+            productNaverDeliveryPolicySelections.deliveryPolicyId,
+            tx
+              .select({ id: naverDeliveryPolicyTemplates.id })
+              .from(naverDeliveryPolicyTemplates)
+              .where(
+                and(
+                  eq(naverDeliveryPolicyTemplates.storeConnectionId, id),
+                  eq(naverDeliveryPolicyTemplates.userId, userId),
+                ),
+              ),
+          ),
+        );
       const [removed] = await tx
         .delete(naverStoreConnections)
         .where(

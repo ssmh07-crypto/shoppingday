@@ -63,9 +63,27 @@ describe("소싱 상품 등록 전용 편집", () => {
 
   it("카테고리 필수속성 조회 실패 후 다시 불러와 입력란을 표시한다", async () => {
     let requirementsAttempts = 0;
-    const fetchMock = vi.fn().mockImplementation((input: RequestInfo | URL) => {
+    const fetchMock = vi.fn().mockImplementation((
+      input: RequestInfo | URL,
+      init?: RequestInit,
+    ) => {
       const url = String(input);
       if (url.startsWith("/api/products/")) {
+        if (
+          url.endsWith("/naver-delivery-policy") &&
+          init?.method === "PATCH"
+        ) {
+          return Promise.resolve(
+            Response.json({
+              success: true,
+              policy: {
+                id: "22222222-2222-4222-8222-222222222222",
+                policyCode: "000001",
+                name: "기본 무료배송",
+              },
+            }),
+          );
+        }
         if (url.endsWith("/naver-publication")) {
           return Promise.resolve(
             Response.json({
@@ -169,6 +187,24 @@ describe("소싱 상품 등록 전용 편집", () => {
     expect(
       await screen.findByRole("combobox", { name: "주요소재" }),
     ).toBeVisible();
+    fireEvent.change(
+      screen.getByRole("combobox", { name: "배송정책 관리번호" }),
+      {
+        target: { value: "22222222-2222-4222-8222-222222222222" },
+      },
+    );
+    await screen.findByText(
+      "배송정책 000001 · 기본 무료배송을 선택했습니다.",
+    );
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/products/00000000-0000-4000-8000-000000000010/naver-delivery-policy",
+      expect.objectContaining({
+        method: "PATCH",
+        body: JSON.stringify({
+          deliveryPolicyId: "22222222-2222-4222-8222-222222222222",
+        }),
+      }),
+    );
     expect(requirementsAttempts).toBe(3);
   });
 });
@@ -214,7 +250,26 @@ function editorResponse() {
         defaults: emptyPublicationPolicy(),
         overrides: {},
         effective: emptyPublicationPolicy(),
+        deliveryPolicy: null,
       },
+      naverDeliveryPolicies: [
+        {
+          id: "22222222-2222-4222-8222-222222222222",
+          policyCode: "000001",
+          name: "기본 무료배송",
+        },
+      ],
+      naverStoreConnections: [
+        {
+          id: "11111111-1111-4111-8111-111111111111",
+          storeName: "테스트 스토어",
+          storeUrl: "https://smartstore.naver.com/test",
+          authType: "SELF",
+          accountId: null,
+          isDefault: true,
+        },
+      ],
+      naverStoreConnectionId: "11111111-1111-4111-8111-111111111111",
       product: {
         id: "00000000-0000-4000-8000-000000000010",
         status: "draft",

@@ -17,6 +17,7 @@ const jsonValueSchema: z.ZodType<DatabaseJsonValue> = z.lazy(() =>
 );
 
 const jsonObjectSchema = z.record(z.string(), jsonValueSchema);
+export const naverDeliveryInfoSchema = jsonObjectSchema;
 
 const policyFields = {
   singleStockQuantity: z.number().int().min(0).max(99_999_999).nullable(),

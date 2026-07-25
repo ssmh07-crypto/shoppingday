@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { DatabaseJsonObject } from "@/lib/db/schema";
 
 type Address = {
@@ -54,12 +54,13 @@ export function NaverDeliveryPolicyInput({
   const [status, setStatus] = useState("");
   const [loading, setLoading] = useState(true);
 
-  async function load() {
+  const load = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
     setStatus("");
     try {
       const response = await fetch(deliveryOptionsUrl(storeConnectionId), {
         cache: "no-store",
+        signal,
       });
       const body = await response.json().catch(() => null);
       if (!response.ok) {
@@ -71,46 +72,27 @@ export function NaverDeliveryPolicyInput({
       setOptions(body.data);
       setStatus("스마트스토어 배송 정보를 불러왔습니다.");
     } catch (error) {
+      if (signal?.aborted) return;
       setStatus(
         error instanceof Error
           ? error.message
           : "스마트스토어 배송 정보를 불러오지 못했습니다.",
       );
     } finally {
-      setLoading(false);
+      if (!signal?.aborted) setLoading(false);
     }
-  }
+  }, [storeConnectionId]);
 
   useEffect(() => {
     const controller = new AbortController();
-    void fetch(deliveryOptionsUrl(storeConnectionId), {
-      cache: "no-store",
-      signal: controller.signal,
-    })
-      .then(async (response) => {
-        const body = await response.json().catch(() => null);
-        if (!response.ok) {
-          throw new Error(
-            body?.error?.message ??
-              "스마트스토어 배송 정보를 불러오지 못했습니다.",
-          );
-        }
-        setOptions(body.data);
-        setStatus("스마트스토어 배송 정보를 불러왔습니다.");
-      })
-      .catch((error) => {
-        if (controller.signal.aborted) return;
-        setStatus(
-          error instanceof Error
-            ? error.message
-            : "스마트스토어 배송 정보를 불러오지 못했습니다.",
-        );
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
-      });
-    return () => controller.abort();
-  }, [storeConnectionId]);
+    const timeoutId = window.setTimeout(() => {
+      void load(controller.signal);
+    }, 0);
+    return () => {
+      window.clearTimeout(timeoutId);
+      controller.abort();
+    };
+  }, [load]);
 
   const deliveryFee = objectValue(value?.deliveryFee);
   const areaFee = objectValue(deliveryFee.deliveryFeeByArea);

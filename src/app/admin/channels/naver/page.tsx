@@ -6,6 +6,7 @@ import { isNaverCommerceConfigured } from "@/modules/channels/naver/naver-catego
 import { NaverStoreSettingsRepository } from "@/modules/channels/naver/naver-store-settings-repository";
 import { NaverCategorySyncButton } from "./naver-category-sync-button";
 import { NaverStoreSettingsForm } from "./naver-store-settings-form";
+import { NaverDeliveryPolicyManager } from "./naver-delivery-policy-manager";
 
 export const dynamic = "force-dynamic";
 
@@ -56,6 +57,7 @@ async function renderPage(
         </header>
 
         <NaverStoreSettingsForm initial={storeSettings} />
+        <NaverDeliveryPolicyManager stores={storeSettings} />
 
         {!configured ? (
           <section className="naver-channel-alert">

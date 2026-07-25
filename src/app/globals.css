@@ -21,6 +21,8 @@ body {
 button,
 input,
 select,
+option,
+optgroup,
 textarea,
 code,
 pre,
@@ -1597,7 +1599,7 @@ td small {
   font-weight: 800;
 }
 .drawer-description-html textarea {
-  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-family: var(--app-font-family);
 }
 .drawer-market {
   max-width: 620px;
@@ -1880,14 +1882,19 @@ td small {
   border: 1px solid #dfe4ee;
   border-radius: 6px;
   background: #f9fafc;
+  min-width: 0;
 }
 .drawer-naver-attribute-fields legend {
+  max-width: 100%;
   padding: 0 4px;
   color: #253047;
   font-size: 14px;
   font-weight: 750;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
 }
 .drawer-naver-attribute-fields legend small {
+  display: inline-block;
   margin-left: 7px;
   color: #697386;
   font-size: 11px;
@@ -1911,7 +1918,7 @@ td small {
 }
 .drawer-naver-attribute-options label {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 7px;
   min-width: 0;
   padding: 9px;
@@ -1924,9 +1931,10 @@ td small {
   flex: 0 0 auto;
 }
 .drawer-naver-attribute-options span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  min-width: 0;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 .drawer-naver-range-inputs {
   display: grid;
@@ -2454,6 +2462,14 @@ td small {
   }
 }
 @media (max-width: 520px) {
+  .naver-store-form-heading,
+  .naver-delivery-template-list article {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .naver-delivery-template-editor-heading {
+    grid-template-columns: 1fr;
+  }
   .inventory-heading {
     flex-direction: column;
   }
@@ -3250,6 +3266,84 @@ td small {
   border-radius: 10px;
   background: #fff;
   box-shadow: 0 5px 16px #1f293708;
+}
+.naver-delivery-policy-manager {
+  display: grid;
+  gap: 18px;
+  margin-bottom: 18px;
+  padding: 22px;
+  border: 1px solid #dfe4ee;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 5px 16px #1f293708;
+}
+.naver-delivery-policy-store,
+.naver-delivery-template-editor-heading label {
+  display: grid;
+  gap: 7px;
+  color: #344054;
+  font-size: 12px;
+  font-weight: 800;
+}
+.naver-delivery-policy-store select,
+.naver-delivery-template-editor-heading input {
+  width: 100%;
+  min-height: 42px;
+  padding: 0 11px;
+  border: 1px solid #ccd3df;
+  border-radius: 7px;
+  background: #fff;
+  color: #172033;
+  font-size: 14px;
+}
+.naver-delivery-template-list {
+  display: grid;
+  gap: 9px;
+}
+.naver-delivery-template-list article {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 13px;
+  border: 1px solid #e1e5ec;
+  border-radius: 7px;
+  background: #f9fafc;
+}
+.naver-delivery-template-list article > div {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+.naver-delivery-template-list code {
+  flex: 0 0 auto;
+  padding: 4px 7px;
+  border-radius: 5px;
+  background: #e9f8ef;
+  color: #08734d;
+  font-weight: 800;
+}
+.naver-delivery-template-list strong {
+  overflow-wrap: anywhere;
+}
+.naver-delivery-template-editor {
+  display: grid;
+  gap: 16px;
+  padding: 18px;
+  border: 1px solid #cfd8e6;
+  border-radius: 8px;
+  background: #f9fafc;
+}
+.naver-delivery-template-editor-heading {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.7fr) minmax(240px, 1fr);
+  align-items: end;
+  gap: 16px;
+}
+.naver-delivery-template-editor-heading h3 {
+  margin: 4px 0 0;
+  font-size: 16px;
 }
 .naver-store-form-heading {
   display: flex;

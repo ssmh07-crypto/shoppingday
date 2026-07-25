@@ -15,12 +15,17 @@ import {
 } from "./naver-publication-policy";
 import { ProductNotFoundError } from "@/modules/products/product-errors";
 import { NaverStoreSettingsRepository } from "./naver-store-settings-repository";
+import { NaverDeliveryPolicyRepository } from "./naver-delivery-policy-repository";
 
 export class NaverPublicationPolicyRepository {
   constructor(private readonly database: Database) {}
 
   async getDefault(userId: string, storeConnectionId?: string) {
     const storeId = await this.resolveStoreId(userId, storeConnectionId);
+    return this.getDefaultForStore(userId, storeId);
+  }
+
+  private async getDefaultForStore(userId: string, storeId: string) {
     const [row] = await this.database
       .select({ policy: channelPublicationPolicies.policy })
       .from(channelPublicationPolicies)
@@ -32,7 +37,10 @@ export class NaverPublicationPolicyRepository {
         ),
       )
       .limit(1);
-    return parseNaverPublicationPolicy(row?.policy);
+    return {
+      ...parseNaverPublicationPolicy(row?.policy),
+      deliveryInfo: null,
+    };
   }
 
   async saveDefault(
@@ -41,7 +49,10 @@ export class NaverPublicationPolicyRepository {
     storeConnectionId?: string,
   ) {
     const storeId = await this.resolveStoreId(userId, storeConnectionId);
-    const parsed = parseNaverPublicationPolicy(policy);
+    const parsed = {
+      ...parseNaverPublicationPolicy(policy),
+      deliveryInfo: null,
+    };
     await this.database
       .insert(channelPublicationPolicies)
       .values({
@@ -67,8 +78,8 @@ export class NaverPublicationPolicyRepository {
     storeConnectionId?: string,
   ) {
     const storeId = await this.resolveStoreId(userId, storeConnectionId);
-    const [defaults, owned, row] = await Promise.all([
-      this.getDefault(userId, storeId),
+    const [defaults, owned, row, deliveryPolicy] = await Promise.all([
+      this.getDefaultForStore(userId, storeId),
       this.database
         .select({ id: products.id })
         .from(products)
@@ -89,10 +100,29 @@ export class NaverPublicationPolicyRepository {
         )
         .limit(1)
         .then((rows) => rows[0]),
+      new NaverDeliveryPolicyRepository(this.database).getSelection(
+        productId,
+        userId,
+      ),
     ]);
     if (!owned) throw new ProductNotFoundError();
     const overrides = parseNaverPublicationPolicyOverrides(row?.policy);
-    return { defaults, overrides, effective: mergeNaverPublicationPolicy(defaults, overrides) };
+    delete overrides.deliveryInfo;
+    return {
+      defaults,
+      overrides,
+      effective: {
+        ...mergeNaverPublicationPolicy(defaults, overrides),
+        deliveryInfo: deliveryPolicy?.deliveryInfo ?? null,
+      },
+      deliveryPolicy: deliveryPolicy
+        ? {
+            id: deliveryPolicy.id,
+            policyCode: deliveryPolicy.policyCode,
+            name: deliveryPolicy.name,
+          }
+        : null,
+    };
   }
 
   async saveProductOverrides(
@@ -109,6 +139,7 @@ export class NaverPublicationPolicyRepository {
       .limit(1);
     if (!owned) throw new ProductNotFoundError();
     const parsed = parseNaverPublicationPolicyOverrides(overrides);
+    delete parsed.deliveryInfo;
     await this.database
       .insert(productPublicationPolicyOverrides)
       .values({
@@ -125,8 +156,28 @@ export class NaverPublicationPolicyRepository {
         ],
         set: { policy: parsed, updatedAt: new Date() },
       });
-    const defaults = await this.getDefault(userId, storeId);
-    return { defaults, overrides: parsed, effective: mergeNaverPublicationPolicy(defaults, parsed) };
+    const [defaults, deliveryPolicy] = await Promise.all([
+      this.getDefaultForStore(userId, storeId),
+      new NaverDeliveryPolicyRepository(this.database).getSelection(
+        productId,
+        userId,
+      ),
+    ]);
+    return {
+      defaults,
+      overrides: parsed,
+      effective: {
+        ...mergeNaverPublicationPolicy(defaults, parsed),
+        deliveryInfo: deliveryPolicy?.deliveryInfo ?? null,
+      },
+      deliveryPolicy: deliveryPolicy
+        ? {
+            id: deliveryPolicy.id,
+            policyCode: deliveryPolicy.policyCode,
+            name: deliveryPolicy.name,
+          }
+        : null,
+    };
   }
 
   private async resolveStoreId(userId: string, storeConnectionId?: string) {

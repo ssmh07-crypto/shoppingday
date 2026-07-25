@@ -13,7 +13,17 @@ export type ProductEditorInitial = {
     defaults: NaverPublicationPolicyData;
     overrides: NaverPublicationPolicyOverrides;
     effective: NaverPublicationPolicyData;
+    deliveryPolicy?: {
+      id: string;
+      policyCode: string;
+      name: string;
+    } | null;
   };
+  naverDeliveryPolicies?: Array<{
+    id: string;
+    policyCode: string;
+    name: string;
+  }>;
   naverStoreConnections: Array<{
     id: string;
     storeName: string;

@@ -3,6 +3,7 @@ import { and, eq, isNull, or } from "drizzle-orm";
 import type { Database } from "@/lib/db";
 import {
   naverStoreConnections,
+  productNaverDeliveryPolicySelections,
   productNaverStoreTargets,
   products,
 } from "@/lib/db/schema";
@@ -72,11 +73,29 @@ export class NaverStoreTargetRepository {
     if (!owned) throw new ProductNotFoundError();
     if (!store) throw new NaverStoreTargetNotFoundError();
     await this.database
-      .insert(productNaverStoreTargets)
-      .values({ productId, storeConnectionId })
-      .onConflictDoUpdate({
-        target: productNaverStoreTargets.productId,
-        set: { storeConnectionId, updatedAt: new Date() },
+      .transaction(async (tx) => {
+        const [current] = await tx
+          .select({ storeConnectionId: productNaverStoreTargets.storeConnectionId })
+          .from(productNaverStoreTargets)
+          .where(eq(productNaverStoreTargets.productId, productId))
+          .limit(1);
+        await tx
+          .insert(productNaverStoreTargets)
+          .values({ productId, storeConnectionId })
+          .onConflictDoUpdate({
+            target: productNaverStoreTargets.productId,
+            set: { storeConnectionId, updatedAt: new Date() },
+          });
+        if (
+          current &&
+          current.storeConnectionId !== storeConnectionId
+        ) {
+          await tx
+            .delete(productNaverDeliveryPolicySelections)
+            .where(
+              eq(productNaverDeliveryPolicySelections.productId, productId),
+            );
+        }
       });
     return store;
   }

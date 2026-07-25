@@ -3,6 +3,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { NaverDeliveryPolicyManager } from "@/app/admin/channels/naver/naver-delivery-policy-manager";
 import { NaverPublicationPolicyForm } from "@/app/admin/components/naver-publication-policy-form";
 import { emptyNaverPublicationPolicy } from "@/modules/channels/naver/naver-publication-policy";
 
@@ -17,19 +18,6 @@ describe("네이버 판매 정책 설정", () => {
     const fetchMock = vi.fn((input: RequestInfo | URL) => {
       if (String(input).includes("provided-notices")) {
         return Promise.resolve(Response.json({ success: true, data: [] }));
-      }
-      if (String(input).includes("delivery-options")) {
-        return Promise.resolve(
-          Response.json({
-            success: true,
-            data: {
-              releaseAddresses: [],
-              returnAddresses: [],
-              bundleGroups: [],
-              returnDeliveryCompanies: [],
-            },
-          }),
-        );
       }
       return Promise.resolve(Response.json({ success: true, policy: saved }));
     });
@@ -57,14 +45,11 @@ describe("네이버 판매 정책 설정", () => {
     );
   });
 
-  it("스마트스토어 주소록과 반품 택배사를 선택해 배송 정책으로 저장한다", async () => {
+  it("스토어 설정에서 주소록을 선택해 6자리 배송정책을 저장한다", async () => {
     let savedBody: Record<string, unknown> | undefined;
     const fetchMock = vi.fn(
       async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = String(input);
-        if (url.includes("provided-notices")) {
-          return Response.json({ success: true, data: [] });
-        }
         if (url.includes("delivery-options")) {
           return Response.json({
             success: true,
@@ -89,9 +74,7 @@ describe("네이버 판매 정책 설정", () => {
                   detailAddress: "",
                 },
               ],
-              bundleGroups: [
-                { id: 303, name: "기본 묶음배송", baseGroup: true },
-              ],
+              bundleGroups: [],
               returnDeliveryCompanies: [
                 {
                   id: 404,
@@ -102,24 +85,43 @@ describe("네이버 판매 정책 설정", () => {
             },
           });
         }
-        savedBody = JSON.parse(String(init?.body));
-        return Response.json({
-          success: true,
-          policy: savedBody,
-        });
+        if (init?.method === "POST") {
+          savedBody = JSON.parse(String(init.body));
+          return Response.json(
+            {
+              success: true,
+              policy: {
+                id: "policy-1",
+                storeConnectionId: "11111111-1111-4111-8111-111111111111",
+                policyCode: "000001",
+                ...savedBody,
+              },
+            },
+            { status: 201 },
+          );
+        }
+        return Response.json({ success: true, policies: [] });
       },
     );
     vi.stubGlobal("fetch", fetchMock);
 
     render(
-      <NaverPublicationPolicyForm
-        mode="default"
-        endpoint="/api/settings/channels/naver"
-        initialDefaults={emptyNaverPublicationPolicy}
+      <NaverDeliveryPolicyManager
+        stores={[
+          {
+            id: "11111111-1111-4111-8111-111111111111",
+            storeName: "테스트 스토어",
+            isDefault: true,
+          },
+        ]}
       />,
     );
 
+    fireEvent.click(screen.getByRole("button", { name: "배송정책 추가" }));
     await screen.findByText("스마트스토어 배송 정보를 불러왔습니다.");
+    fireEvent.change(screen.getByPlaceholderText("예: 기본 무료배송"), {
+      target: { value: "기본 무료배송" },
+    });
     fireEvent.change(screen.getByLabelText("발송 택배사"), {
       target: { value: "HANJIN" },
     });
@@ -132,56 +134,30 @@ describe("네이버 판매 정책 설정", () => {
     fireEvent.change(screen.getByLabelText("반품 택배사 계약"), {
       target: { value: "PRIMARY" },
     });
-    fireEvent.change(screen.getByLabelText("반품 배송비"), {
-      target: { value: "3000" },
-    });
-    fireEvent.change(screen.getByLabelText("교환 배송비"), {
-      target: { value: "6000" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "기본 정책 저장" }));
+    fireEvent.click(screen.getByRole("button", { name: "배송정책 저장" }));
 
-    await waitFor(() => expect(savedBody).toBeDefined());
-    expect(savedBody?.deliveryInfo).toMatchObject({
-      deliveryType: "DELIVERY",
-      deliveryAttributeType: "NORMAL",
-      deliveryCompany: "HANJIN",
-      claimDeliveryInfo: {
-        shippingAddressId: 101,
-        returnAddressId: 202,
-        returnDeliveryCompanyPriorityType: "PRIMARY",
-        returnDeliveryFee: 3000,
-        exchangeDeliveryFee: 6000,
+    await screen.findByText("000001");
+    expect(savedBody).toMatchObject({
+      storeConnectionId: "11111111-1111-4111-8111-111111111111",
+      name: "기본 무료배송",
+      deliveryInfo: {
+        deliveryCompany: "HANJIN",
+        claimDeliveryInfo: {
+          shippingAddressId: 101,
+          returnAddressId: 202,
+          returnDeliveryCompanyPriorityType: "PRIMARY",
+        },
       },
     });
   });
 
-  it("기본정책 상속 중에도 스토어 배송정보를 조회하고 선택할 수 있다", async () => {
-    const fetchMock = vi.fn((input: RequestInfo | URL) => {
-      if (String(input).includes("provided-notices")) {
-        return Promise.resolve(Response.json({ success: true, data: [] }));
-      }
-      return Promise.resolve(
-        Response.json({
-          success: true,
-          data: {
-            releaseAddresses: [
-              {
-                addressBookNo: 101,
-                name: "네이버 기본 출고지",
-                addressType: "RELEASE",
-                address: "서울시 테스트구",
-                baseAddress: "",
-                detailAddress: "",
-              },
-            ],
-            returnAddresses: [],
-            bundleGroups: [],
-            returnDeliveryCompanies: [],
-          },
-        }),
-      );
-    });
-    vi.stubGlobal("fetch", fetchMock);
+  it("상품별 판매정책 폼에서는 배송정보를 직접 편집하지 않는다", () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() =>
+        Promise.resolve(Response.json({ success: true, data: [] })),
+      ),
+    );
 
     render(
       <NaverPublicationPolicyForm
@@ -192,15 +168,7 @@ describe("네이버 판매 정책 설정", () => {
       />,
     );
 
-    expect(await screen.findByText("출고지 1개")).toBeInTheDocument();
-    const releaseAddress = screen.getByLabelText("출고지");
-    expect(releaseAddress).not.toBeDisabled();
-    fireEvent.change(releaseAddress, { target: { value: "101" } });
-    expect(releaseAddress).toHaveValue("101");
-
-    const deliveryField = releaseAddress.closest(".naver-policy-field");
-    expect(
-      deliveryField?.querySelector<HTMLInputElement>('input[type="checkbox"]'),
-    ).toBeChecked();
+    expect(screen.queryByLabelText("출고지")).not.toBeInTheDocument();
+    expect(screen.queryByText("배송 정책")).not.toBeInTheDocument();
   });
 });

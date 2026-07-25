@@ -7,7 +7,6 @@ import type {
   NaverPublicationPolicyOverrides,
 } from "@/lib/db/schema";
 import { mergeNaverPublicationPolicy } from "@/modules/channels/naver/naver-publication-policy";
-import { NaverDeliveryPolicyInput } from "./naver-delivery-policy-input";
 
 type PolicyKey = keyof NaverPublicationPolicyData;
 
@@ -18,7 +17,6 @@ export function NaverPublicationPolicyForm({
   initialOverrides = {},
   categoryId,
   onSaved,
-  storeConnectionId,
 }: {
   mode: "default" | "product";
   endpoint: string;
@@ -26,7 +24,6 @@ export function NaverPublicationPolicyForm({
   initialOverrides?: NaverPublicationPolicyOverrides;
   categoryId?: string | null;
   onSaved?: () => void;
-  storeConnectionId?: string | null;
 }) {
   const [defaults, setDefaults] = useState(initialDefaults);
   const [overrides, setOverrides] = useState(initialOverrides);
@@ -117,16 +114,10 @@ export function NaverPublicationPolicyForm({
           </label>
         )}
       </div>
-      <fieldset disabled={inherited(key) && key !== "deliveryInfo"}>
+      <fieldset disabled={inherited(key)}>
         {content}
       </fieldset>
-      {inherited(key) && (
-        <small>
-          {key === "deliveryInfo"
-            ? "스토어 배송정보는 조회할 수 있으며, 값을 선택하면 상품별 설정으로 전환됩니다."
-            : "채널 기본값을 사용합니다."}
-        </small>
-      )}
+      {inherited(key) && <small>채널 기본값을 사용합니다.</small>}
     </div>
   );
 
@@ -274,15 +265,6 @@ export function NaverPublicationPolicyForm({
               />
             )}
           </div>,
-        )}
-        {wrap(
-          "deliveryInfo",
-          "배송 정책",
-          <NaverDeliveryPolicyInput
-            value={policy.deliveryInfo}
-            onChange={(value) => setValue("deliveryInfo", value)}
-            storeConnectionId={storeConnectionId}
-          />,
         )}
         {wrap(
           "productInfoProvidedNotice",

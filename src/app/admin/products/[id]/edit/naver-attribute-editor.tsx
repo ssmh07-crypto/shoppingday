@@ -58,7 +58,7 @@ export function NaverAttributeEditor({
         const type = attribute.attributeClassificationType ?? "SINGLE_SELECT";
         return (
           <fieldset key={attribute.attributeSeq}>
-            <legend>
+            <legend title={attribute.attributeName}>
               {attribute.attributeName}
               <small>{attributeTypeLabel(type)}</small>
             </legend>
@@ -81,7 +81,10 @@ export function NaverAttributeEditor({
                   const max =
                     attribute.attributeValueMaxMatchingCount || options.length;
                   return (
-                    <label key={option.attributeValueSeq}>
+                    <label
+                      key={option.attributeValueSeq}
+                      title={candidateLabel(option, units)}
+                    >
                       <input
                         type="checkbox"
                         checked={checked}

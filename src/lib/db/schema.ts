@@ -430,6 +430,74 @@ export const productNaverStoreTargets = pgTable(
   ],
 );
 
+export const naverDeliveryPolicyTemplates = pgTable(
+  "naver_delivery_policy_templates",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => userProfiles.userId, { onDelete: "cascade" }),
+    storeConnectionId: uuid("store_connection_id")
+      .notNull()
+      .references(() => naverStoreConnections.id, { onDelete: "cascade" }),
+    policyCode: text("policy_code").notNull(),
+    name: text("name").notNull(),
+    deliveryInfo: jsonb("delivery_info")
+      .$type<DatabaseJsonObject>()
+      .notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("naver_delivery_policy_templates_store_code_uidx").on(
+      table.storeConnectionId,
+      table.policyCode,
+    ),
+    index("naver_delivery_policy_templates_user_store_idx").on(
+      table.userId,
+      table.storeConnectionId,
+      table.createdAt,
+    ),
+    check(
+      "naver_delivery_policy_templates_code_check",
+      sql`${table.policyCode} ~ '^[0-9]{6}$'`,
+    ),
+    check(
+      "naver_delivery_policy_templates_name_check",
+      sql`length(trim(${table.name})) between 1 and 100`,
+    ),
+  ],
+);
+
+export const productNaverDeliveryPolicySelections = pgTable(
+  "product_naver_delivery_policy_selections",
+  {
+    productId: uuid("product_id")
+      .primaryKey()
+      .references(() => products.id, { onDelete: "cascade" }),
+    deliveryPolicyId: uuid("delivery_policy_id")
+      .notNull()
+      .references(() => naverDeliveryPolicyTemplates.id, {
+        onDelete: "restrict",
+      }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("product_naver_delivery_policy_selections_policy_idx").on(
+      table.deliveryPolicyId,
+    ),
+  ],
+);
+
 export const channelPublicationPolicies = pgTable(
   "channel_publication_policies",
   {
