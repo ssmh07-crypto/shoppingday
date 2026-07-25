@@ -67,6 +67,16 @@ export interface NaverCategoriesClient {
   fetchProvidedNotice(type: string): Promise<NaverCommerceProvidedNotice>;
   uploadProductImages(files: NaverImageUploadFile[]): Promise<NaverCommerceUploadedImage[]>;
   createProduct(payload: NaverProductPayload): Promise<NaverCommerceCreatedProduct>;
+  updateProduct(originProductNo: string, payload: NaverProductPayload): Promise<NaverCommerceCreatedProduct>;
+  changeProductStatus(
+    originProductNo: string,
+    input: {
+      statusType: "SALE" | "OUTOFSTOCK" | "SUSPENSION";
+      stockQuantity?: number;
+    },
+  ): Promise<{ success: true }>;
+  deleteChannelProduct(channelProductNo: string): Promise<{ success: true }>;
+  deleteOriginProduct(originProductNo: string): Promise<{ success: true }>;
   fetchChannelProduct(channelProductNo: string): Promise<NaverCommerceChannelProduct>;
   fetchSellerAddresses(): Promise<NaverCommerceSellerAddress[]>;
   fetchDeliveryBundleGroups(): Promise<NaverCommerceDeliveryBundleGroup[]>;
@@ -181,6 +191,60 @@ export class NaverCommerceRelayClient implements NaverCategoriesClient {
     return parseNaverCommerceCreatedProduct(response);
   }
 
+  async updateProduct(originProductNo: string, payload: NaverProductPayload) {
+    assertProductNo(originProductNo);
+    const body = new TextEncoder().encode(JSON.stringify(payload));
+    const response = await this.request(
+      this.relayUrl(`v2/products/origin-products/${originProductNo}`),
+      {
+        method: "PUT",
+        body,
+        contentType: "application/json;charset=UTF-8",
+      },
+    );
+    return parseNaverCommerceCreatedProduct(response);
+  }
+
+  async changeProductStatus(
+    originProductNo: string,
+    input: {
+      statusType: "SALE" | "OUTOFSTOCK" | "SUSPENSION";
+      stockQuantity?: number;
+    },
+  ) {
+    assertProductNo(originProductNo);
+    const body = new TextEncoder().encode(JSON.stringify(input));
+    await this.request(
+      this.relayUrl(
+        `v1/products/origin-products/${originProductNo}/change-status`,
+      ),
+      {
+        method: "PUT",
+        body,
+        contentType: "application/json;charset=UTF-8",
+      },
+    );
+    return { success: true as const };
+  }
+
+  async deleteChannelProduct(channelProductNo: string) {
+    assertProductNo(channelProductNo);
+    await this.request(
+      this.relayUrl(`v2/products/channel-products/${channelProductNo}`),
+      { method: "DELETE" },
+    );
+    return { success: true as const };
+  }
+
+  async deleteOriginProduct(originProductNo: string) {
+    assertProductNo(originProductNo);
+    await this.request(
+      this.relayUrl(`v2/products/origin-products/${originProductNo}`),
+      { method: "DELETE" },
+    );
+    return { success: true as const };
+  }
+
   async fetchChannelProduct(channelProductNo: string) {
     if (!/^\d{1,20}$/.test(channelProductNo)) {
       throw new NaverCommerceError(
@@ -253,7 +317,7 @@ export class NaverCommerceRelayClient implements NaverCategoriesClient {
   private async request(
     url: URL,
     options: {
-      method?: "GET" | "POST";
+      method?: "GET" | "POST" | "PUT" | "DELETE";
       body?: Uint8Array;
       contentType?: string;
     } = {},
@@ -338,6 +402,15 @@ export class NaverCommerceRelayClient implements NaverCategoriesClient {
   }
 }
 
+function assertProductNo(value: string) {
+  if (!/^\d{1,20}$/.test(value)) {
+    throw new NaverCommerceError(
+      "request_failed",
+      "네이버 상품 번호 형식이 올바르지 않습니다.",
+    );
+  }
+}
+
 const relayQuerySchema = z.object({
   last: z.enum(["true", "false"]).optional(),
 });
@@ -355,7 +428,7 @@ const naverImageUrlSchema = z.url().refine((value) => {
 });
 const productCreateSchema = z.looseObject({
   originProduct: z.looseObject({
-    statusType: z.literal("SALE"),
+    statusType: z.enum(["SALE", "SUSPENSION"]),
     saleType: z.literal("NEW"),
     leafCategoryId: z.string().regex(/^\d{1,20}$/),
     name: z.string().trim().min(1).max(100),
@@ -376,6 +449,10 @@ const productCreateSchema = z.looseObject({
     channelProductDisplayStatusType: z.enum(["ON", "SUSPENSION"]),
   }),
 });
+const productStatusChangeSchema = z.object({
+  statusType: z.enum(["SALE", "OUTOFSTOCK", "SUSPENSION"]),
+  stockQuantity: z.number().int().min(0).max(99_999_999).optional(),
+});
 
 const RELAY_PATHS = [
   "/v1/categories",
@@ -392,6 +469,9 @@ const RELAY_PATHS = [
 const IMAGE_UPLOAD_PATH = "/v1/product-images/upload";
 const PRODUCT_CREATE_PATH = "/v2/products";
 const CHANNEL_PRODUCT_PATH = /^\/v2\/products\/channel-products\/(\d{1,20})$/;
+const ORIGIN_PRODUCT_PATH = /^\/v2\/products\/origin-products\/(\d{1,20})$/;
+const PRODUCT_STATUS_PATH =
+  /^\/v1\/products\/origin-products\/(\d{1,20})\/change-status$/;
 const MAX_PRODUCT_BODY_BYTES = 4 * 1024 * 1024;
 const MAX_IMAGE_COUNT = 10;
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
@@ -449,7 +529,22 @@ export function createNaverCommerceRelayHandler(
       request.method === "POST" && url.pathname === IMAGE_UPLOAD_PATH;
     const isProductCreate =
       request.method === "POST" && url.pathname === PRODUCT_CREATE_PATH;
-    if (!isReadRequest && !isImageUpload && !isProductCreate) {
+    const isProductUpdate =
+      request.method === "PUT" && ORIGIN_PRODUCT_PATH.test(url.pathname);
+    const isProductStatusChange =
+      request.method === "PUT" && PRODUCT_STATUS_PATH.test(url.pathname);
+    const isProductDelete =
+      request.method === "DELETE" &&
+      (CHANNEL_PRODUCT_PATH.test(url.pathname) ||
+        ORIGIN_PRODUCT_PATH.test(url.pathname));
+    if (
+      !isReadRequest &&
+      !isImageUpload &&
+      !isProductCreate &&
+      !isProductUpdate &&
+      !isProductStatusChange &&
+      !isProductDelete
+    ) {
       return relayJson(
         404,
         "relay_route_not_found",
@@ -487,13 +582,18 @@ export function createNaverCommerceRelayHandler(
       );
     }
 
-    const body = isImageUpload || isProductCreate
+    const body =
+      isImageUpload ||
+      isProductCreate ||
+      isProductUpdate ||
+      isProductStatusChange
       ? new Uint8Array(await request.arrayBuffer())
       : undefined;
     if (
       body &&
       ((isImageUpload && body.byteLength > MAX_IMAGE_TOTAL_BYTES + 1024 * 1024) ||
-        (isProductCreate && body.byteLength > MAX_PRODUCT_BODY_BYTES))
+        ((isProductCreate || isProductUpdate || isProductStatusChange) &&
+          body.byteLength > MAX_PRODUCT_BODY_BYTES))
     ) {
       return relayJson(413, "payload_too_large", "중계 요청 본문이 너무 큽니다.");
     }
@@ -559,9 +659,47 @@ async function handleRelayRequest(
   const channelProductMatch = CHANNEL_PRODUCT_PATH.exec(url.pathname);
   if (channelProductMatch) {
     if (url.search) {
-      return relayJson(400, "invalid_request", "채널 상품 조회에는 검색 조건을 사용할 수 없습니다.");
+      return relayJson(400, "invalid_request", "채널 상품 요청에는 검색 조건을 사용할 수 없습니다.");
+    }
+    if (request.method === "DELETE") {
+      return client.deleteChannelProduct(channelProductMatch[1]!);
     }
     return client.fetchChannelProduct(channelProductMatch[1]!);
+  }
+  const originProductMatch = ORIGIN_PRODUCT_PATH.exec(url.pathname);
+  if (originProductMatch) {
+    if (url.search) {
+      return relayJson(400, "invalid_request", "원상품 요청에는 검색 조건을 사용할 수 없습니다.");
+    }
+    if (request.method === "DELETE") {
+      return client.deleteOriginProduct(originProductMatch[1]!);
+    }
+    const input = parseRelayJsonBody(request, body);
+    if (input instanceof Response) return input;
+    const parsed = productCreateSchema.safeParse(input);
+    if (!parsed.success) {
+      return relayJson(400, "invalid_product", "상품 수정 필수값을 확인해 주세요.");
+    }
+    return client.updateProduct(
+      originProductMatch[1]!,
+      parsed.data as NaverProductPayload,
+    );
+  }
+  const statusMatch = PRODUCT_STATUS_PATH.exec(url.pathname);
+  if (statusMatch) {
+    if (url.search) {
+      return relayJson(400, "invalid_request", "판매 상태 변경에는 검색 조건을 사용할 수 없습니다.");
+    }
+    const input = parseRelayJsonBody(request, body);
+    if (input instanceof Response) return input;
+    const parsed = productStatusChangeSchema.safeParse(input);
+    if (
+      !parsed.success ||
+      (parsed.data.statusType === "SALE" && !parsed.data.stockQuantity)
+    ) {
+      return relayJson(400, "invalid_request", "판매 상태와 재고 수량을 확인해 주세요.");
+    }
+    return client.changeProductStatus(statusMatch[1]!, parsed.data);
   }
   if (url.pathname === PRODUCT_CREATE_PATH) {
     if (
@@ -571,14 +709,10 @@ async function handleRelayRequest(
     ) {
       return relayJson(400, "invalid_request", "상품 등록 요청이 올바르지 않습니다.");
     }
-    let input: unknown;
-    try {
-      input = JSON.parse(new TextDecoder().decode(body));
-    } catch {
-      return relayJson(400, "invalid_request", "상품 등록 JSON을 해석할 수 없습니다.");
-    }
+    const input = parseRelayJsonBody(request, body);
+    if (input instanceof Response) return input;
     const parsed = productCreateSchema.safeParse(input);
-    if (!parsed.success) {
+    if (!parsed.success || parsed.data.originProduct.statusType !== "SALE") {
       return relayJson(400, "invalid_product", "상품 등록 필수값을 확인해 주세요.");
     }
     return client.createProduct(parsed.data as NaverProductPayload);
@@ -650,6 +784,23 @@ async function handleRelayRequest(
   if (url.pathname === "/v1/product-attributes/attribute-values")
     return client.fetchProductAttributeValues(categoryId);
   return client.fetchStandardOptions(categoryId);
+}
+
+function parseRelayJsonBody(request: Request, body?: Uint8Array) {
+  if (
+    !body ||
+    !request.headers
+      .get("content-type")
+      ?.toLowerCase()
+      .startsWith("application/json")
+  ) {
+    return relayJson(400, "invalid_request", "JSON 요청 본문이 올바르지 않습니다.");
+  }
+  try {
+    return JSON.parse(new TextDecoder().decode(body)) as unknown;
+  } catch {
+    return relayJson(400, "invalid_request", "요청 JSON을 해석할 수 없습니다.");
+  }
 }
 
 async function parseRelayImageFiles(contentType: string | null, body: Uint8Array) {

@@ -7,10 +7,12 @@ import {
   NaverPublicationRepository,
   PublicationAlreadyExistsError,
   PublicationInProgressError,
+  PublicationNotPublishedError,
   PublicationStaleAttemptError,
 } from "@/modules/channels/naver/naver-publication-repository";
 import {
   NaverPublicationBlockedError,
+  NaverPublicationNotPublishedError,
   NaverPublicationService,
   NaverPublicationUnavailableError,
   NaverPublicationUpdateRequiredError,
@@ -27,6 +29,12 @@ const publishInputSchema = z.object({
   confirmed: z.literal(true),
   payloadHash: z.string().regex(/^[0-9a-f]{64}$/),
 });
+const updateInputSchema = publishInputSchema;
+const statusInputSchema = z.object({
+  confirmed: z.literal(true),
+  statusType: z.enum(["SALE", "OUTOFSTOCK", "SUSPENSION"]),
+});
+const deleteInputSchema = z.object({ confirmed: z.literal(true) });
 
 export async function GET(
   _: Request,
@@ -114,6 +122,144 @@ export async function POST(
       throw error;
     }
   });
+}
+
+export async function PUT(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  return withAdminProductRoute(async (user, database) => {
+    try {
+      const { id } = await params;
+      const input = updateInputSchema.parse(await request.json());
+      const targetStore = await new NaverStoreTargetRepository(
+        database,
+      ).getForProduct(id, user.id);
+      if (!targetStore) throw new NaverPublicationUnavailableError();
+      const result = await createPublicationService(
+        database,
+        user.id,
+        targetStore.id,
+      ).then((service) =>
+        service.update(
+          id,
+          user.id,
+          input.payloadHash,
+          targetStore.id,
+        ),
+      );
+      return NextResponse.json({ success: true, result });
+    } catch (error) {
+      return handlePublicationMutationError(error);
+    }
+  });
+}
+
+export async function PATCH(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  return withAdminProductRoute(async (user, database) => {
+    try {
+      const { id } = await params;
+      const input = statusInputSchema.parse(await request.json());
+      const targetStore = await new NaverStoreTargetRepository(
+        database,
+      ).getForProduct(id, user.id);
+      if (!targetStore) throw new NaverPublicationUnavailableError();
+      const result = await createPublicationService(
+        database,
+        user.id,
+        targetStore.id,
+      ).then((service) =>
+        service.changeStatus(
+          id,
+          user.id,
+          input.statusType,
+          targetStore.id,
+        ),
+      );
+      return NextResponse.json({ success: true, result });
+    } catch (error) {
+      return handlePublicationMutationError(error);
+    }
+  });
+}
+
+export async function DELETE(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  return withAdminProductRoute(async (user, database) => {
+    try {
+      const { id } = await params;
+      deleteInputSchema.parse(await request.json());
+      const targetStore = await new NaverStoreTargetRepository(
+        database,
+      ).getForProduct(id, user.id);
+      if (!targetStore) throw new NaverPublicationUnavailableError();
+      const result = await createPublicationService(
+        database,
+        user.id,
+        targetStore.id,
+      ).then((service) =>
+        service.remove(id, user.id, targetStore.id),
+      );
+      return NextResponse.json({ success: true, result });
+    } catch (error) {
+      return handlePublicationMutationError(error);
+    }
+  });
+}
+
+async function createPublicationService(
+  database: Parameters<typeof createConfiguredNaverClientForUser>[0],
+  userId: string,
+  storeConnectionId: string,
+) {
+  return new NaverPublicationService(
+    new ProductEditRepository(database),
+    new NaverPublicationPolicyRepository(database),
+    new NaverPublicationRepository(database),
+    await createConfiguredNaverClientForUser(
+      database,
+      userId,
+      undefined,
+      storeConnectionId,
+    ),
+  );
+}
+
+function handlePublicationMutationError(error: unknown) {
+  if (error instanceof NaverCommerceError) {
+    return NextResponse.json(
+      {
+        success: false,
+        error: { code: error.code, message: error.message },
+      },
+      {
+        status:
+          error.responseStatus && error.responseStatus < 500
+            ? 422
+            : error.code === "timeout"
+              ? 504
+              : 502,
+      },
+    );
+  }
+  if (error instanceof NaverPublicationUnavailableError) {
+    return publicationError(error, 503);
+  }
+  if (
+    error instanceof NaverPublicationBlockedError ||
+    error instanceof NaverPublicationNotPublishedError ||
+    error instanceof PublicationNotPublishedError ||
+    error instanceof PublicationInProgressError ||
+    error instanceof PublicationStaleAttemptError
+  ) {
+    return publicationError(error, 409);
+  }
+  throw error;
 }
 
 function publicationError(error: Error & { code?: string }, status: number) {

@@ -17,6 +17,10 @@
 - 판매자 주소록 목록 조회: <https://apicenter.commerce.naver.com/docs/commerce-api/current/get-page-addresses-sellers>
 - 묶음배송 그룹 다건 조회: <https://apicenter.commerce.naver.com/docs/commerce-api/current/get-delivery-bundle-group-list-product>
 - 반품 택배사 다건 조회: <https://apicenter.commerce.naver.com/docs/commerce-api/current/get-return-delivery-company-list-product>
+- 원상품 수정: <https://apicenter.commerce.naver.com/docs/commerce-api/current/update-origin-product-product>
+- 원상품 판매 상태 변경: <https://apicenter.commerce.naver.com/docs/commerce-api/current/read-channel-product-product>
+- 채널 상품 삭제: <https://apicenter.commerce.naver.com/docs/commerce-api/current/delete-channel-product-product>
+- 원상품 삭제: <https://apicenter.commerce.naver.com/docs/commerce-api/current/delete-origin-product-product>
 
 ## 연동 원칙
 
@@ -41,7 +45,10 @@
 - `product_publications` 발행 이력과 상품·채널 유일 제약을 추가했다. 트랜잭션 상태 전이, 요청 ID 기반 오래된 응답 차단, payload hash 비교, 오류·외부 상품번호 기록 및 관리자 상태 조회를 구현했다.
 - 관리자 최종 확인 후에만 제한형 HMAC 릴레이의 `POST /v2/products`를 호출한다. 릴레이는 JSON 크기와 필수 구조, 네이버 이미지 호스트를 다시 검증하며 성공 응답의 원상품번호와 스마트스토어 채널상품번호를 저장한다.
 - 네이버의 명시적 4xx 거부만 수정 후 재시도를 허용한다. 타임아웃·5xx는 응답 유실에 따른 중복 등록 위험이 있어 자동 재시도하지 않고 결과 확인 대상으로 남긴다.
-- 등록 결과 대사, 상품 수정·삭제·판매 상태 변경, 주문 정산 연동은 아직 구현되지 않았다. 해당 기능을 구현하기 전 위 공식 인덱스에서 현재 endpoint 규격을 다시 확인한다.
+- 등록된 상품의 가격·이미지·상품명·상세·옵션 변경사항은 `PUT /v2/products/origin-products/{originProductNo}` 전체 수정으로 반영한다. 기존 판매중지 상태는 수정 본문에 보존하고, 품절 상태는 수정 직후 상태 변경 API로 다시 적용한다.
+- 판매중·품절·판매중지는 `PUT /v1/products/origin-products/{originProductNo}/change-status`로 전환한다. 판매 재개 시 현재 활성 옵션 재고 합계를 함께 전달한다.
+- 삭제는 채널 상품을 먼저 삭제한 뒤 원상품을 삭제한다. 각 DELETE의 404는 재시도 가능한 완료 상태로 취급한다.
+- 등록 결과 대사와 주문·정산 연동은 아직 구현되지 않았다. 해당 기능을 구현하기 전 위 공식 인덱스에서 현재 endpoint 규격을 다시 확인한다.
 
 ## API 호출 IP
 

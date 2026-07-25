@@ -17,6 +17,7 @@ function publication(
     status: "published",
     originProductNo: "100000001",
     channelProductNo: "200000001",
+    remoteStatusType: "SALE",
     lastPayloadHash: currentHash,
     attemptedPayloadHash: currentHash,
     lastRequestId: "00000000-0000-4000-8000-000000000003",

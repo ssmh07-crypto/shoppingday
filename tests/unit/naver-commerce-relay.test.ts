@@ -112,6 +112,13 @@ function metadataClientMocks() {
       originProductNo: "100000001",
       channelProductNo: "200000001",
     }),
+    updateProduct: vi.fn().mockResolvedValue({
+      originProductNo: "100000001",
+      channelProductNo: "200000001",
+    }),
+    changeProductStatus: vi.fn().mockResolvedValue({ success: true }),
+    deleteChannelProduct: vi.fn().mockResolvedValue({ success: true }),
+    deleteOriginProduct: vi.fn().mockResolvedValue({ success: true }),
   };
 }
 
@@ -348,6 +355,7 @@ describe("네이버 커머스API 중계 클라이언트", () => {
     const fetcher = vi.fn<typeof fetch>(async (input, init) =>
       handler(new Request(input, init)),
     );
+    let mutationNonce = 0;
     const client = new NaverCommerceRelayClient(
       {
         relayUrl: "https://relay.example.test",
@@ -356,7 +364,7 @@ describe("네이버 커머스API 중계 클라이언트", () => {
       },
       fetcher,
       () => now,
-      () => nonce,
+      () => `mutation-nonce-${++mutationNonce}`,
     );
 
     await expect(client.createProduct(productPayload)).resolves.toEqual({
@@ -556,5 +564,57 @@ describe("네이버 커머스API 중계 클라이언트", () => {
       await signedRequest("/v2/products/channel-products/not-a-number"),
     );
     expect(invalid.status).toBe(404);
+  });
+
+  it("상품 수정, 판매 상태 변경, 삭제 요청을 서명해 허용된 경로로 전달한다", async () => {
+    const upstream = {
+      fetchCategories: vi.fn(),
+      fetchProductModels: vi.fn(),
+      ...metadataClientMocks(),
+    };
+    const handler = createNaverCommerceRelayHandler({
+      sharedSecret,
+      client: upstream,
+      now: () => now,
+    });
+    const fetcher = vi.fn<typeof fetch>(async (input, init) =>
+      handler(new Request(input, init)),
+    );
+    let productMutationNonce = 0;
+    const client = new NaverCommerceRelayClient(
+      {
+        relayUrl: "https://relay.example.test",
+        sharedSecret,
+        timeoutMs: 1000,
+      },
+      fetcher,
+      () => now,
+      () => `product-mutation-nonce-${++productMutationNonce}`,
+    );
+
+    await client.updateProduct("100000001", productPayload);
+    await client.changeProductStatus("100000001", {
+      statusType: "OUTOFSTOCK",
+      stockQuantity: 0,
+    });
+    await client.deleteChannelProduct("200000001");
+    await client.deleteOriginProduct("100000001");
+
+    expect(upstream.updateProduct).toHaveBeenCalledWith(
+      "100000001",
+      productPayload,
+    );
+    expect(upstream.changeProductStatus).toHaveBeenCalledWith("100000001", {
+      statusType: "OUTOFSTOCK",
+      stockQuantity: 0,
+    });
+    expect(upstream.deleteChannelProduct).toHaveBeenCalledWith("200000001");
+    expect(upstream.deleteOriginProduct).toHaveBeenCalledWith("100000001");
+    expect(fetcher.mock.calls.map((call) => call[1]?.method)).toEqual([
+      "PUT",
+      "PUT",
+      "DELETE",
+      "DELETE",
+    ]);
   });
 });

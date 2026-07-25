@@ -32,7 +32,7 @@ export type NaverProductPayloadIssue = {
 
 export type NaverProductPayload = {
   originProduct: {
-    statusType: "SALE";
+    statusType: "SALE" | "SUSPENSION";
     saleType: "NEW";
     leafCategoryId: string;
     name: string;

@@ -18,7 +18,14 @@ export class NaverPublicationService {
     private readonly products: ProductEditRepository,
     private readonly policies: NaverPublicationPolicyRepository,
     private readonly publications: NaverPublicationRepository,
-    private readonly client?: Pick<NaverCategoriesClient, "createProduct">,
+    private readonly client?: Pick<
+      NaverCategoriesClient,
+      | "createProduct"
+      | "updateProduct"
+      | "changeProductStatus"
+      | "deleteChannelProduct"
+      | "deleteOriginProduct"
+    >,
   ) {}
 
   async inspect(
@@ -135,6 +142,205 @@ export class NaverPublicationService {
     );
     return { kind: "published" as const, publication: summarizePublication(saved) };
   }
+
+  async update(
+    productId: string,
+    ownerId: string,
+    expectedPayloadHash: string,
+    storeConnectionId: string,
+  ) {
+    if (!this.client) throw new NaverPublicationUnavailableError();
+    const [current, policy, publication] = await Promise.all([
+      this.products.find(productId, ownerId),
+      this.policies.getForProduct(productId, ownerId, storeConnectionId),
+      this.publications.findForProduct(productId, ownerId, storeConnectionId),
+    ]);
+    if (!current) throw new ProductNotFoundError();
+    if (!publication?.originProductNo || !publication.channelProductNo) {
+      throw new NaverPublicationNotPublishedError();
+    }
+    const result = buildNaverProductPayload(
+      {
+        sellerManagementCode: current.supplier.externalProductId,
+        title: current.product.title,
+        sellingPrice: current.product.sellingPrice,
+        description: current.product.description,
+        naverCategoryId: current.product.naverCategoryId,
+        searchTags: current.product.searchTags,
+        selectedImages: current.product.selectedImages,
+        editedOptions: current.product.editedOptions,
+        naverAttributes: current.product.naverAttributes,
+      },
+      policy.effective,
+    );
+    if (!result.ok) {
+      throw new ProductValidationError(
+        Object.fromEntries(
+          result.issues.map((issue) => [issue.path, issue.message]),
+        ),
+      );
+    }
+    if (result.hash !== expectedPayloadHash) throw new ProductConflictError();
+    if (planNaverPublication(publication, result.hash) === "unchanged") {
+      return {
+        kind: "unchanged" as const,
+        publication: summarizePublication(publication),
+      };
+    }
+    const attempt = await this.publications.beginPublishing(
+      productId,
+      ownerId,
+      result.hash,
+      "update",
+      storeConnectionId,
+    );
+    const remoteStatusType =
+      !publication.remoteStatusType || publication.remoteStatusType === "DELETE"
+        ? "SALE"
+        : publication.remoteStatusType;
+    const updatePayload =
+      remoteStatusType === "SUSPENSION"
+        ? {
+            ...result.payload,
+            originProduct: {
+              ...result.payload.originProduct,
+              statusType: "SUSPENSION" as const,
+            },
+            smartstoreChannelProduct: {
+              ...result.payload.smartstoreChannelProduct,
+              channelProductDisplayStatusType: "SUSPENSION" as const,
+            },
+          }
+        : result.payload;
+    let updated;
+    try {
+      updated = await this.client.updateProduct(
+        publication.originProductNo,
+        updatePayload,
+      );
+      if (remoteStatusType === "OUTOFSTOCK") {
+        await this.client.changeProductStatus(publication.originProductNo, {
+          statusType: "OUTOFSTOCK",
+          stockQuantity: 0,
+        });
+      }
+    } catch (error) {
+      await this.publications.markFailed(
+        attempt.id,
+        attempt.lastRequestId,
+        publicationFailure(error),
+      );
+      throw error;
+    }
+    const saved = await this.publications.markUpdated(
+      attempt.id,
+      attempt.lastRequestId,
+      updated,
+      remoteStatusType,
+    );
+    return {
+      kind: "updated" as const,
+      publication: summarizePublication(saved),
+    };
+  }
+
+  async changeStatus(
+    productId: string,
+    ownerId: string,
+    statusType: "SALE" | "OUTOFSTOCK" | "SUSPENSION",
+    storeConnectionId: string,
+  ) {
+    if (!this.client) throw new NaverPublicationUnavailableError();
+    const [current, publication] = await Promise.all([
+      this.products.find(productId, ownerId),
+      this.publications.findForProduct(productId, ownerId, storeConnectionId),
+    ]);
+    if (!current) throw new ProductNotFoundError();
+    if (
+      !publication?.originProductNo ||
+      !publication.lastPayloadHash ||
+      publication.status === "deleted"
+    ) {
+      throw new NaverPublicationNotPublishedError();
+    }
+    const stockQuantity =
+      statusType === "SALE"
+        ? Math.max(
+            1,
+            current.product.editedOptions.combinations
+              .filter((combination) => combination.enabled)
+              .reduce(
+                (sum, combination) => sum + combination.stock,
+                0,
+              ) || 1,
+          )
+        : statusType === "OUTOFSTOCK"
+          ? 0
+          : undefined;
+    const attempt = await this.publications.beginPublishing(
+      productId,
+      ownerId,
+      publication.lastPayloadHash,
+      "update",
+      storeConnectionId,
+    );
+    try {
+      await this.client.changeProductStatus(publication.originProductNo, {
+        statusType,
+        ...(stockQuantity === undefined ? {} : { stockQuantity }),
+      });
+    } catch (error) {
+      await this.publications.markFailed(
+        attempt.id,
+        attempt.lastRequestId,
+        publicationFailure(error),
+      );
+      throw error;
+    }
+    const saved = await this.publications.markStatusChanged(
+      attempt.id,
+      attempt.lastRequestId,
+      statusType,
+    );
+    return { publication: summarizePublication(saved) };
+  }
+
+  async remove(
+    productId: string,
+    ownerId: string,
+    storeConnectionId: string,
+  ) {
+    if (!this.client) throw new NaverPublicationUnavailableError();
+    const publication = await this.publications.findForProduct(
+      productId,
+      ownerId,
+      storeConnectionId,
+    );
+    if (!publication?.originProductNo || !publication.channelProductNo) {
+      throw new NaverPublicationNotPublishedError();
+    }
+    const attempt = await this.publications.beginDeleting(
+      productId,
+      ownerId,
+      storeConnectionId,
+    );
+    try {
+      await this.client.deleteChannelProduct(publication.channelProductNo);
+      await this.client.deleteOriginProduct(publication.originProductNo);
+    } catch (error) {
+      await this.publications.markFailed(
+        attempt.id,
+        attempt.lastRequestId,
+        publicationFailure(error),
+      );
+      throw error;
+    }
+    const saved = await this.publications.markDeleted(
+      attempt.id,
+      attempt.lastRequestId,
+    );
+    return { publication: summarizePublication(saved) };
+  }
 }
 
 function publicationFailure(error: unknown) {
@@ -172,12 +378,20 @@ export class NaverPublicationUpdateRequiredError extends Error {
   }
 }
 
+export class NaverPublicationNotPublishedError extends Error {
+  readonly code = "naver_publication_not_published";
+  constructor() {
+    super("네이버에 등록된 상품을 찾지 못했습니다.");
+  }
+}
+
 function summarizePublication(publication: ProductPublicationRow | null) {
   if (!publication) return null;
   return {
     status: publication.status,
     originProductNo: publication.originProductNo,
     channelProductNo: publication.channelProductNo,
+    remoteStatusType: publication.remoteStatusType,
     lastPayloadHash: publication.lastPayloadHash,
     attemptedPayloadHash: publication.attemptedPayloadHash,
     attemptCount: publication.attemptCount,

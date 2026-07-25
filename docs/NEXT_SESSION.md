@@ -753,3 +753,11 @@ npm run naver:local-tunnel
 - Quick Tunnel URL은 재실행할 때 바뀐다. `npm run naver:local-tunnel`이 Worker의 `NAVER_COMMERCE_RELAY_URL_OVERRIDE` Secret을 갱신한다.
 
 배포 전에 dry-run 결과의 gzip 크기가 Cloudflare 무료 플랜 3 MiB 아래인지 확인한다.
+
+## 2026-07-25 스마트스토어 등록 상품 관리
+
+- 상품 편집의 스마트스토어 탭에서 이미 등록된 상품의 가격·이미지·상품명·상세·옵션 변경사항을 전체 수정 API로 반영할 수 있다.
+- 판매 재개, 품절 처리, 판매 중지 버튼으로 원상품 판매 상태를 변경하고 `product_publications.remote_status_type`에 마지막 확인 상태를 저장한다.
+- 네이버 상품 삭제는 오조작 방지를 위해 `삭제` 확인 문구를 요구한다. 채널 상품을 먼저 삭제하고 원상품을 삭제하며, 완료 후 로컬 발행 상태를 `deleted`로 기록한다.
+- HMAC 중계 허용 목록에 원상품 수정·상태 변경·채널 상품 삭제·원상품 삭제 경로를 추가했다. 상품번호는 숫자만 허용하고 임의 경로 전달은 계속 차단한다.
+- migration `0020_powerful_peter_quill.sql`은 원격 판매 상태 컬럼과 제약을 추가하며, 기존 발행 완료 상품은 `SALE`로 보정한다.

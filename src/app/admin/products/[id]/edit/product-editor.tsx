@@ -68,6 +68,7 @@ type PublicationInspection = {
     status: "publishing" | "published" | "failed" | "deleting" | "deleted";
     originProductNo: string | null;
     channelProductNo: string | null;
+    remoteStatusType: "SALE" | "OUTOFSTOCK" | "SUSPENSION" | "DELETE" | null;
     attemptCount: number;
     lastErrorCode: string | null;
     lastErrorMessage: string | null;
@@ -760,18 +761,20 @@ export function ProductEditor({
       }
       if (
         !inspection.action ||
-        !["create", "retry_create"].includes(inspection.action)
+        !["create", "retry_create", "update"].includes(inspection.action)
       ) {
         throw new Error(
           inspection.action === "unchanged"
             ? "이미 최신 상태로 등록된 상품입니다."
-            : inspection.action === "update"
-              ? "등록된 상품의 수정 연동은 아직 지원하지 않습니다."
-              : "이전 등록 요청의 결과를 먼저 확인해 주세요.",
+            : "이전 등록 요청의 결과를 먼저 확인해 주세요.",
         );
       }
       const actionLabel =
-        inspection.action === "retry_create" ? "등록을 다시 시도" : "신규 등록";
+        inspection.action === "update"
+          ? "등록 상품 정보 수정"
+          : inspection.action === "retry_create"
+            ? "등록을 다시 시도"
+            : "신규 등록";
       const confirmed = window.confirm(
         `[스마트스토어 실제 등록]\n\n상품명: ${form.title}\n판매가: ${Number(form.sellingPrice ?? 0).toLocaleString("ko-KR")}원\n작업: ${actionLabel}\n\n확인하면 네이버에 상품이 실제 등록되며 전시 정책에 따라 노출될 수 있습니다. 계속할까요?`,
       );
@@ -781,7 +784,7 @@ export function ProductEditor({
       const response = await fetch(
         `/api/products/${initial.product.id}/naver-publication`,
         {
-          method: "POST",
+          method: inspection.action === "update" ? "PUT" : "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
             confirmed: true,
@@ -798,14 +801,98 @@ export function ProductEditor({
       }
       const published = body.result?.publication;
       setMessage(
-        published?.channelProductNo
-          ? `스마트스토어 등록 완료 · 채널상품번호 ${published.channelProductNo}`
-          : "스마트스토어 등록을 완료했습니다.",
+        inspection.action === "update"
+          ? "스마트스토어 상품 변경사항을 반영했습니다."
+          : published?.channelProductNo
+            ? `스마트스토어 등록 완료 · 채널상품번호 ${published.channelProductNo}`
+            : "스마트스토어 등록을 완료했습니다.",
       );
       onMutated?.();
     } catch (error) {
       setMessage(
         error instanceof Error ? error.message : "스마트스토어 등록 실패",
+      );
+    } finally {
+      setPublishingNaver(false);
+      setPublicationRefreshKey((current) => current + 1);
+    }
+  }
+
+  async function changeNaverSaleStatus(
+    statusType: "SALE" | "OUTOFSTOCK" | "SUSPENSION",
+  ) {
+    const labels = {
+      SALE: "판매 재개",
+      OUTOFSTOCK: "품절 처리",
+      SUSPENSION: "판매 중지",
+    } as const;
+    if (
+      !window.confirm(
+        `[스마트스토어 ${labels[statusType]}]\n\n상품명: ${form.title}\n\n네이버 상품 상태를 실제로 변경할까요?`,
+      )
+    ) {
+      return;
+    }
+    setPublishingNaver(true);
+    setMessage(`스마트스토어 상품을 ${labels[statusType]}하는 중…`);
+    try {
+      const response = await fetch(
+        `/api/products/${initial.product.id}/naver-publication`,
+        {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ confirmed: true, statusType }),
+        },
+      );
+      const body = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(
+          body?.error?.message ?? "스마트스토어 판매 상태를 변경하지 못했습니다.",
+        );
+      }
+      setMessage(`스마트스토어 상품을 ${labels[statusType]}했습니다.`);
+      onMutated?.();
+    } catch (error) {
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : "스마트스토어 판매 상태를 변경하지 못했습니다.",
+      );
+    } finally {
+      setPublishingNaver(false);
+      setPublicationRefreshKey((current) => current + 1);
+    }
+  }
+
+  async function deleteNaverProduct() {
+    const confirmation = window.prompt(
+      `[네이버 상품 완전 삭제]\n\n상품명: ${form.title}\n\n채널 상품과 원상품이 차례로 삭제되며 되돌릴 수 없습니다. 계속하려면 '삭제'를 입력하세요.`,
+    );
+    if (confirmation !== "삭제") return;
+    setPublishingNaver(true);
+    setMessage("스마트스토어 상품을 삭제하는 중…");
+    try {
+      const response = await fetch(
+        `/api/products/${initial.product.id}/naver-publication`,
+        {
+          method: "DELETE",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ confirmed: true }),
+        },
+      );
+      const body = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(
+          body?.error?.message ?? "스마트스토어 상품을 삭제하지 못했습니다.",
+        );
+      }
+      setMessage("스마트스토어 채널 상품과 원상품을 삭제했습니다.");
+      onMutated?.();
+    } catch (error) {
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : "스마트스토어 상품을 삭제하지 못했습니다.",
       );
     } finally {
       setPublishingNaver(false);
@@ -1910,6 +1997,18 @@ export function ProductEditor({
                       </strong>
                     </div>
                   )}
+                  {publicationInspection.publication?.remoteStatusType &&
+                    publicationInspection.publication.remoteStatusType !==
+                      "DELETE" && (
+                      <div>
+                        <span>네이버 판매 상태</span>
+                        <strong>
+                          {naverRemoteStatusLabel(
+                            publicationInspection.publication.remoteStatusType,
+                          )}
+                        </strong>
+                      </div>
+                    )}
                   {!publicationInspection.ready && (
                     <ul>
                       {(publicationInspection.issues ?? []).map((issue) => (
@@ -1939,6 +2038,55 @@ export function ProductEditor({
                   )}
                 </div>
               )}
+              {publicationInspection?.publication?.originProductNo &&
+                publicationInspection.publication.channelProductNo &&
+                publicationInspection.publication.status !== "deleted" && (
+                  <div className="drawer-publication-actions">
+                    <strong>네이버 상품 운영</strong>
+                    <p>
+                      판매 상태는 즉시 반영됩니다. 가격·상품명·이미지 등 편집
+                      내용은 저장 후 아래 변경사항 반영 버튼을 사용하세요.
+                    </p>
+                    <div>
+                      <button
+                        type="button"
+                        className="secondary"
+                        disabled={publishingNaver}
+                        onClick={() => void changeNaverSaleStatus("SALE")}
+                      >
+                        판매 재개
+                      </button>
+                      <button
+                        type="button"
+                        className="secondary"
+                        disabled={publishingNaver}
+                        onClick={() =>
+                          void changeNaverSaleStatus("OUTOFSTOCK")
+                        }
+                      >
+                        품절 처리
+                      </button>
+                      <button
+                        type="button"
+                        className="secondary"
+                        disabled={publishingNaver}
+                        onClick={() =>
+                          void changeNaverSaleStatus("SUSPENSION")
+                        }
+                      >
+                        판매 중지
+                      </button>
+                      <button
+                        type="button"
+                        className="danger"
+                        disabled={publishingNaver}
+                        onClick={() => void deleteNaverProduct()}
+                      >
+                        네이버 상품 삭제
+                      </button>
+                    </div>
+                  </div>
+                )}
             </div>
             <div className="drawer-category-requirements">
               <strong>상품별 판매 정책</strong>
@@ -1969,14 +2117,24 @@ export function ProductEditor({
                 publishingNaver ||
                 !selectedStoreId ||
                 !publicationInspection?.ready ||
-                !["create", "retry_create"].includes(
+                !["create", "retry_create", "update"].includes(
                   publicationInspection.action ?? "",
                 )
               }
               onClick={() => void publishToNaver()}
             >
-              {publishingNaver ? "등록 확인 중…" : "스마트스토어 실제 등록"}
-              {!publishingNaver && <small>최종 확인 필요</small>}
+              {publishingNaver
+                ? "네이버 처리 중…"
+                : publicationInspection?.action === "update"
+                  ? "변경사항 스마트스토어 반영"
+                  : "스마트스토어 실제 등록"}
+              {!publishingNaver && (
+                <small>
+                  {publicationInspection?.action === "update"
+                    ? "가격·이미지·상품정보 수정"
+                    : "최종 확인 필요"}
+                </small>
+              )}
             </button>
             {dirty && (
               <small className="drawer-market-help">
@@ -2167,6 +2325,21 @@ function publicationStatusLabel(inspection: PublicationInspection) {
         deleted: "삭제됨",
       }[inspection.publication.status]
     : "미등록";
+}
+
+function naverRemoteStatusLabel(
+  status: NonNullable<
+    PublicationInspection["publication"]
+  >["remoteStatusType"],
+) {
+  return (
+    {
+      SALE: "판매 중",
+      OUTOFSTOCK: "품절",
+      SUSPENSION: "판매 중지",
+      DELETE: "삭제됨",
+    }[status ?? "SALE"] ?? status
+  );
 }
 
 function fromInitial(initial: ProductEditorInitial) {

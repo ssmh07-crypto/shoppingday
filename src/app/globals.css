@@ -1912,6 +1912,30 @@ td small {
   background: #fff1f1;
   color: #9b2c2c;
 }
+.drawer-publication-actions {
+  display: grid !important;
+  gap: 8px !important;
+  padding: 13px !important;
+  border: 1px solid #dfe4ee !important;
+  border-radius: 7px;
+  background: #f9fafc;
+}
+.drawer-publication-actions > p {
+  margin: 0;
+}
+.drawer-publication-actions > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+.drawer-publication-actions button {
+  min-height: 36px;
+}
+.drawer-publication-actions button.danger {
+  border: 1px solid #f0b7b7;
+  background: #fff1f1;
+  color: #9b2c2c;
+}
 .drawer-naver-attribute-fields {
   display: grid;
   gap: 12px;

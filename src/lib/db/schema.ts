@@ -592,6 +592,8 @@ export const productPublications = pgTable(
     status: productPublicationStatusEnum("status").notNull(),
     originProductNo: text("origin_product_no"),
     channelProductNo: text("channel_product_no"),
+    remoteStatusType: text("remote_status_type")
+      .$type<"SALE" | "OUTOFSTOCK" | "SUSPENSION" | "DELETE">(),
     lastPayloadHash: text("last_payload_hash"),
     attemptedPayloadHash: text("attempted_payload_hash").notNull(),
     lastRequestId: uuid("last_request_id").notNull(),
@@ -621,6 +623,10 @@ export const productPublications = pgTable(
     check(
       "product_publications_channel_check",
       sql`${table.channel} in ('naver')`,
+    ),
+    check(
+      "product_publications_remote_status_check",
+      sql`${table.remoteStatusType} is null or ${table.remoteStatusType} in ('SALE', 'OUTOFSTOCK', 'SUSPENSION', 'DELETE')`,
     ),
     check(
       "product_publications_last_payload_hash_check",

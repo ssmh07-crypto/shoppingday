@@ -25,6 +25,7 @@ function publication(
     status: "publishing",
     originProductNo: null,
     channelProductNo: null,
+    remoteStatusType: null,
     lastPayloadHash: null,
     attemptedPayloadHash: hash,
     lastRequestId: "00000000-0000-4000-8000-000000000003",
@@ -69,7 +70,26 @@ function setup() {
   const publications = {
     findForProduct: vi.fn().mockResolvedValue(null),
     beginPublishing: vi.fn().mockResolvedValue(attempt),
+    beginDeleting: vi.fn().mockResolvedValue(
+      publication({
+        status: "deleting",
+        originProductNo: "100000001",
+        channelProductNo: "200000001",
+        lastPayloadHash: hash,
+      }),
+    ),
     markPublished: vi.fn().mockResolvedValue(saved),
+    markUpdated: vi.fn().mockResolvedValue(saved),
+    markStatusChanged: vi.fn().mockResolvedValue(saved),
+    markDeleted: vi.fn().mockResolvedValue(
+      publication({
+        status: "deleted",
+        originProductNo: "100000001",
+        channelProductNo: "200000001",
+        remoteStatusType: "DELETE",
+        lastPayloadHash: hash,
+      }),
+    ),
     markFailed: vi.fn().mockResolvedValue(publication({ status: "failed" })),
   };
   const client = {
@@ -77,6 +97,10 @@ function setup() {
       originProductNo: "100000001",
       channelProductNo: "200000001",
     }),
+    updateProduct: vi.fn(),
+    changeProductStatus: vi.fn(),
+    deleteChannelProduct: vi.fn(),
+    deleteOriginProduct: vi.fn(),
   };
   const service = new NaverPublicationService(
     products as never,
@@ -156,5 +180,143 @@ describe("네이버 상품 발행 서비스", () => {
       },
     );
     expect(publications.markPublished).not.toHaveBeenCalled();
+  });
+
+  it("기존 스마트스토어 상품의 변경사항을 전체 수정 API로 반영한다", async () => {
+    const { service, publications, client, attempt } = setup();
+    const changedHash = "b".repeat(64);
+    const published = publication({
+      status: "published",
+      originProductNo: "100000001",
+      channelProductNo: "200000001",
+      remoteStatusType: "SALE",
+      lastPayloadHash: hash,
+    });
+    publications.findForProduct.mockResolvedValue(published);
+    buildPayload.mockReturnValue({ ok: true, payload, hash: changedHash });
+    client.updateProduct.mockResolvedValue({
+      originProductNo: "100000001",
+      channelProductNo: "200000001",
+    });
+
+    await expect(
+      service.update(
+        attempt.productId,
+        "owner-1",
+        changedHash,
+        published.storeConnectionId,
+      ),
+    ).resolves.toMatchObject({ kind: "updated" });
+
+    expect(client.updateProduct).toHaveBeenCalledWith(
+      published.originProductNo,
+      payload,
+    );
+    expect(publications.markUpdated).toHaveBeenCalledWith(
+      attempt.id,
+      attempt.lastRequestId,
+      {
+        originProductNo: "100000001",
+        channelProductNo: "200000001",
+      },
+      "SALE",
+    );
+  });
+
+  it("품절 상품을 수정한 뒤 품절 상태를 다시 적용한다", async () => {
+    const { service, publications, client, attempt } = setup();
+    const changedHash = "b".repeat(64);
+    const published = publication({
+      status: "published",
+      originProductNo: "100000001",
+      channelProductNo: "200000001",
+      remoteStatusType: "OUTOFSTOCK",
+      lastPayloadHash: hash,
+    });
+    publications.findForProduct.mockResolvedValue(published);
+    buildPayload.mockReturnValue({ ok: true, payload, hash: changedHash });
+    client.updateProduct.mockResolvedValue({
+      originProductNo: "100000001",
+      channelProductNo: "200000001",
+    });
+    client.changeProductStatus.mockResolvedValue({ success: true });
+
+    await service.update(
+      attempt.productId,
+      "owner-1",
+      changedHash,
+      published.storeConnectionId,
+    );
+
+    expect(client.changeProductStatus).toHaveBeenCalledWith("100000001", {
+      statusType: "OUTOFSTOCK",
+      stockQuantity: 0,
+    });
+    expect(publications.markUpdated).toHaveBeenCalledWith(
+      attempt.id,
+      attempt.lastRequestId,
+      expect.any(Object),
+      "OUTOFSTOCK",
+    );
+  });
+
+  it("상품을 품절 처리하고 원격 상태를 저장한다", async () => {
+    const { service, publications, client, attempt } = setup();
+    const published = publication({
+      status: "published",
+      originProductNo: "100000001",
+      channelProductNo: "200000001",
+      remoteStatusType: "SALE",
+      lastPayloadHash: hash,
+    });
+    publications.findForProduct.mockResolvedValue(published);
+    client.changeProductStatus.mockResolvedValue({ success: true });
+
+    await service.changeStatus(
+      attempt.productId,
+      "owner-1",
+      "OUTOFSTOCK",
+      published.storeConnectionId,
+    );
+
+    expect(client.changeProductStatus).toHaveBeenCalledWith("100000001", {
+      statusType: "OUTOFSTOCK",
+      stockQuantity: 0,
+    });
+    expect(publications.markStatusChanged).toHaveBeenCalledWith(
+      attempt.id,
+      attempt.lastRequestId,
+      "OUTOFSTOCK",
+    );
+  });
+
+  it("채널 상품을 먼저 지운 뒤 원상품을 삭제한다", async () => {
+    const { service, publications, client, attempt } = setup();
+    const published = publication({
+      status: "published",
+      originProductNo: "100000001",
+      channelProductNo: "200000001",
+      remoteStatusType: "SALE",
+      lastPayloadHash: hash,
+    });
+    publications.findForProduct.mockResolvedValue(published);
+    client.deleteChannelProduct.mockResolvedValue({ success: true });
+    client.deleteOriginProduct.mockResolvedValue({ success: true });
+
+    await service.remove(
+      attempt.productId,
+      "owner-1",
+      published.storeConnectionId,
+    );
+
+    expect(client.deleteChannelProduct).toHaveBeenCalledWith("200000001");
+    expect(client.deleteOriginProduct).toHaveBeenCalledWith("100000001");
+    expect(
+      client.deleteChannelProduct.mock.invocationCallOrder[0],
+    ).toBeLessThan(client.deleteOriginProduct.mock.invocationCallOrder[0]!);
+    expect(publications.markDeleted).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.any(String),
+    );
   });
 });

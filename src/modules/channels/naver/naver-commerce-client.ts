@@ -523,6 +523,64 @@ export class NaverCommerceClient {
     };
   }
 
+  async updateProduct(originProductNo: string, payload: NaverProductPayload) {
+    assertNaverProductNo(originProductNo, "원상품");
+    const response = await this.authorizedJsonRequest(
+      "PUT",
+      new URL(
+        `${this.config.apiUrl}/v2/products/origin-products/${originProductNo}`,
+      ),
+      payload,
+    );
+    const parsed = await parseResponse(
+      response,
+      createdProductSchema,
+      "네이버 상품 수정 응답 형식이 올바르지 않습니다.",
+    );
+    return {
+      originProductNo: parsed.originProductNo,
+      channelProductNo: parsed.smartstoreChannelProductNo,
+    };
+  }
+
+  async changeProductStatus(
+    originProductNo: string,
+    input: {
+      statusType: "SALE" | "OUTOFSTOCK" | "SUSPENSION";
+      stockQuantity?: number;
+    },
+  ) {
+    assertNaverProductNo(originProductNo, "원상품");
+    await this.authorizedJsonRequest(
+      "PUT",
+      new URL(
+        `${this.config.apiUrl}/v1/products/origin-products/${originProductNo}/change-status`,
+      ),
+      input,
+    );
+    return { success: true as const };
+  }
+
+  async deleteChannelProduct(channelProductNo: string) {
+    assertNaverProductNo(channelProductNo, "채널 상품");
+    await this.authorizedDelete(
+      new URL(
+        `${this.config.apiUrl}/v2/products/channel-products/${channelProductNo}`,
+      ),
+    );
+    return { success: true as const };
+  }
+
+  async deleteOriginProduct(originProductNo: string) {
+    assertNaverProductNo(originProductNo, "원상품");
+    await this.authorizedDelete(
+      new URL(
+        `${this.config.apiUrl}/v2/products/origin-products/${originProductNo}`,
+      ),
+    );
+    return { success: true as const };
+  }
+
   private async authorizedFetch(
     url: URL,
     options: { allowNotFound?: boolean } = {},
@@ -580,12 +638,20 @@ export class NaverCommerceClient {
   }
 
   private async authorizedJsonPost(url: URL, value: unknown) {
+    return this.authorizedJsonRequest("POST", url, value);
+  }
+
+  private async authorizedJsonRequest(
+    method: "POST" | "PUT",
+    url: URL,
+    value: unknown,
+  ) {
     const body = JSON.stringify(value);
     const request = async (token: string, allowUnauthorized: boolean) =>
       this.request(
         url,
         {
-          method: "POST",
+          method,
           headers: {
             accept: "application/json;charset=UTF-8",
             authorization: `Bearer ${token}`,
@@ -594,6 +660,26 @@ export class NaverCommerceClient {
           body,
         },
         allowUnauthorized,
+      );
+    const response = await request(await this.getAccessToken(), true);
+    if (response.status !== 401) return response;
+    this.token = undefined;
+    return request(await this.getAccessToken(), false);
+  }
+
+  private async authorizedDelete(url: URL) {
+    const request = async (token: string, allowUnauthorized: boolean) =>
+      this.request(
+        url,
+        {
+          method: "DELETE",
+          headers: {
+            accept: "application/json;charset=UTF-8",
+            authorization: `Bearer ${token}`,
+          },
+        },
+        allowUnauthorized,
+        [404],
       );
     const response = await request(await this.getAccessToken(), true);
     if (response.status !== 401) return response;
@@ -763,6 +849,15 @@ async function parseResponse<T>(
     throw new NaverCommerceError("invalid_response", message, response.status);
   }
   return parsed.data;
+}
+
+function assertNaverProductNo(value: string, label: string) {
+  if (!/^\d{1,20}$/.test(value)) {
+    throw new NaverCommerceError(
+      "request_failed",
+      `네이버 ${label} 번호 형식이 올바르지 않습니다.`,
+    );
+  }
 }
 
 async function parseListResponse<T>(

@@ -1,6 +1,6 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
-import { and, eq, isNull, or, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, or, sql, type SQL } from "drizzle-orm";
 import type { Database } from "@/lib/db";
 import {
   productAuditLogs,
@@ -150,6 +150,7 @@ export class NaverPublicationRepository {
           status: "published",
           originProductNo: result.originProductNo,
           channelProductNo: result.channelProductNo,
+          remoteStatusType: "SALE",
           lastPayloadHash: sql`${productPublications.attemptedPayloadHash}`,
           lastErrorCode: null,
           lastErrorMessage: null,
@@ -183,6 +184,122 @@ export class NaverPublicationRepository {
     });
   }
 
+  async markUpdated(
+    publicationId: string,
+    requestId: string,
+    result: { originProductNo: string; channelProductNo: string },
+    remoteStatusType: "SALE" | "OUTOFSTOCK" | "SUSPENSION",
+  ) {
+    return this.finishPublishedMutation(publicationId, requestId, {
+      lastPayloadHash: sql`${productPublications.attemptedPayloadHash}`,
+      originProductNo: result.originProductNo,
+      channelProductNo: result.channelProductNo,
+      remoteStatusType,
+    }, "naver_publication_update_succeeded");
+  }
+
+  async markStatusChanged(
+    publicationId: string,
+    requestId: string,
+    remoteStatusType: "SALE" | "OUTOFSTOCK" | "SUSPENSION",
+  ) {
+    return this.finishPublishedMutation(
+      publicationId,
+      requestId,
+      { remoteStatusType },
+      "naver_publication_status_changed",
+    );
+  }
+
+  async beginDeleting(
+    productId: string,
+    ownerId: string,
+    storeConnectionId: string,
+  ) {
+    return this.database.transaction(async (tx) => {
+      const [publication] = await tx
+        .select()
+        .from(productPublications)
+        .innerJoin(products, eq(products.id, productPublications.productId))
+        .where(
+          and(
+            eq(productPublications.productId, productId),
+            eq(productPublications.channel, "naver"),
+            eq(productPublications.storeConnectionId, storeConnectionId),
+            or(eq(products.ownerId, ownerId), isNull(products.ownerId)),
+          ),
+        )
+        .for("update")
+        .limit(1);
+      const current = publication?.product_publications;
+      if (!current?.originProductNo || !current.channelProductNo) {
+        throw new PublicationNotPublishedError();
+      }
+      if (["publishing", "deleting"].includes(current.status)) {
+        throw new PublicationInProgressError();
+      }
+      const requestId = randomUUID();
+      const [updated] = await tx
+        .update(productPublications)
+        .set({
+          status: "deleting",
+          lastRequestId: requestId,
+          attemptCount: sql`${productPublications.attemptCount} + 1`,
+          lastErrorCode: null,
+          lastErrorMessage: null,
+          lastErrorHttpStatus: null,
+          lastAttemptedAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(eq(productPublications.id, current.id))
+        .returning();
+      await tx.insert(productAuditLogs).values({
+        actorId: ownerId,
+        entityId: productId,
+        action: "naver_publication_delete_started",
+        changedFields: ["publicationStatus"],
+        newValues: { status: "deleting", requestId },
+        requestId,
+      });
+      return updated!;
+    });
+  }
+
+  async markDeleted(publicationId: string, requestId: string) {
+    return this.database.transaction(async (tx) => {
+      const now = new Date();
+      const [publication] = await tx
+        .update(productPublications)
+        .set({
+          status: "deleted",
+          remoteStatusType: "DELETE",
+          lastErrorCode: null,
+          lastErrorMessage: null,
+          lastErrorHttpStatus: null,
+          lastSyncedAt: now,
+          updatedAt: now,
+        })
+        .where(
+          and(
+            eq(productPublications.id, publicationId),
+            eq(productPublications.lastRequestId, requestId),
+            eq(productPublications.status, "deleting"),
+          ),
+        )
+        .returning();
+      if (!publication) throw new PublicationStaleAttemptError();
+      await tx.insert(productAuditLogs).values({
+        actorId: await publicationOwner(tx, publication.productId),
+        entityId: publication.productId,
+        action: "naver_publication_deleted",
+        changedFields: ["publicationStatus"],
+        newValues: { status: "deleted" },
+        requestId,
+      });
+      return publication;
+    });
+  }
+
   async markFailed(
     publicationId: string,
     requestId: string,
@@ -202,7 +319,7 @@ export class NaverPublicationRepository {
           and(
             eq(productPublications.id, publicationId),
             eq(productPublications.lastRequestId, requestId),
-            eq(productPublications.status, "publishing"),
+            inArray(productPublications.status, ["publishing", "deleting"]),
           ),
         )
         .returning();
@@ -213,6 +330,54 @@ export class NaverPublicationRepository {
         action: "naver_publication_failed",
         changedFields: ["publicationStatus", "lastError"],
         newValues: { status: "failed", errorCode: error.code.slice(0, 100) },
+        requestId,
+      });
+      return publication;
+    });
+  }
+
+  private async finishPublishedMutation(
+    publicationId: string,
+    requestId: string,
+    values: {
+      lastPayloadHash?: string | SQL;
+      originProductNo?: string;
+      channelProductNo?: string;
+      remoteStatusType?: "SALE" | "OUTOFSTOCK" | "SUSPENSION" | "DELETE";
+    },
+    action: string,
+  ) {
+    return this.database.transaction(async (tx) => {
+      const now = new Date();
+      const [publication] = await tx
+        .update(productPublications)
+        .set({
+          ...values,
+          status: "published",
+          lastErrorCode: null,
+          lastErrorMessage: null,
+          lastErrorHttpStatus: null,
+          lastSyncedAt: now,
+          updatedAt: now,
+        })
+        .where(
+          and(
+            eq(productPublications.id, publicationId),
+            eq(productPublications.lastRequestId, requestId),
+            eq(productPublications.status, "publishing"),
+          ),
+        )
+        .returning();
+      if (!publication) throw new PublicationStaleAttemptError();
+      await tx.insert(productAuditLogs).values({
+        actorId: await publicationOwner(tx, publication.productId),
+        entityId: publication.productId,
+        action,
+        changedFields: ["publicationStatus"],
+        newValues: {
+          status: "published",
+          remoteStatusType: publication.remoteStatusType,
+        },
         requestId,
       });
       return publication;
