@@ -17,7 +17,7 @@ export async function GET() {
 
 export async function POST(request: Request) {
   return withAdminKeywordRoute(async (user, database) => {
-    const data = await createKeywordManagementService(database).create(
+    const data = await createKeywordManagementService(database, user.id).create(
       user.id,
       await request.json(),
     );
@@ -27,4 +27,3 @@ export async function POST(request: Request) {
     );
   });
 }
-

@@ -37,13 +37,34 @@ export const managedProductInputSchema = z.object({
   naverAttributes: z.array(naverRegisteredAttributeSchema).max(100).optional(),
   searchTags: stringList.optional(),
   commerceImport: naverCommerceImportStateSchema.optional(),
+  salePrice: z.number().int().nonnegative().nullable().optional(),
+  stockQuantity: z.number().int().nonnegative().nullable().optional(),
+  statusType: z.string().trim().max(30).optional(),
+  representativeImageUrl: z.url().optional(),
 });
 
 export const createManagedProductSchema = z.object({
   smartstoreUrl: z.url().max(2_000),
+  storeConnectionId: z.uuid().optional(),
   productInput: managedProductInputSchema.extend({
     supplierTitle: z.string().trim().max(keywordLimits.maximumProductTitleLength),
   }),
+});
+
+export const keywordRankObservationSchema = z.object({
+  keyword: z.string().trim().min(1).max(100),
+  rank: z.number().int().min(1).max(1000).nullable(),
+  checkedAt: z.coerce.date().optional(),
+  note: z.string().trim().max(300).default(""),
+});
+
+export const applyManagedProductToNaverSchema = z.object({
+  confirmed: z.literal(true),
+  title: z.string().trim().min(1).max(keywordLimits.maximumProductTitleLength),
+  searchTags: z
+    .array(z.string().trim().min(1).max(40))
+    .max(10)
+    .transform((values) => [...new Set(values)]),
 });
 
 export const productAnalysisSchema = z.object({

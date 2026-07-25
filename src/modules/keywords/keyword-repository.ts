@@ -16,6 +16,8 @@ import {
   keywordCandidates,
   keywordManagedProducts,
   keywordMetricCache,
+  keywordRankObservations,
+  naverStoreConnections,
   productKeywordAnalyses,
   productPublications,
   products,
@@ -45,6 +47,7 @@ export interface LocalPublishedProduct {
     storedUrl: string | null;
     enabled: boolean;
   }>;
+  storeConnectionId: string;
 }
 
 export interface KeywordManagementRepository {
@@ -55,6 +58,7 @@ export interface KeywordManagementRepository {
     ownerId: string,
     value: {
       linkedProductId: string | null;
+      storeConnectionId: string | null;
       smartstoreUrl: string;
       channelProductNo: string;
       productInput: ManagedProductInput;
@@ -95,6 +99,16 @@ export interface KeywordManagementRepository {
   ): Promise<{ id: string; editedTitle: string }>;
   updateTitle(ownerId: string, productId: string, titleId: string, editedTitle: string): Promise<boolean>;
   saveFinalTitle(ownerId: string, productId: string, finalTitle: string): Promise<boolean>;
+  addRankObservation(
+    ownerId: string,
+    productId: string,
+    value: { keyword: string; rank: number | null; checkedAt: Date; note: string },
+  ): Promise<void>;
+  markNaverApplied(
+    ownerId: string,
+    productId: string,
+    value: { title: string; searchTags: string[] },
+  ): Promise<boolean>;
 }
 
 export class DrizzleKeywordManagementRepository
@@ -108,6 +122,7 @@ export class DrizzleKeywordManagementRepository
         id: keywordManagedProducts.id,
         smartstoreUrl: keywordManagedProducts.smartstoreUrl,
         channelProductNo: keywordManagedProducts.channelProductNo,
+        storeConnectionId: keywordManagedProducts.storeConnectionId,
         supplierTitle: keywordManagedProducts.supplierTitle,
         currentTitle: keywordManagedProducts.currentTitle,
         editableTitle: keywordManagedProducts.editableTitle,
@@ -139,7 +154,7 @@ export class DrizzleKeywordManagementRepository
       )
       .limit(1);
     if (!product) return null;
-    const [analysisRows, keywordRows, titleRows] = await Promise.all([
+    const [analysisRows, keywordRows, titleRows, rankRows] = await Promise.all([
       this.database
         .select()
         .from(productKeywordAnalyses)
@@ -172,6 +187,17 @@ export class DrizzleKeywordManagementRepository
         )
         .orderBy(desc(generatedTitles.createdAt))
         .limit(10),
+      this.database
+        .select()
+        .from(keywordRankObservations)
+        .where(
+          and(
+            eq(keywordRankObservations.managedProductId, id),
+            eq(keywordRankObservations.ownerId, ownerId),
+          ),
+        )
+        .orderBy(desc(keywordRankObservations.checkedAt))
+        .limit(100),
     ]);
     const analysis = analysisRows[0];
     return {
@@ -179,6 +205,7 @@ export class DrizzleKeywordManagementRepository
         id: product.id,
         smartstoreUrl: product.smartstoreUrl,
         channelProductNo: product.channelProductNo,
+        storeConnectionId: product.storeConnectionId,
         linkedProductId: product.linkedProductId,
         supplierTitle: product.supplierTitle,
         currentTitle: product.currentTitle,
@@ -234,6 +261,14 @@ export class DrizzleKeywordManagementRepository
         createdAt: row.createdAt,
         updatedAt: row.updatedAt,
       })),
+      rankObservations: rankRows.map((row) => ({
+        id: row.id,
+        keyword: row.keyword,
+        rank: row.rank,
+        checkedAt: row.checkedAt,
+        note: row.note,
+        source: "manual" as const,
+      })),
     };
   }
 
@@ -246,6 +281,7 @@ export class DrizzleKeywordManagementRepository
         searchTags: products.searchTags,
         naverCategoryId: products.naverCategoryId,
         selectedImages: products.selectedImages,
+        storeConnectionId: productPublications.storeConnectionId,
       })
       .from(productPublications)
       .innerJoin(products, eq(products.id, productPublications.productId))
@@ -264,16 +300,33 @@ export class DrizzleKeywordManagementRepository
     ownerId: string,
     value: {
       linkedProductId: string | null;
+      storeConnectionId: string | null;
       smartstoreUrl: string;
       channelProductNo: string;
       productInput: ManagedProductInput;
     },
   ) {
+    if (value.storeConnectionId) {
+      const [ownedStore] = await this.database
+        .select({ id: naverStoreConnections.id })
+        .from(naverStoreConnections)
+        .where(
+          and(
+            eq(naverStoreConnections.id, value.storeConnectionId),
+            eq(naverStoreConnections.userId, ownerId),
+          ),
+        )
+        .limit(1);
+      if (!ownedStore) {
+        throw new Error("선택한 스마트스토어 연결을 찾지 못했습니다.");
+      }
+    }
     const [row] = await this.database
       .insert(keywordManagedProducts)
       .values({
         ownerId,
         linkedProductId: value.linkedProductId,
+        storeConnectionId: value.storeConnectionId,
         smartstoreUrl: value.smartstoreUrl,
         channelProductNo: value.channelProductNo,
         supplierTitle: value.productInput.supplierTitle,
@@ -691,6 +744,74 @@ export class DrizzleKeywordManagementRepository
       )
       .returning({ id: keywordManagedProducts.id });
     return Boolean(row);
+  }
+
+  async addRankObservation(
+    ownerId: string,
+    productId: string,
+    value: {
+      keyword: string;
+      rank: number | null;
+      checkedAt: Date;
+      note: string;
+    },
+  ) {
+    await this.database.insert(keywordRankObservations).values({
+      ownerId,
+      managedProductId: productId,
+      keyword: value.keyword,
+      normalizedKeyword: normalizeKeyword(value.keyword),
+      rank: value.rank,
+      checkedAt: value.checkedAt,
+      note: value.note,
+      source: "manual",
+    });
+  }
+
+  async markNaverApplied(
+    ownerId: string,
+    productId: string,
+    value: { title: string; searchTags: string[] },
+  ) {
+    return this.database.transaction(async (tx) => {
+      const [current] = await tx
+        .select({ productInput: keywordManagedProducts.productInput })
+        .from(keywordManagedProducts)
+        .where(
+          and(
+            eq(keywordManagedProducts.id, productId),
+            eq(keywordManagedProducts.ownerId, ownerId),
+          ),
+        )
+        .limit(1);
+      if (!current) return false;
+      const [updated] = await tx
+        .update(keywordManagedProducts)
+        .set({
+          currentTitle: value.title,
+          editableTitle: value.title,
+          finalTitle: value.title,
+          productInput: {
+            ...current.productInput,
+            currentTitle: value.title,
+            searchTags: value.searchTags,
+            commerceImport: {
+              status: "success",
+              fetchedAt: new Date().toISOString(),
+              message: null,
+            },
+          },
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(keywordManagedProducts.id, productId),
+            eq(keywordManagedProducts.ownerId, ownerId),
+          ),
+        )
+        .returning({ id: keywordManagedProducts.id });
+      return Boolean(updated);
+    });
   }
 }
 

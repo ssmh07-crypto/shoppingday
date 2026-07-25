@@ -141,6 +141,81 @@ describe("성장 상품 키워드 관리 화면", () => {
     ]);
     expect(screen.getByText(/검색량과 경쟁도를 조회했습니다/)).toBeVisible();
   });
+
+  it("확인한 실제 키워드 순위를 날짜별 이력으로 저장한다", async () => {
+    const nextDetail = {
+      ...detail,
+      rankObservations: [
+        {
+          id: "rank-1",
+          keyword: "여름 원피스",
+          rank: 37,
+          checkedAt: new Date("2026-07-25T03:00:00.000Z"),
+          note: "",
+          source: "manual" as const,
+        },
+      ],
+    };
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        Response.json({ success: true, data: nextDetail }),
+      );
+    vi.stubGlobal("fetch", fetcher);
+    renderManager();
+
+    fireEvent.change(screen.getByLabelText("확인 키워드"), {
+      target: { value: "여름 원피스" },
+    });
+    fireEvent.change(screen.getByLabelText("순위"), {
+      target: { value: "37" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "순위 기록" }));
+
+    await waitFor(() =>
+      expect(fetcher).toHaveBeenCalledWith(
+        "/api/keyword-products/product-1/rank-observations",
+        expect.objectContaining({ method: "POST" }),
+      ),
+    );
+    expect(await screen.findByText("37위")).toBeVisible();
+  });
+
+  it("최종 확인 후 상품명과 검색 태그를 스마트스토어에 반영한다", async () => {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(Response.json({ success: true, data: detail }))
+      .mockResolvedValueOnce(
+        Response.json({ success: true, items: [summary] }),
+      );
+    vi.stubGlobal("fetch", fetcher);
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    renderManager();
+
+    fireEvent.change(screen.getByLabelText(/^스마트스토어 상품명/), {
+      target: { value: "성장형 여름 원피스" },
+    });
+    fireEvent.change(screen.getByLabelText(/검색 태그/), {
+      target: { value: "여름원피스, 린넨원피스" },
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "변경사항 스마트스토어 반영" }),
+    );
+
+    await waitFor(() =>
+      expect(fetcher).toHaveBeenCalledWith(
+        "/api/keyword-products/product-1/apply",
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({
+            confirmed: true,
+            title: "성장형 여름 원피스",
+            searchTags: ["여름원피스", "린넨원피스"],
+          }),
+        }),
+      ),
+    );
+  });
 });
 
 function renderManager(runtime: {

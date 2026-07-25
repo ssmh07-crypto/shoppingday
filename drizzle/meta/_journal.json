@@ -148,6 +148,13 @@
       "when": 1784984349740,
       "tag": "0020_powerful_peter_quill",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1784985111730,
+      "tag": "0021_good_gargoyle",
+      "breakpoints": true
     }
   ]
 }

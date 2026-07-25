@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState, type FormEvent } from "react";
+import Image from "next/image";
 import {
   defaultKeywordFilters,
   filterAndSortKeywords,
@@ -23,6 +24,13 @@ type RuntimeStatus = {
   apiHubConfigured: boolean;
 };
 
+type StoreOption = {
+  id: string;
+  name: string;
+  url: string;
+  isDefault: boolean;
+};
+
 type ApiEnvelope<T> = {
   success: boolean;
   data?: T;
@@ -35,10 +43,12 @@ export function KeywordManager({
   initialItems,
   initialDetail,
   initialRuntime,
+  stores = [],
 }: {
   initialItems: ManagedProductSummary[];
   initialDetail: ManagedProductDetail | null;
   initialRuntime: RuntimeStatus;
+  stores?: StoreOption[];
 }) {
   const [items, setItems] = useState(initialItems);
   const [activeId, setActiveId] = useState(initialDetail?.product.id ?? null);
@@ -120,10 +130,10 @@ export function KeywordManager({
         <section className="inventory-heading keyword-heading">
           <div>
             <span className="inventory-eyebrow">성장 관리 단계</span>
-            <h1>키워드 관리</h1>
+            <h1>등록 상품 성장 관리</h1>
             <p>
-              상품명을 규칙에 따라 분석해 키워드 후보를 만들고, 네이버 검색광고 API로
-              실제 검색 데이터를 조회합니다. 생성형 AI는 사용하지 않습니다.
+              스마트스토어에 등록된 상품을 연결하고 키워드 순위, 상품명과 검색
+              태그의 변경 전후를 한곳에서 관리합니다.
             </p>
           </div>
           <button
@@ -186,6 +196,7 @@ export function KeywordManager({
             {showAdd ? (
               <AddManagedProduct
                 busy={busy === "create"}
+                stores={stores}
                 onSubmit={async (payload) => {
                   setBusy("create");
                   clearFeedback();
@@ -258,9 +269,11 @@ export function KeywordManager({
 
 function AddManagedProduct({
   busy,
+  stores,
   onSubmit,
 }: {
   busy: boolean;
+  stores: StoreOption[];
   onSubmit: (payload: unknown) => Promise<void>;
 }) {
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -268,6 +281,8 @@ function AddManagedProduct({
     const data = new FormData(event.currentTarget);
     await onSubmit({
       smartstoreUrl: String(data.get("smartstoreUrl") ?? ""),
+      storeConnectionId:
+        String(data.get("storeConnectionId") ?? "") || undefined,
       productInput: {
         supplierTitle: String(data.get("supplierTitle") ?? ""),
         currentTitle: String(data.get("currentTitle") ?? ""),
@@ -292,10 +307,34 @@ function AddManagedProduct({
         <div>
           <span className="inventory-eyebrow">1단계 · 상품 정보</span>
           <h2>관리할 상품 추가</h2>
-          <p>기본 정보를 저장한 뒤 상품명을 규칙에 따라 분류합니다. 생성형 AI는 사용하지 않습니다.</p>
+          <p>
+            스마트스토어 상품 링크를 붙여넣으면 현재 상품명·가격·재고·대표
+            이미지·태그를 불러옵니다.
+          </p>
         </div>
       </div>
       <div className="keyword-form-grid">
+        <label className="wide-field">
+          <span>연결 스마트스토어 *</span>
+          <select
+            name="storeConnectionId"
+            required
+            defaultValue={
+              stores.find((store) => store.isDefault)?.id ??
+              stores[0]?.id ??
+              ""
+            }
+          >
+            {!stores.length && (
+              <option value="">먼저 스마트스토어를 연결해 주세요</option>
+            )}
+            {stores.map((store) => (
+              <option key={store.id} value={store.id}>
+                {store.name} · {store.url}
+              </option>
+            ))}
+          </select>
+        </label>
         <label className="wide-field">
           <span>스마트스토어 상품 링크 *</span>
           <input
@@ -309,8 +348,11 @@ function AddManagedProduct({
           </small>
         </label>
         <label className="wide-field">
-          <span>공급사 상품명 *</span>
-          <input name="supplierTitle" required placeholder="예: 철제 바느질 골무 바느질부자재" />
+          <span>내부 참고 상품명</span>
+          <input
+            name="supplierTitle"
+            placeholder="비워두면 스마트스토어 상품명을 사용합니다"
+          />
         </label>
         <label className="wide-field">
           <span>현재 스마트스토어 상품명</span>
@@ -340,7 +382,7 @@ function AddManagedProduct({
       </div>
       <div className="keyword-form-actions">
         <button type="submit" disabled={busy}>
-          {busy ? "저장하고 분석하는 중…" : "상품 저장하고 분석"}
+          {busy ? "상품 정보를 불러오는 중…" : "상품 불러와 성장 관리 시작"}
         </button>
       </div>
     </form>
@@ -377,6 +419,14 @@ function KeywordProductDetail({
   );
   const [bannedWords, setBannedWords] = useState("");
   const [similarTitles, setSimilarTitles] = useState<string[]>([]);
+  const [optimizationTitle, setOptimizationTitle] = useState(
+    detail.product.finalTitle ||
+      detail.product.currentTitle ||
+      detail.product.editableTitle,
+  );
+  const [optimizationTags, setOptimizationTags] = useState(
+    (detail.product.productInput.searchTags ?? []).join(", "),
+  );
 
   const rejectedKeywords = detail.keywords.filter((item) => item.reviewStatus === "rejected");
   const keywordsWithSelection = useMemo(
@@ -491,6 +541,43 @@ function KeywordProductDetail({
     }
   }
 
+  async function applyOptimizationToNaver() {
+    const searchTags = splitList(optimizationTags).slice(0, 10);
+    if (
+      !window.confirm(
+        `스마트스토어 상품을 실제로 수정할까요?\n\n상품명: ${optimizationTitle}\n검색 태그: ${searchTags.join(", ") || "없음"}`,
+      )
+    ) {
+      return;
+    }
+    onBusy("naver-apply");
+    onFeedback(null, null);
+    try {
+      const response = await api<ManagedProductDetail>(
+        `/api/keyword-products/${detail.product.id}/apply`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            confirmed: true,
+            title: optimizationTitle,
+            searchTags,
+          }),
+        },
+      );
+      onDetailChange(response.data!);
+      onFeedback(
+        "상품명과 검색 태그를 스마트스토어 상품에 반영했습니다.",
+        null,
+      );
+      await onRefreshList();
+    } catch (caught) {
+      onFeedback(null, errorMessage(caught));
+    } finally {
+      onBusy(null);
+    }
+  }
+
   return (
     <div className="keyword-detail-stack">
       <section className="keyword-card keyword-product-summary">
@@ -518,6 +605,63 @@ function KeywordProductDetail({
       </section>
 
       <NaverImportedProductInfo input={detail.product.productInput} />
+
+      <section className="keyword-card keyword-growth-optimizer">
+        <div className="keyword-card-head">
+          <div>
+            <span className="inventory-eyebrow">스마트스토어 변경 반영</span>
+            <h2>상품명·검색 태그 최적화</h2>
+            <p>
+              현재 등록 정보를 기준으로 수정한 뒤 최종 확인을 거쳐 네이버 상품에
+              실제 반영합니다.
+            </p>
+          </div>
+        </div>
+        <label className="keyword-title-editor">
+          <span>스마트스토어 상품명</span>
+          <textarea
+            rows={2}
+            value={optimizationTitle}
+            onChange={(event) => setOptimizationTitle(event.target.value)}
+          />
+          <small>{optimizationTitle.length}자</small>
+        </label>
+        <label>
+          <span>검색 태그 · 최대 10개</span>
+          <input
+            value={optimizationTags}
+            onChange={(event) => setOptimizationTags(event.target.value)}
+            placeholder="쉼표로 구분"
+          />
+          <small>
+            현재 {splitList(optimizationTags).slice(0, 10).length}개 선택
+          </small>
+        </label>
+        <div className="keyword-title-save-row">
+          <button
+            type="button"
+            onClick={() => void applyOptimizationToNaver()}
+            disabled={
+              Boolean(busy) ||
+              !optimizationTitle.trim() ||
+              splitList(optimizationTags).length > 10
+            }
+          >
+            {busy === "naver-apply"
+              ? "스마트스토어 반영 중…"
+              : "변경사항 스마트스토어 반영"}
+          </button>
+          <span>신규 등록이 아니라 기존 채널 상품을 안전하게 수정합니다.</span>
+        </div>
+      </section>
+
+      <RankTrackingPanel
+        detail={detail}
+        busy={busy}
+        onBusy={onBusy}
+        onChange={onDetailChange}
+        onFeedback={onFeedback}
+      />
 
       {detail.analysis ? (
         <AnalysisEditor
@@ -713,6 +857,155 @@ function KeywordProductDetail({
   );
 }
 
+function RankTrackingPanel({
+  detail,
+  busy,
+  onBusy,
+  onChange,
+  onFeedback,
+}: {
+  detail: ManagedProductDetail;
+  busy: string | null;
+  onBusy: (value: string | null) => void;
+  onChange: (value: ManagedProductDetail) => void;
+  onFeedback: (message: string | null, error: string | null) => void;
+}) {
+  const selectedKeyword =
+    detail.keywords.find((keyword) => keyword.isSelected)?.keyword ??
+    detail.keywords[0]?.keyword ??
+    "";
+  const [keyword, setKeyword] = useState(selectedKeyword);
+  const [rank, setRank] = useState("");
+  const [notFound, setNotFound] = useState(false);
+  const [checkedAt, setCheckedAt] = useState(
+    new Date().toISOString().slice(0, 10),
+  );
+  const observations = detail.rankObservations ?? [];
+
+  async function saveObservation() {
+    onBusy("rank-save");
+    onFeedback(null, null);
+    try {
+      const response = await api<ManagedProductDetail>(
+        `/api/keyword-products/${detail.product.id}/rank-observations`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            keyword,
+            rank: notFound ? null : Number(rank),
+            checkedAt: new Date(`${checkedAt}T12:00:00+09:00`).toISOString(),
+            note: notFound ? "1,000위 안에서 찾지 못함" : "",
+          }),
+        },
+      );
+      onChange(response.data!);
+      setRank("");
+      onFeedback("확인한 키워드 순위를 기록했습니다.", null);
+    } catch (caught) {
+      onFeedback(null, errorMessage(caught));
+    } finally {
+      onBusy(null);
+    }
+  }
+
+  return (
+    <section className="keyword-card keyword-rank-tracker">
+      <div className="keyword-card-head">
+        <div>
+          <span className="inventory-eyebrow">실제 순위 이력</span>
+          <h2>키워드별 노출 순위 기록</h2>
+          <p>
+            같은 조건에서 확인한 실제 순위를 날짜별로 남겨 상품명·태그 변경 전후를
+            비교합니다.
+          </p>
+        </div>
+      </div>
+      <div className="keyword-rank-entry">
+        <label>
+          <span>확인 키워드</span>
+          <input
+            list={`rank-keywords-${detail.product.id}`}
+            value={keyword}
+            onChange={(event) => setKeyword(event.target.value)}
+          />
+          <datalist id={`rank-keywords-${detail.product.id}`}>
+            {detail.keywords.map((item) => (
+              <option key={item.id} value={item.keyword} />
+            ))}
+          </datalist>
+        </label>
+        <label>
+          <span>확인일</span>
+          <input
+            type="date"
+            value={checkedAt}
+            onChange={(event) => setCheckedAt(event.target.value)}
+          />
+        </label>
+        <label>
+          <span>순위</span>
+          <input
+            type="number"
+            min={1}
+            max={1000}
+            value={rank}
+            disabled={notFound}
+            onChange={(event) => setRank(event.target.value)}
+            placeholder="예: 37"
+          />
+        </label>
+        <label className="keyword-rank-not-found">
+          <input
+            type="checkbox"
+            checked={notFound}
+            onChange={(event) => setNotFound(event.target.checked)}
+          />
+          <span>1,000위 안에서 찾지 못함</span>
+        </label>
+        <button
+          type="button"
+          onClick={() => void saveObservation()}
+          disabled={
+            busy === "rank-save" ||
+            !keyword.trim() ||
+            !checkedAt ||
+            (!notFound && (!rank || Number(rank) < 1 || Number(rank) > 1000))
+          }
+        >
+          {busy === "rank-save" ? "기록 중…" : "순위 기록"}
+        </button>
+      </div>
+      {observations.length ? (
+        <div className="keyword-rank-history">
+          {observations.slice(0, 20).map((observation) => (
+            <div key={observation.id}>
+              <strong>{observation.keyword}</strong>
+              <span>
+                {observation.rank
+                  ? `${observation.rank.toLocaleString("ko-KR")}위`
+                  : "1,000위 밖"}
+              </span>
+              <small>
+                {new Date(observation.checkedAt).toLocaleDateString("ko-KR")}
+              </small>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="keyword-empty-state compact">
+          <strong>아직 기록된 실제 순위가 없습니다.</strong>
+          <span>상품명이나 태그를 바꾸기 전에 기준 순위를 먼저 기록해 보세요.</span>
+        </div>
+      )}
+      <small className="keyword-field-help">
+        자동 추정값이 아니라 사용자가 같은 검색 조건에서 직접 확인한 값만
+        저장합니다.
+      </small>
+    </section>
+  );
+}
+
 function NaverImportedProductInfo({
   input,
 }: {
@@ -734,7 +1027,37 @@ function NaverImportedProductInfo({
       </div>
       {success ? (
         <div className="keyword-import-content">
+          {input.representativeImageUrl && (
+            <Image
+              className="keyword-import-image"
+              src={input.representativeImageUrl}
+              alt=""
+              width={132}
+              height={132}
+              unoptimized
+            />
+          )}
           <dl>
+            <div>
+              <dt>판매가</dt>
+              <dd>
+                {input.salePrice == null
+                  ? "확인하지 못함"
+                  : `${input.salePrice.toLocaleString("ko-KR")}원`}
+              </dd>
+            </div>
+            <div>
+              <dt>판매 상태</dt>
+              <dd>{input.statusType || "확인하지 못함"}</dd>
+            </div>
+            <div>
+              <dt>재고</dt>
+              <dd>
+                {input.stockQuantity == null
+                  ? "확인하지 못함"
+                  : input.stockQuantity.toLocaleString("ko-KR")}
+              </dd>
+            </div>
             <div>
               <dt>카테고리</dt>
               <dd>{input.category || input.naverCategoryId || "확인되지 않음"}</dd>

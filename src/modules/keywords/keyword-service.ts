@@ -6,9 +6,11 @@ import type { KeywordMetricsClient } from "./keyword-metrics-client";
 import type { KeywordManagementRepository } from "./keyword-repository";
 import {
   createManagedProductSchema,
+  applyManagedProductToNaverSchema,
   generateTitleSchema,
   keywordSelectionSchema,
   keywordReviewSchema,
+  keywordRankObservationSchema,
   managedProductInputSchema,
   productAnalysisSchema,
   updateGeneratedTitleSchema,
@@ -26,6 +28,7 @@ import {
   naverProductImportErrorMessage,
   type ImportedNaverProductData,
   type NaverManagedProductImporter,
+  type NaverManagedProductUpdater,
 } from "./naver-product-importer";
 
 export class KeywordManagementService {
@@ -40,6 +43,7 @@ export class KeywordManagementService {
       mockMode: boolean;
     },
     private readonly productImporter: NaverManagedProductImporter | null = null,
+    private readonly productUpdater: NaverManagedProductUpdater | null = null,
   ) {}
 
   list(ownerId: string) {
@@ -77,7 +81,12 @@ export class KeywordManagementService {
     };
     if (this.productImporter) {
       try {
-        imported = await this.productImporter.import(channelProductNo);
+        imported = parsed.storeConnectionId
+          ? await this.productImporter.import(
+              channelProductNo,
+              parsed.storeConnectionId,
+            )
+          : await this.productImporter.import(channelProductNo);
         commerceImport = {
           status: "success",
           fetchedAt: new Date().toISOString(),
@@ -91,9 +100,25 @@ export class KeywordManagementService {
         };
       }
     }
+    if (
+      !imported &&
+      !local?.title &&
+      !parsed.productInput.supplierTitle.trim()
+    ) {
+      throw new KeywordManagementError(
+        "external_api_error",
+        commerceImport.message ??
+          "스마트스토어 상품 정보를 불러오지 못했습니다.",
+        502,
+      );
+    }
     const merged: ManagedProductInput = managedProductInputSchema.parse({
       ...parsed.productInput,
-      supplierTitle: parsed.productInput.supplierTitle || local?.title || "",
+      supplierTitle:
+        parsed.productInput.supplierTitle ||
+        imported?.currentTitle ||
+        local?.title ||
+        "",
       currentTitle:
         parsed.productInput.currentTitle || imported?.currentTitle || local?.title || "",
       description: parsed.productInput.description || local?.description || "",
@@ -122,6 +147,8 @@ export class KeywordManagementService {
       imageUrls:
         parsed.productInput.imageUrls.length > 0
           ? parsed.productInput.imageUrls
+          : imported?.representativeImageUrl
+            ? [imported.representativeImageUrl]
           : (local?.selectedImages ?? [])
               .filter((image) => image.enabled)
               .map((image) => image.storedUrl ?? image.sourceUrl),
@@ -131,11 +158,17 @@ export class KeywordManagementService {
         parsed.productInput.searchTags && parsed.productInput.searchTags.length > 0
           ? parsed.productInput.searchTags
           : imported?.searchTags ?? local?.searchTags ?? [],
+      salePrice: imported?.salePrice ?? null,
+      stockQuantity: imported?.stockQuantity ?? null,
+      statusType: imported?.statusType ?? "",
+      representativeImageUrl: imported?.representativeImageUrl || undefined,
       commerceImport,
     });
     try {
       const created = await this.repository.create(ownerId, {
         linkedProductId: local?.id ?? null,
+        storeConnectionId:
+          parsed.storeConnectionId ?? local?.storeConnectionId ?? null,
         smartstoreUrl: parsed.smartstoreUrl,
         channelProductNo,
         productInput: merged,
@@ -151,6 +184,61 @@ export class KeywordManagementService {
       }
       throw error;
     }
+  }
+
+  async addRankObservation(ownerId: string, id: string, raw: unknown) {
+    await this.get(ownerId, id);
+    const input = keywordRankObservationSchema.parse(raw);
+    await this.repository.addRankObservation(ownerId, id, {
+      keyword: input.keyword,
+      rank: input.rank,
+      checkedAt: input.checkedAt ?? new Date(),
+      note: input.note,
+    });
+    return this.get(ownerId, id);
+  }
+
+  async applyToNaver(ownerId: string, id: string, raw: unknown) {
+    const detail = await this.get(ownerId, id);
+    const input = applyManagedProductToNaverSchema.parse(raw);
+    if (!detail.product.channelProductNo) {
+      throw new KeywordManagementError(
+        "naver_product_not_linked",
+        "스마트스토어 채널 상품번호를 확인하지 못했습니다.",
+        409,
+      );
+    }
+    if (!this.productUpdater) {
+      throw new KeywordManagementError(
+        "external_api_not_configured",
+        "선택한 스마트스토어의 커머스 API 연결을 확인해 주세요.",
+        503,
+      );
+    }
+    try {
+      await this.productUpdater.apply(
+        detail.product.channelProductNo,
+        {
+          title: input.title,
+          searchTags: input.searchTags,
+        },
+        detail.product.storeConnectionId ?? undefined,
+      );
+    } catch (error) {
+      throw new KeywordManagementError(
+        "external_api_error",
+        safeExternalMessage(
+          error,
+          "스마트스토어 상품 변경사항을 반영하지 못했습니다.",
+        ),
+        502,
+      );
+    }
+    await this.repository.markNaverApplied(ownerId, id, {
+      title: input.title,
+      searchTags: input.searchTags,
+    });
+    return this.get(ownerId, id);
   }
 
   async update(ownerId: string, id: string, raw: unknown) {

@@ -1936,6 +1936,86 @@ td small {
   background: #fff1f1;
   color: #9b2c2c;
 }
+
+.keyword-growth-optimizer,
+.keyword-rank-tracker {
+  display: grid;
+  gap: 16px;
+}
+
+.keyword-rank-entry {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.5fr) minmax(140px, 0.8fr) minmax(110px, 0.6fr);
+  gap: 12px;
+  align-items: end;
+}
+
+.keyword-rank-entry label {
+  display: grid;
+  gap: 7px;
+}
+
+.keyword-rank-entry .keyword-rank-not-found {
+  grid-column: 1 / span 2;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.keyword-rank-entry > button {
+  justify-self: start;
+}
+
+.keyword-rank-history {
+  display: grid;
+  overflow: hidden;
+  border: 1px solid var(--inventory-line);
+  border-radius: 12px;
+}
+
+.keyword-rank-history > div {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) 100px 120px;
+  gap: 12px;
+  align-items: center;
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--inventory-line);
+}
+
+.keyword-rank-history > div:last-child {
+  border-bottom: 0;
+}
+
+.keyword-rank-history span {
+  font-weight: 800;
+  color: var(--inventory-brand);
+}
+
+.keyword-import-image {
+  width: 132px;
+  aspect-ratio: 1;
+  object-fit: cover;
+  border: 1px solid var(--inventory-line);
+  border-radius: 12px;
+}
+
+@media (max-width: 760px) {
+  .keyword-rank-entry {
+    grid-template-columns: 1fr;
+  }
+
+  .keyword-rank-entry .keyword-rank-not-found {
+    grid-column: auto;
+  }
+
+  .keyword-rank-history > div {
+    grid-template-columns: 1fr auto;
+  }
+
+  .keyword-rank-history small {
+    grid-column: 1 / -1;
+  }
+}
 .drawer-naver-attribute-fields {
   display: grid;
   gap: 12px;

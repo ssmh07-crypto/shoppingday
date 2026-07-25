@@ -2,6 +2,7 @@ import "server-only";
 import { NaverCommerceError } from "@/modules/channels/naver/naver-commerce-client";
 import type { NaverCategoryRepository } from "@/modules/channels/naver/naver-category-repository";
 import type { NaverCategoriesClient } from "@/modules/channels/naver/naver-commerce-relay";
+import type { NaverProductPayload } from "@/modules/channels/naver/naver-product-payload";
 import type { NaverRegisteredAttribute } from "./types";
 
 export interface ImportedNaverProductData {
@@ -15,10 +16,25 @@ export interface ImportedNaverProductData {
   sizes: string[];
   target: string;
   seasons: string[];
+  salePrice?: number | null;
+  stockQuantity?: number | null;
+  statusType?: string;
+  representativeImageUrl?: string;
 }
 
 export interface NaverManagedProductImporter {
-  import(channelProductNo: string): Promise<ImportedNaverProductData>;
+  import(
+    channelProductNo: string,
+    storeConnectionId?: string,
+  ): Promise<ImportedNaverProductData>;
+}
+
+export interface NaverManagedProductUpdater {
+  apply(
+    channelProductNo: string,
+    input: { title: string; searchTags: string[] },
+    storeConnectionId?: string,
+  ): Promise<void>;
 }
 
 export class CommerceApiManagedProductImporter
@@ -85,7 +101,55 @@ export class CommerceApiManagedProductImporter
       sizes: valuesFor(attributes, /사이즈|크기|규격/),
       target: valuesFor(attributes, /대상|성별|사용자/)[0] ?? "",
       seasons: valuesFor(attributes, /계절|시즌/),
+      salePrice: origin.salePrice ?? null,
+      stockQuantity: origin.stockQuantity ?? null,
+      statusType: origin.statusType ?? "",
+      representativeImageUrl:
+        origin.images?.representativeImage?.url ?? "",
     };
+  }
+}
+
+export class CommerceApiManagedProductUpdater
+  implements NaverManagedProductUpdater
+{
+  constructor(private readonly client: NaverCategoriesClient) {}
+
+  async apply(
+    channelProductNo: string,
+    input: { title: string; searchTags: string[] },
+  ) {
+    const product = await this.client.fetchChannelProduct(channelProductNo);
+    if (
+      !product.originProductNo ||
+      !product.smartstoreChannelProduct ||
+      typeof product.smartstoreChannelProduct !== "object"
+    ) {
+      throw new NaverCommerceError(
+        "request_failed",
+        "네이버 상품 수정에 필요한 원상품 정보를 확인하지 못했습니다.",
+      );
+    }
+    const originProduct = product.originProduct as Record<string, unknown> & {
+      detailAttribute: Record<string, unknown> & {
+        seoInfo?: Record<string, unknown>;
+      };
+    };
+    const payload = {
+      originProduct: {
+        ...originProduct,
+        name: input.title,
+        detailAttribute: {
+          ...originProduct.detailAttribute,
+          seoInfo: {
+            ...(originProduct.detailAttribute.seoInfo ?? {}),
+            sellerTags: input.searchTags.map((text) => ({ text })),
+          },
+        },
+      },
+      smartstoreChannelProduct: product.smartstoreChannelProduct,
+    } as unknown as NaverProductPayload;
+    await this.client.updateProduct(product.originProductNo, payload);
   }
 }
 

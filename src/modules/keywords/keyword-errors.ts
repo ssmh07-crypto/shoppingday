@@ -9,6 +9,7 @@ export class KeywordManagementError extends Error {
       | "product_type_review_required"
       | "keywords_required"
       | "invalid_selection"
+      | "naver_product_not_linked"
       | "external_api_error",
     message: string,
     readonly status: number,

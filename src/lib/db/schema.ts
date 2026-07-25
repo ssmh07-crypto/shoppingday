@@ -653,6 +653,10 @@ export const keywordManagedProducts = pgTable(
     linkedProductId: uuid("linked_product_id").references(() => products.id, {
       onDelete: "set null",
     }),
+    storeConnectionId: uuid("store_connection_id").references(
+      () => naverStoreConnections.id,
+      { onDelete: "set null" },
+    ),
     smartstoreUrl: text("smartstore_url").notNull(),
     channelProductNo: text("channel_product_no"),
     supplierTitle: text("supplier_title").notNull(),
@@ -673,12 +677,55 @@ export const keywordManagedProducts = pgTable(
       table.ownerId,
       table.updatedAt,
     ),
+    index("keyword_managed_products_store_idx").on(table.storeConnectionId),
     uniqueIndex("keyword_managed_products_owner_channel_uidx")
       .on(table.ownerId, table.channelProductNo)
       .where(sql`${table.channelProductNo} is not null`),
     check(
       "keyword_managed_products_status_check",
       sql`${table.status} in ('active', 'archived')`,
+    ),
+  ],
+);
+
+export const keywordRankObservations = pgTable(
+  "keyword_rank_observations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    ownerId: uuid("owner_id")
+      .notNull()
+      .references(() => userProfiles.userId, { onDelete: "cascade" }),
+    managedProductId: uuid("managed_product_id")
+      .notNull()
+      .references(() => keywordManagedProducts.id, { onDelete: "cascade" }),
+    keyword: text("keyword").notNull(),
+    normalizedKeyword: text("normalized_keyword").notNull(),
+    rank: integer("rank"),
+    checkedAt: timestamp("checked_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    note: text("note").notNull().default(""),
+    source: text("source").notNull().default("manual"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("keyword_rank_observations_product_checked_idx").on(
+      table.managedProductId,
+      table.checkedAt,
+    ),
+    index("keyword_rank_observations_owner_keyword_idx").on(
+      table.ownerId,
+      table.normalizedKeyword,
+    ),
+    check(
+      "keyword_rank_observations_rank_check",
+      sql`${table.rank} is null or ${table.rank} between 1 and 1000`,
+    ),
+    check(
+      "keyword_rank_observations_source_check",
+      sql`${table.source} in ('manual')`,
     ),
   ],
 );

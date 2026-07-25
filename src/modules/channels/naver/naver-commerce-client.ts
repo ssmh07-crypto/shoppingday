@@ -111,9 +111,23 @@ const channelProductSellerTagSchema = z.looseObject({
   text: z.string().trim().min(1),
 });
 const channelProductSchema = z.looseObject({
+  originProductNo: z
+    .union([z.string(), z.number().int()])
+    .transform(String)
+    .optional(),
   originProduct: z.looseObject({
     leafCategoryId: z.string().min(1),
     name: z.string().trim().min(1),
+    statusType: z.string().optional(),
+    salePrice: z.number().int().nonnegative().optional(),
+    stockQuantity: z.number().int().nonnegative().optional(),
+    images: z
+      .looseObject({
+        representativeImage: z
+          .looseObject({ url: z.string().url() })
+          .optional(),
+      })
+      .optional(),
     detailAttribute: z.looseObject({
       productAttributes: z.array(channelProductAttributeSchema).default([]),
       seoInfo: z
@@ -123,6 +137,7 @@ const channelProductSchema = z.looseObject({
         .optional(),
     }),
   }),
+  smartstoreChannelProduct: z.looseObject({}).optional(),
 });
 const sellerAddressSchema = z.looseObject({
   addressBookNo: z.number().int().nonnegative(),

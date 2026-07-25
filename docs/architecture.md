@@ -63,6 +63,8 @@ Next.js 16 `proxy.ts`는 Node middleware로 빌드되어 현재 OpenNext에서 �
 
 성장 상품 관리는 빠른 대량등록 흐름과 분리한다. 사용자가 판매 가능성을 확인한 스마트스토어 상품만 `keyword_managed_products`에 연결하며, 기존 내부 상품이 있으면 채널 상품번호로 찾은 로컬 발행 데이터만 초깃값으로 재사용한다. 공개되지 않은 판매자센터 API나 화면 크롤링으로 링크 내용을 가져오지 않는다.
 
+성장 상품은 `store_connection_id`로 실제 스마트스토어 연결을 함께 저장한다. 상품명·검색 태그 반영 시 해당 연결로 채널 상품 전체 정보를 다시 조회하고, 사용자가 확인한 두 필드만 교체한 전체 수정 요청을 보낸다. 키워드 순위는 `keyword_rank_observations`에 확인 시각과 함께 실제 관찰값만 저장하며 자동 추정값을 만들지 않는다.
+
 ```text
 Admin /admin/keywords
   → owner-scoped Route Handlers

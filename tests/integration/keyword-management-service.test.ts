@@ -248,6 +248,72 @@ describe("키워드 관리 서비스", () => {
       }),
     );
   });
+
+  it("사용자가 확인한 실제 키워드 순위를 날짜별 이력으로 저장한다", async () => {
+    const repository = fakeRepository();
+    const service = new KeywordManagementService(
+      repository,
+      null,
+      null,
+      config,
+    );
+
+    await service.addRankObservation("owner-1", "product-1", {
+      keyword: "여름 원피스",
+      rank: 37,
+      checkedAt: "2026-07-25T03:00:00.000Z",
+      note: "",
+    });
+
+    expect(repository.addRankObservation).toHaveBeenCalledWith(
+      "owner-1",
+      "product-1",
+      {
+        keyword: "여름 원피스",
+        rank: 37,
+        checkedAt: new Date("2026-07-25T03:00:00.000Z"),
+        note: "",
+      },
+    );
+  });
+
+  it("최종 확인한 상품명과 태그를 기존 스마트스토어 상품에 반영한다", async () => {
+    const repository = fakeRepository();
+    const updater = {
+      apply: vi.fn().mockResolvedValue(undefined),
+    };
+    const service = new KeywordManagementService(
+      repository,
+      null,
+      null,
+      config,
+      null,
+      updater,
+    );
+
+    await service.applyToNaver("owner-1", "product-1", {
+      confirmed: true,
+      title: "여름 린넨 원피스",
+      searchTags: ["여름원피스", "린넨원피스"],
+    });
+
+    expect(updater.apply).toHaveBeenCalledWith(
+      "1234567890",
+      {
+        title: "여름 린넨 원피스",
+        searchTags: ["여름원피스", "린넨원피스"],
+      },
+      undefined,
+    );
+    expect(repository.markNaverApplied).toHaveBeenCalledWith(
+      "owner-1",
+      "product-1",
+      {
+        title: "여름 린넨 원피스",
+        searchTags: ["여름원피스", "린넨원피스"],
+      },
+    );
+  });
 });
 
 function createInput(supplierTitle: string) {
@@ -299,6 +365,8 @@ function fakeRepository(): KeywordManagementRepository {
     createTitle: vi.fn().mockResolvedValue({ id: "title-1", editedTitle: "초안" }),
     updateTitle: vi.fn().mockResolvedValue(true),
     saveFinalTitle: vi.fn().mockResolvedValue(true),
+    addRankObservation: vi.fn().mockResolvedValue(undefined),
+    markNaverApplied: vi.fn().mockResolvedValue(true),
   };
 }
 

@@ -35,6 +35,10 @@ export interface ManagedProductInput {
   naverAttributes?: NaverRegisteredAttribute[];
   searchTags?: string[];
   commerceImport?: NaverCommerceImportState;
+  salePrice?: number | null;
+  stockQuantity?: number | null;
+  statusType?: string;
+  representativeImageUrl?: string;
 }
 
 export interface NaverRegisteredAttribute {
@@ -130,6 +134,7 @@ export interface ManagedProductSummary {
   id: string;
   smartstoreUrl: string;
   channelProductNo: string | null;
+  storeConnectionId?: string | null;
   supplierTitle: string;
   editableTitle: string;
   finalTitle: string | null;
@@ -144,6 +149,7 @@ export interface ManagedProductDetail {
     id: string;
     smartstoreUrl: string;
     channelProductNo: string | null;
+    storeConnectionId?: string | null;
     linkedProductId: string | null;
     supplierTitle: string;
     currentTitle: string | null;
@@ -173,6 +179,16 @@ export interface ManagedProductDetail {
     createdAt: Date;
     updatedAt: Date;
   }>;
+  rankObservations?: KeywordRankObservation[];
+}
+
+export interface KeywordRankObservation {
+  id: string;
+  keyword: string;
+  rank: number | null;
+  checkedAt: Date;
+  note: string;
+  source: "manual";
 }
 
 export interface KeywordFilterState {

@@ -2,7 +2,10 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
-import { CommerceApiManagedProductImporter } from "@/modules/keywords/naver-product-importer";
+import {
+  CommerceApiManagedProductImporter,
+  CommerceApiManagedProductUpdater,
+} from "@/modules/keywords/naver-product-importer";
 
 describe("네이버 관리 상품 정보 가져오기", () => {
   it("등록 카테고리·속성·판매자 태그를 사람이 확인할 수 있는 값으로 변환한다", async () => {
@@ -60,5 +63,54 @@ describe("네이버 관리 상품 정보 가져오기", () => {
         expect.objectContaining({ attributeName: "사이즈", value: "95cm" }),
       ],
     });
+  });
+
+  it("현재 전체 상품정보를 유지하면서 상품명과 검색 태그만 교체한다", async () => {
+    const client = {
+      fetchChannelProduct: vi.fn().mockResolvedValue({
+        originProductNo: "100000001",
+        originProduct: {
+          statusType: "SALE",
+          saleType: "NEW",
+          leafCategoryId: "50000805",
+          name: "기존 상품명",
+          salePrice: 12000,
+          detailAttribute: {
+            productAttributes: [],
+            seoInfo: { sellerTags: [{ text: "기존태그" }] },
+          },
+        },
+        smartstoreChannelProduct: {
+          naverShoppingRegistration: true,
+          channelProductDisplayStatusType: "ON",
+        },
+      }),
+      updateProduct: vi.fn().mockResolvedValue({
+        originProductNo: "100000001",
+        channelProductNo: "200000001",
+      }),
+    };
+    const updater = new CommerceApiManagedProductUpdater(client as never);
+
+    await updater.apply("200000001", {
+      title: "변경 상품명",
+      searchTags: ["새태그", "성장키워드"],
+    });
+
+    expect(client.updateProduct).toHaveBeenCalledWith(
+      "100000001",
+      expect.objectContaining({
+        originProduct: expect.objectContaining({
+          name: "변경 상품명",
+          salePrice: 12000,
+          detailAttribute: expect.objectContaining({
+            seoInfo: { sellerTags: [{ text: "새태그" }, { text: "성장키워드" }] },
+          }),
+        }),
+        smartstoreChannelProduct: expect.objectContaining({
+          channelProductDisplayStatusType: "ON",
+        }),
+      }),
+    );
   });
 });

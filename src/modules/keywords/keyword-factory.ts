@@ -7,11 +7,21 @@ import { MockKeywordGenerationClient } from "./mock-keyword-client";
 import { MockKeywordMetricsClient } from "./mock-keyword-metrics-client";
 import { NaverSearchAdClient } from "./naver-search-ad-client";
 import { RulesKeywordClient } from "./rules-keyword-client";
-import { isNaverCommerceConfigured, createConfiguredNaverClient } from "@/modules/channels/naver/naver-category-service";
+import {
+  isNaverCommerceConfigured,
+  createConfiguredNaverClient,
+  createConfiguredNaverClientForUser,
+} from "@/modules/channels/naver/naver-category-service";
 import { NaverCategoryRepository } from "@/modules/channels/naver/naver-category-repository";
-import { CommerceApiManagedProductImporter } from "./naver-product-importer";
+import {
+  CommerceApiManagedProductImporter,
+  CommerceApiManagedProductUpdater,
+} from "./naver-product-importer";
 
-export function createKeywordManagementService(database: Database) {
+export function createKeywordManagementService(
+  database: Database,
+  ownerId?: string,
+) {
   const env = getServerEnv();
   const mock = env.USE_MOCK_EXTERNAL_APIS;
   const generator = mock
@@ -32,10 +42,44 @@ export function createKeywordManagementService(database: Database) {
       : null;
   const productImporter =
     !mock && isNaverCommerceConfigured(env)
-      ? new CommerceApiManagedProductImporter(
-          createConfiguredNaverClient(env),
-          new NaverCategoryRepository(database),
-        )
+      ? ownerId
+        ? {
+            import: async (
+              channelProductNo: string,
+              storeConnectionId?: string,
+            ) =>
+              new CommerceApiManagedProductImporter(
+                await createConfiguredNaverClientForUser(
+                  database,
+                  ownerId,
+                  env,
+                  storeConnectionId,
+                ),
+                new NaverCategoryRepository(database),
+              ).import(channelProductNo),
+          }
+        : new CommerceApiManagedProductImporter(
+            createConfiguredNaverClient(env),
+            new NaverCategoryRepository(database),
+          )
+      : null;
+  const productUpdater =
+    !mock && isNaverCommerceConfigured(env) && ownerId
+      ? {
+          apply: async (
+            channelProductNo: string,
+            input: { title: string; searchTags: string[] },
+            storeConnectionId?: string,
+          ) =>
+            new CommerceApiManagedProductUpdater(
+              await createConfiguredNaverClientForUser(
+                database,
+                ownerId,
+                env,
+                storeConnectionId,
+              ),
+            ).apply(channelProductNo, input),
+        }
       : null;
   return new KeywordManagementService(
     new DrizzleKeywordManagementRepository(database),
@@ -48,6 +92,7 @@ export function createKeywordManagementService(database: Database) {
       mockMode: mock,
     },
     productImporter,
+    productUpdater,
   );
 }
 
