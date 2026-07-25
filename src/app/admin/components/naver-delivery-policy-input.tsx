@@ -204,6 +204,14 @@ export function NaverDeliveryPolicyInput({
         </button>
         {status && <small role="status">{status}</small>}
       </div>
+      {options && (
+        <div className="naver-delivery-loaded-summary">
+          <span>출고지 {options.releaseAddresses.length}개</span>
+          <span>반품·교환지 {options.returnAddresses.length}개</span>
+          <span>반품 택배사 {options.returnDeliveryCompanies.length}개</span>
+          <span>묶음배송 그룹 {options.bundleGroups.length}개</span>
+        </div>
+      )}
 
       <div className="naver-delivery-grid">
         <PolicySelect

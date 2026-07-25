@@ -117,8 +117,16 @@ export function NaverPublicationPolicyForm({
           </label>
         )}
       </div>
-      <fieldset disabled={inherited(key)}>{content}</fieldset>
-      {inherited(key) && <small>채널 기본값을 사용합니다.</small>}
+      <fieldset disabled={inherited(key) && key !== "deliveryInfo"}>
+        {content}
+      </fieldset>
+      {inherited(key) && (
+        <small>
+          {key === "deliveryInfo"
+            ? "스토어 배송정보는 조회할 수 있으며, 값을 선택하면 상품별 설정으로 전환됩니다."
+            : "채널 기본값을 사용합니다."}
+        </small>
+      )}
     </div>
   );
 

@@ -154,4 +154,53 @@ describe("네이버 판매 정책 설정", () => {
       },
     });
   });
+
+  it("기본정책 상속 중에도 스토어 배송정보를 조회하고 선택할 수 있다", async () => {
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      if (String(input).includes("provided-notices")) {
+        return Promise.resolve(Response.json({ success: true, data: [] }));
+      }
+      return Promise.resolve(
+        Response.json({
+          success: true,
+          data: {
+            releaseAddresses: [
+              {
+                addressBookNo: 101,
+                name: "네이버 기본 출고지",
+                addressType: "RELEASE",
+                address: "서울시 테스트구",
+                baseAddress: "",
+                detailAddress: "",
+              },
+            ],
+            returnAddresses: [],
+            bundleGroups: [],
+            returnDeliveryCompanies: [],
+          },
+        }),
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <NaverPublicationPolicyForm
+        mode="product"
+        endpoint="/api/products/product-1/naver-publication-policy"
+        initialDefaults={emptyNaverPublicationPolicy}
+        initialOverrides={{}}
+      />,
+    );
+
+    expect(await screen.findByText("출고지 1개")).toBeInTheDocument();
+    const releaseAddress = screen.getByLabelText("출고지");
+    expect(releaseAddress).not.toBeDisabled();
+    fireEvent.change(releaseAddress, { target: { value: "101" } });
+    expect(releaseAddress).toHaveValue("101");
+
+    const deliveryField = releaseAddress.closest(".naver-policy-field");
+    expect(
+      deliveryField?.querySelector<HTMLInputElement>('input[type="checkbox"]'),
+    ).toBeChecked();
+  });
 });

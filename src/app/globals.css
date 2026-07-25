@@ -2281,6 +2281,21 @@ td small {
   align-items: center;
   gap: 10px;
 }
+
+.naver-delivery-loaded-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0.65rem 0;
+}
+
+.naver-delivery-loaded-summary span {
+  background: #eef5ff;
+  border-radius: 999px;
+  color: #2457d6;
+  font-size: 0.78rem;
+  padding: 0.25rem 0.55rem;
+}
 .naver-delivery-toolbar button {
   min-height: 36px;
   padding: 0 12px;
