@@ -73,6 +73,11 @@
 - 상시 운영용 systemd와 Caddy 예시는 `deploy/naver-relay/`에 추가했다. 실제 고정 IP
   VM 계약·도메인·네이버 허용 IP 등록은 비용과 외부 계정 선택이 필요해 아직 하지
   않았다.
+- 비용 없는 현재 운영을 위해 Windows 예약 작업 `Shoppingday Naver Quick Tunnel`을
+  추가했다. Windows 로그인 시 숨김 상태로 Quick Tunnel과 릴레이를 실행하며 비정상
+  종료 1분 뒤 자동 재시작한다. 설치·제거 명령은 각각
+  `npm run naver:local-tunnel:autostart`,
+  `npm run naver:local-tunnel:autostart:remove`다.
 - 회귀 테스트: 실제 다수 후보에서도 두 명사 기준점 사이의 특징이 누락되지 않고,
   기본 명사 `욕실화`가 최대 두 번이며 최종 제목이 50자를 넘지 않는지 확인한다.
 - TypeScript 통과

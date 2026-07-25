@@ -91,6 +91,22 @@ npx wrangler login --use-keyring
 npm run naver:local-tunnel
 ```
 
+Windows 로그인 시 자동으로 실행하고 비정상 종료 1분 뒤 재시작하려면 한 번만 다음
+명령을 실행한다.
+
+```powershell
+npm run naver:local-tunnel:autostart
+```
+
+예약 작업 이름은 `Shoppingday Naver Quick Tunnel`이다. 현재 Windows 사용자의
+Credential Manager에 저장된 Wrangler 로그인을 사용해야 하므로 시스템 부팅 시점이
+아니라 해당 사용자의 로그인 시점에 실행한다. 자동 시작을 제거하려면 다음 명령을
+사용한다.
+
+```powershell
+npm run naver:local-tunnel:autostart:remove
+```
+
 릴레이는 HMAC 서명된 읽기 요청 중 카테고리, 상품 모델 검색, 카테고리별 상품
 속성·속성값, 전체 속성 단위, 표준 옵션, 판매자 주소록, 묶음배송 그룹과 반품 택배사
 경로만 허용한다. 카테고리 메타데이터 경로는 숫자형 `categoryId` 쿼리만 전달하며
