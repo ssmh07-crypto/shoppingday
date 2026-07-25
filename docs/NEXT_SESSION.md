@@ -770,3 +770,63 @@ npm run naver:local-tunnel
 - 키워드 순위는 `keyword_rank_observations`에 사용자가 같은 조건에서 확인한 실제 순위와 확인일을 저장한다. 1,000위 안에서 찾지 못한 경우는 `rank = null`로 기록한다.
 - 네이버 쇼핑 검색 Open API가 2026-07-31 종료 예정이므로 자동 순위 수집에는 연결하지 않았다. 지속 가능한 공식 공급원이 확인되면 현재 순위 이력 저장소에 별도 adapter를 연결한다.
 - migration `0021_good_gargoyle.sql`을 적용했다. 기존 로컬 발행 상품과 연결된 성장 상품은 스토어 연결 ID를 자동 보정한다.
+
+## 2026-07-25 최신 인수인계 상태
+
+### 현재 Git 상태
+
+- 작업 브랜치: `agent/growth-sourcing-management`
+- 원격 브랜치: `origin/agent/growth-sourcing-management`
+- 최신 기능 커밋:
+  - `70fdc67` `Redesign SmartStore growth management`
+  - `be99f61` `Manage published SmartStore products`
+  - `8f272b6` `Split product attributes into a dedicated tab`
+- 위 기능 커밋은 모두 원격 브랜치에 푸시했다.
+- 기존 Draft PR #18이 이 브랜치를 사용하고 있으므로 후속 커밋도 같은 PR에 누적된다.
+
+### 이번 작업에서 완료한 운영 흐름
+
+1. 상품 등록관리 편집 화면은 `기본정보 / 이미지 / 속성 / 스마트스토어` 네 탭으로 분리했다.
+2. 대표 이미지 1장과 추가 이미지 9장, 총 10장을 관리하며 드래그앤드롭으로 순서를 변경한다.
+3. 검색 태그는 검색량을 함께 보여주며 스마트스토어 제한에 맞춰 최대 10개만 선택한다.
+4. 스마트스토어 설정에서 최대 5개 연결을 관리하고 상품별 대상 스토어와 배송정책 관리번호를 선택한다.
+5. 이미 등록된 상품은 전체 정보 수정, 판매 재개, 품절, 판매 중지, 채널·원상품 삭제가 가능하다.
+6. 성장 상품 관리는 스마트스토어 상품 링크로 현재 정보를 가져오고 상품명·태그를 실제 상품에 반영하며 키워드별 실제 순위 이력을 기록한다.
+
+### 적용한 최신 DB migration
+
+- `0020_powerful_peter_quill.sql`
+  - `product_publications.remote_status_type` 추가
+  - 기존 발행 완료 상품을 `SALE`로 보정
+- `0021_good_gargoyle.sql`
+  - `keyword_managed_products.store_connection_id` 추가
+  - `keyword_rank_observations` 추가
+  - 기존 로컬 발행 상품과 연결된 성장 상품의 스토어 연결 ID 보정
+- 두 migration 모두 현재 `.env.local`이 가리키는 PostgreSQL DB에 적용 완료했다.
+
+### 최신 검증 결과
+
+- `npm run typecheck` 통과
+- `npm run lint` 통과
+- 전체 43개 테스트 파일, 232개 테스트 통과
+- `npm run build` 통과
+- Next.js 경고는 기존 `middleware` 파일 규칙 폐기 예정 안내만 남아 있다.
+- 이 세션에는 사용 가능한 브라우저 연결이 없어 자동 시각 검수는 수행하지 못했다. 성장 관리의 순위 기록과 스마트스토어 반영은 jsdom 화면 상호작용 테스트로 검증했다.
+
+### 테스트할 화면
+
+- 성장 상품 관리: `http://localhost:3000/admin/keywords`
+- 상품 등록관리: `http://localhost:3000/admin/registration`
+- 일반 상품관리: `http://localhost:3000/admin/products`
+- 스마트스토어 설정: `http://localhost:3000/admin/channels/naver`
+
+로컬 주소가 열리지 않으면 저장소 루트에서 `npm run dev`가 실행 중인지 먼저 확인한다.
+
+### 다음 세션에서 우선 확인할 사항
+
+1. Quick Tunnel 릴레이가 이전 프로세스로 실행 중이면 재시작한다. 상품 수정·상태 변경·삭제 허용 경로가 최신 릴레이 코드에 포함되어야 한다.
+2. 본인 스마트스토어의 테스트 상품 링크를 성장 상품 관리에 추가해 요약정보가 정상 조회되는지 확인한다.
+3. 테스트 상품에서 상품명 또는 태그 한 항목만 바꿔 실제 수정 후 네이버 판매자센터 결과를 확인한다.
+4. 삭제 테스트는 복구할 수 없는 실제 변경이므로 별도 테스트 상품에서만 수행한다.
+5. 키워드 순위 자동 수집은 구현하지 않았다. 네이버 쇼핑 검색 Open API가 2026-07-31 종료 예정이므로 지속 가능한 공식 공급원이 확인되기 전에는 수동 실제 순위 기록을 유지한다.
+6. 기능 코드 변경을 운영 Worker에 반영하려면 별도 Cloudflare 배포가 필요하다. 이번 최신 두 커밋은 GitHub 푸시와 로컬 DB migration까지만 완료했으며 운영 배포는 수행하지 않았다.
