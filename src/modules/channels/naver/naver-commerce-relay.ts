@@ -12,6 +12,9 @@ import {
   parseNaverCommerceUploadedImages,
   parseNaverCommerceCreatedProduct,
   parseNaverCommerceChannelProduct,
+  parseNaverCommerceSellerAddresses,
+  parseNaverCommerceDeliveryBundleGroups,
+  parseNaverCommerceReturnDeliveryCompanies,
   type NaverCommerceCategory,
   type NaverCommerceProductAttribute,
   type NaverCommerceProductAttributeUnit,
@@ -22,6 +25,9 @@ import {
   type NaverCommerceUploadedImage,
   type NaverCommerceCreatedProduct,
   type NaverCommerceChannelProduct,
+  type NaverCommerceSellerAddress,
+  type NaverCommerceDeliveryBundleGroup,
+  type NaverCommerceReturnDeliveryCompany,
   type NaverImageUploadFile,
 } from "./naver-commerce-client";
 import type { NaverProductPayload } from "./naver-product-payload";
@@ -60,6 +66,9 @@ export interface NaverCategoriesClient {
   uploadProductImages(files: NaverImageUploadFile[]): Promise<NaverCommerceUploadedImage[]>;
   createProduct(payload: NaverProductPayload): Promise<NaverCommerceCreatedProduct>;
   fetchChannelProduct(channelProductNo: string): Promise<NaverCommerceChannelProduct>;
+  fetchSellerAddresses(): Promise<NaverCommerceSellerAddress[]>;
+  fetchDeliveryBundleGroups(): Promise<NaverCommerceDeliveryBundleGroup[]>;
+  fetchReturnDeliveryCompanies(): Promise<NaverCommerceReturnDeliveryCompany[]>;
 }
 
 export class NaverCommerceRelayClient implements NaverCategoriesClient {
@@ -179,6 +188,27 @@ export class NaverCommerceRelayClient implements NaverCategoriesClient {
     }
     const url = this.relayUrl(`v2/products/channel-products/${channelProductNo}`);
     return parseNaverCommerceChannelProduct(await this.requestWithRetry(url));
+  }
+
+  async fetchSellerAddresses() {
+    const url = this.relayUrl("v1/seller/addressbooks-for-page");
+    return parseNaverCommerceSellerAddresses(await this.requestWithRetry(url));
+  }
+
+  async fetchDeliveryBundleGroups() {
+    const url = this.relayUrl("v1/product-delivery-info/bundle-groups");
+    return parseNaverCommerceDeliveryBundleGroups(
+      await this.requestWithRetry(url),
+    );
+  }
+
+  async fetchReturnDeliveryCompanies() {
+    const url = this.relayUrl(
+      "v2/product-delivery-info/return-delivery-companies",
+    );
+    return parseNaverCommerceReturnDeliveryCompanies(
+      await this.requestWithRetry(url),
+    );
   }
 
   private relayUrl(path: string) {
@@ -339,6 +369,9 @@ const RELAY_PATHS = [
   "/v1/product-attributes/attribute-value-units",
   "/v1/options/standard-options",
   "/v1/products-for-provided-notice",
+  "/v1/seller/addressbooks-for-page",
+  "/v1/product-delivery-info/bundle-groups",
+  "/v2/product-delivery-info/return-delivery-companies",
 ] as const;
 const IMAGE_UPLOAD_PATH = "/v1/product-images/upload";
 const PRODUCT_CREATE_PATH = "/v2/products";
@@ -514,6 +547,24 @@ async function handleRelayRequest(
     return { images: await client.uploadProductImages(files) };
   }
   if (url.pathname === "/v1/categories") return handleCategories(url, client);
+  if (url.pathname === "/v1/seller/addressbooks-for-page") {
+    if (url.search) {
+      return relayJson(400, "invalid_request", "주소록 조회 조건이 올바르지 않습니다.");
+    }
+    return client.fetchSellerAddresses();
+  }
+  if (url.pathname === "/v1/product-delivery-info/bundle-groups") {
+    if (url.search) {
+      return relayJson(400, "invalid_request", "묶음배송 조회 조건이 올바르지 않습니다.");
+    }
+    return client.fetchDeliveryBundleGroups();
+  }
+  if (url.pathname === "/v2/product-delivery-info/return-delivery-companies") {
+    if (url.search) {
+      return relayJson(400, "invalid_request", "반품 택배사 조회 조건이 올바르지 않습니다.");
+    }
+    return client.fetchReturnDeliveryCompanies();
+  }
   if (url.pathname === "/v1/product-models")
     return handleProductModels(url, client);
   if (url.pathname === "/v1/product-attributes/attribute-value-units") {

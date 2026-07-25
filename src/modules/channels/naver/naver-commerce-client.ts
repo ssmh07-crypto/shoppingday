@@ -124,6 +124,47 @@ const channelProductSchema = z.looseObject({
     }),
   }),
 });
+const sellerAddressSchema = z.looseObject({
+  addressBookNo: z.number().int().nonnegative(),
+  name: z.string().default(""),
+  addressType: z.enum([
+    "REPRESENTATIVE",
+    "BUSINESS",
+    "GENERAL",
+    "RELEASE",
+    "REFUND_OR_EXCHANGE",
+    "LOGISTICS_CENTER_RELEASE",
+    "LOGISTICS_CENTER_REFUND_OR_EXCHANGE",
+    "OVERSEAS_BANK",
+  ]),
+  postalCode: z.string().default(""),
+  baseAddress: z.string().default(""),
+  detailAddress: z.string().default(""),
+  address: z.string().default(""),
+});
+const deliveryBundleGroupSchema = z.looseObject({
+  id: z.number().int().nonnegative(),
+  name: z.string().min(1),
+  usable: z.boolean(),
+  baseGroup: z.boolean(),
+  deliveryFeeChargeMethodType: z.enum(["MIN", "MAX"]),
+});
+const returnDeliveryCompanySchema = z.looseObject({
+  id: z.number().int().nonnegative(),
+  name: z.string().min(1),
+  returnDeliveryCompanyPriorityType: z.enum([
+    "PRIMARY",
+    "SECONDARY_1",
+    "SECONDARY_2",
+    "SECONDARY_3",
+    "SECONDARY_4",
+    "SECONDARY_5",
+    "SECONDARY_6",
+    "SECONDARY_7",
+    "SECONDARY_8",
+    "SECONDARY_9",
+  ]),
+});
 
 export type NaverCommerceCategory = z.infer<typeof categorySchema>;
 export type NaverCommerceProductModel = z.infer<typeof productModelSchema>;
@@ -146,6 +187,13 @@ export type NaverCommerceCreatedProduct = z.infer<
 >;
 export type NaverCommerceChannelProduct = z.infer<
   typeof channelProductSchema
+>;
+export type NaverCommerceSellerAddress = z.infer<typeof sellerAddressSchema>;
+export type NaverCommerceDeliveryBundleGroup = z.infer<
+  typeof deliveryBundleGroupSchema
+>;
+export type NaverCommerceReturnDeliveryCompany = z.infer<
+  typeof returnDeliveryCompanySchema
 >;
 export type NaverImageUploadFile = {
   name: string;
@@ -255,6 +303,37 @@ export async function parseNaverCommerceChannelProduct(response: Response) {
     response,
     channelProductSchema,
     "네이버 채널 상품 조회 응답 형식이 올바르지 않습니다.",
+  );
+}
+
+export async function parseNaverCommerceSellerAddresses(response: Response) {
+  return parseListResponse(
+    response,
+    sellerAddressSchema,
+    ["addressBooks", "content", "contents", "addresses"],
+    "네이버 판매자 주소록 응답 형식이 올바르지 않습니다.",
+  );
+}
+
+export async function parseNaverCommerceDeliveryBundleGroups(
+  response: Response,
+) {
+  return parseListResponse(
+    response,
+    deliveryBundleGroupSchema,
+    ["deliveryBundleGroups", "contents", "content"],
+    "네이버 묶음배송 그룹 응답 형식이 올바르지 않습니다.",
+  );
+}
+
+export async function parseNaverCommerceReturnDeliveryCompanies(
+  response: Response,
+) {
+  return parseListResponse(
+    response,
+    returnDeliveryCompanySchema,
+    ["returnDeliveryCompanies", "contents", "content"],
+    "네이버 반품 택배사 응답 형식이 올바르지 않습니다.",
   );
 }
 
@@ -385,6 +464,31 @@ export class NaverCommerceClient {
       `${this.config.apiUrl}/v2/products/channel-products/${channelProductNo}`,
     );
     return parseNaverCommerceChannelProduct(await this.authorizedFetch(url));
+  }
+
+  async fetchSellerAddresses() {
+    const url = new URL(
+      `${this.config.apiUrl}/v1/seller/addressbooks-for-page`,
+    );
+    return parseNaverCommerceSellerAddresses(await this.authorizedFetch(url));
+  }
+
+  async fetchDeliveryBundleGroups() {
+    const url = new URL(
+      `${this.config.apiUrl}/v1/product-delivery-info/bundle-groups`,
+    );
+    return parseNaverCommerceDeliveryBundleGroups(
+      await this.authorizedFetch(url),
+    );
+  }
+
+  async fetchReturnDeliveryCompanies() {
+    const url = new URL(
+      `${this.config.apiUrl}/v2/product-delivery-info/return-delivery-companies`,
+    );
+    return parseNaverCommerceReturnDeliveryCompanies(
+      await this.authorizedFetch(url),
+    );
   }
 
   async uploadProductImages(files: NaverImageUploadFile[]) {
@@ -655,6 +759,25 @@ async function parseResponse<T>(
   message: string,
 ) {
   const parsed = schema.safeParse(await parseJson(response));
+  if (!parsed.success) {
+    throw new NaverCommerceError("invalid_response", message, response.status);
+  }
+  return parsed.data;
+}
+
+async function parseListResponse<T>(
+  response: Response,
+  itemSchema: z.ZodType<T>,
+  keys: string[],
+  message: string,
+) {
+  const json = await parseJson(response);
+  let items: unknown = json;
+  if (!Array.isArray(items) && items && typeof items === "object") {
+    const object = items as Record<string, unknown>;
+    items = keys.map((key) => object[key]).find(Array.isArray);
+  }
+  const parsed = z.array(itemSchema).safeParse(items);
   if (!parsed.success) {
     throw new NaverCommerceError("invalid_response", message, response.status);
   }

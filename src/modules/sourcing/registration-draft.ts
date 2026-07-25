@@ -2,7 +2,7 @@ import type { SourcingRelatedKeyword } from "./types";
 
 const TITLE_LIMIT = 50;
 const TITLE_REVIEW_LENGTH = 40;
-const TAG_LIMIT = 20;
+const TAG_LIMIT = 10;
 const TAG_LENGTH_LIMIT = 30;
 const PROMOTIONAL_TERMS = [
   "무료배송",
@@ -153,7 +153,7 @@ export function buildSourcingRegistrationDraft(
     warnings.push("30자를 넘는 태그 후보는 표시하지만 상품 등록 태그로 선택할 수 없습니다.");
   }
   if (selectableTagKeywords.length > TAG_LIMIT) {
-    warnings.push("태그 후보 전체를 추출했습니다. 상품 등록에는 최대 20개를 직접 선택해 주세요.");
+    warnings.push("태그 후보 전체를 추출했습니다. 상품 등록에는 최대 10개를 직접 선택해 주세요.");
   }
   if (attributeKeywords.length) {
     warnings.push("속성 키워드는 네이버 카테고리의 공식 속성값과 직접 대조해야 합니다.");

@@ -356,4 +356,71 @@ describe("네이버 커머스API 클라이언트", () => {
       "https://api.example.test/external/v2/products/channel-products/200000001",
     );
   });
+
+  it("판매자 주소록과 배송 관련 선택지를 네이버 응답에서 읽는다", async () => {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        json({ access_token: "token", expires_in: 10800, token_type: "Bearer" }),
+      )
+      .mockResolvedValueOnce(
+        json({
+          addressBooks: [
+            {
+              addressBookNo: 101,
+              name: "기본 출고지",
+              addressType: "RELEASE",
+              postalCode: "00000",
+              baseAddress: "서울시 테스트구",
+              detailAddress: "1층",
+              address: "서울시 테스트구 1층",
+            },
+          ],
+          page: 1,
+          totalPage: 1,
+        }),
+      )
+      .mockResolvedValueOnce(
+        json({
+          deliveryBundleGroups: [
+            {
+              id: 202,
+              name: "기본 묶음배송",
+              usable: true,
+              baseGroup: true,
+              deliveryFeeChargeMethodType: "MIN",
+            },
+          ],
+        }),
+      )
+      .mockResolvedValueOnce(
+        json({
+          returnDeliveryCompanies: [
+            {
+              id: 303,
+              name: "한진택배",
+              returnDeliveryCompanyPriorityType: "PRIMARY",
+            },
+          ],
+        }),
+      );
+    const client = new NaverCommerceClient(config, fetcher, () => now);
+
+    await expect(client.fetchSellerAddresses()).resolves.toHaveLength(1);
+    await expect(client.fetchDeliveryBundleGroups()).resolves.toMatchObject([
+      { id: 202, baseGroup: true },
+    ]);
+    await expect(client.fetchReturnDeliveryCompanies()).resolves.toMatchObject([
+      { name: "한진택배", returnDeliveryCompanyPriorityType: "PRIMARY" },
+    ]);
+    expect(String(fetcher.mock.calls[1]?.[0])).toContain(
+      "/v1/seller/addressbooks-for-page",
+    );
+    expect(String(fetcher.mock.calls[2]?.[0])).toContain(
+      "/v1/product-delivery-info/bundle-groups",
+    );
+    expect(String(fetcher.mock.calls[3]?.[0])).toContain(
+      "/v2/product-delivery-info/return-delivery-companies",
+    );
+  });
 });

@@ -532,6 +532,90 @@ function validateDeliveryInfo(
       message: "배송 속성 유형이 필요합니다.",
     });
   }
+  if (
+    deliveryInfo.deliveryType === "DELIVERY" &&
+    !String(deliveryInfo.deliveryCompany ?? "").trim()
+  ) {
+    issues.push({
+      path: "originProduct.deliveryInfo.deliveryCompany",
+      code: "required",
+      message: "발송 택배사를 선택해야 합니다.",
+    });
+  }
+  const deliveryFee = jsonObject(deliveryInfo.deliveryFee);
+  if (!deliveryFee) {
+    issues.push({
+      path: "originProduct.deliveryInfo.deliveryFee",
+      code: "required",
+      message: "배송비 정책이 필요합니다.",
+    });
+  } else if (
+    !["FREE", "PAID", "CONDITIONAL_FREE", "CHARGE_BY_QUANTITY"].includes(
+      String(deliveryFee.deliveryFeeType),
+    )
+  ) {
+    issues.push({
+      path: "originProduct.deliveryInfo.deliveryFee.deliveryFeeType",
+      code: "invalid",
+      message: "배송비 유형을 선택해야 합니다.",
+    });
+  }
+  const claim = jsonObject(deliveryInfo.claimDeliveryInfo);
+  if (!claim) {
+    issues.push({
+      path: "originProduct.deliveryInfo.claimDeliveryInfo",
+      code: "required",
+      message: "출고지와 반품·교환 정책이 필요합니다.",
+    });
+  } else {
+    if (!positiveInteger(claim.shippingAddressId)) {
+      issues.push({
+        path:
+          "originProduct.deliveryInfo.claimDeliveryInfo.shippingAddressId",
+        code: "required",
+        message: "스마트스토어 출고지를 선택해야 합니다.",
+      });
+    }
+    if (!positiveInteger(claim.returnAddressId)) {
+      issues.push({
+        path: "originProduct.deliveryInfo.claimDeliveryInfo.returnAddressId",
+        code: "required",
+        message: "스마트스토어 반품·교환지를 선택해야 합니다.",
+      });
+    }
+    if (
+      !/^PRIMARY$|^SECONDARY_[1-9]$/.test(
+        String(claim.returnDeliveryCompanyPriorityType ?? ""),
+      )
+    ) {
+      issues.push({
+        path:
+          "originProduct.deliveryInfo.claimDeliveryInfo.returnDeliveryCompanyPriorityType",
+        code: "required",
+        message: "반품 택배사 계약을 선택해야 합니다.",
+      });
+    }
+  }
+  if (
+    deliveryInfo.deliveryBundleGroupUsable === true &&
+    !positiveInteger(deliveryInfo.deliveryBundleGroupId)
+  ) {
+    issues.push({
+      path: "originProduct.deliveryInfo.deliveryBundleGroupId",
+      code: "required",
+      message: "묶음배송 그룹을 선택해야 합니다.",
+    });
+  }
+}
+
+function jsonObject(value: unknown): Record<string, unknown> | undefined {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+function positiveInteger(value: unknown) {
+  return typeof value === "number" && Number.isInteger(value) && value > 0;
 }
 
 function validateAfterServiceInfo(

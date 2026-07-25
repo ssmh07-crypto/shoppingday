@@ -320,8 +320,8 @@ export function SourcingWorkspace({
         setError(null);
         return current.filter((item) => item !== tag);
       }
-      if (current.length >= 20) {
-        setError("검색 태그는 최대 20개까지 선택할 수 있습니다.");
+      if (current.length >= 10) {
+        setError("검색 태그는 최대 10개까지 선택할 수 있습니다.");
         return current;
       }
       setError(null);
@@ -828,7 +828,7 @@ export function SourcingWorkspace({
                     />
                   </Field>
                   <div className="sourcing-registration-group">
-                    <strong>검색 태그 선택 ({registrationTags.length}/20)</strong>
+                    <strong>검색 태그 선택 ({registrationTags.length}/10)</strong>
                     {registrationDraft.tagCandidates.length ? (
                       <div className="sourcing-registration-tag-options">
                         {registrationDraft.tagCandidates.map((tag) => {

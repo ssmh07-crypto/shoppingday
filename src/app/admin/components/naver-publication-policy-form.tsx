@@ -7,6 +7,7 @@ import type {
   NaverPublicationPolicyOverrides,
 } from "@/lib/db/schema";
 import { mergeNaverPublicationPolicy } from "@/modules/channels/naver/naver-publication-policy";
+import { NaverDeliveryPolicyInput } from "./naver-delivery-policy-input";
 
 type PolicyKey = keyof NaverPublicationPolicyData;
 
@@ -266,9 +267,8 @@ export function NaverPublicationPolicyForm({
         )}
         {wrap(
           "deliveryInfo",
-          "배송 정책 JSON",
-          <JsonObjectInput
-            label="배송 정책 JSON"
+          "배송 정책",
+          <NaverDeliveryPolicyInput
             value={policy.deliveryInfo}
             onChange={(value) => setValue("deliveryInfo", value)}
           />,
@@ -314,49 +314,6 @@ function NullableBooleanSelect({
       <option value="true">허용</option>
       <option value="false">허용하지 않음</option>
     </select>
-  );
-}
-
-function JsonObjectInput({
-  label,
-  value,
-  onChange,
-}: {
-  label: string;
-  value: DatabaseJsonObject | null;
-  onChange: (value: DatabaseJsonObject | null) => void;
-}) {
-  const [text, setText] = useState(value ? JSON.stringify(value, null, 2) : "");
-  const [error, setError] = useState("");
-
-  function commit() {
-    if (!text.trim()) {
-      setError("");
-      onChange(null);
-      return;
-    }
-    try {
-      const parsed = JSON.parse(text);
-      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error();
-      setError("");
-      onChange(parsed);
-    } catch {
-      setError("JSON 객체 형식을 확인해 주세요.");
-    }
-  }
-
-  return (
-    <div className="naver-policy-json">
-      <textarea
-        aria-label={label}
-        rows={6}
-        value={text}
-        placeholder="API 조회 UI 연결 전에는 JSON 객체로 입력합니다."
-        onChange={(event) => setText(event.target.value)}
-        onBlur={commit}
-      />
-      {error && <small className="naver-policy-error">{error}</small>}
-    </div>
   );
 }
 

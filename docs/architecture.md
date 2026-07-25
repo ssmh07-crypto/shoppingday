@@ -29,12 +29,17 @@ import 트랜잭션은 `supplier_products` 원본 저장, `products` draft 생�
 Admin UI → ProductEditService → ProductEditRepository → products
                                └→ product_audit_logs
 supplier_products ── read only ─┘
-products → (next phase) product_publications → marketplace adapters
+products → product_publications → Naver Commerce API adapter
 ```
 
-판매 이미지에는 공급사 `http/https` URL과 선택·대표·순서 메타데이터만 저장합니다. 이미지 파일 저장이나 R2 업로드는 하지 않습니다. 판매 옵션은 원본 옵션과 별개의 그룹/값/조합 JSONB 모델입니다.
+판매 이미지에는 공급사 `http/https` URL, 네이버 이미지 업로드 반환 URL과 선택·대표·순서 메타데이터를 저장합니다. 대표 1개와 추가 9개까지 선택하며 이미지 파일 자체를 DB나 R2에 저장하지 않습니다. 판매 옵션은 원본 옵션과 별개의 그룹/값/조합 JSONB 모델입니다.
 
-상태는 `draft → editing → ready`이며 `archived`는 내부 보관용입니다. ready 상품의 상품명·판매가·설명·이미지·옵션을 수정하면 `editing`으로 돌아갑니다. 마켓 게시 상태는 향후 `product_publications`에서 별도로 관리합니다.
+네이버 발행 정책의 배송정보는 판매자 주소록, 묶음배송 그룹, 계약된 반품 택배사를
+커머스 API에서 읽어 선택하고 사용자 기본 정책 JSON에 저장합니다. 상품 편집에서는 이
+기본값을 상속하며 예외 상품만 덮어씁니다. 외부 조회값은 선택 편의를 위한 것이며
+Shoppingday가 네이버 판매자센터의 주소록이나 계약 정보를 변경하지 않습니다.
+
+상태는 `draft → editing → ready`이며 `archived`는 내부 보관용입니다. ready 상품의 상품명·판매가·설명·이미지·옵션을 수정하면 `editing`으로 돌아갑니다. 네이버 발행 상태와 외부 상품번호, payload hash, 실패 정보는 `product_publications`에서 별도로 관리합니다.
 
 저장은 클라이언트가 읽은 `draft_version`과 DB 값을 비교합니다. 일치하는 조건부 UPDATE만 성공하며 버전을 1 증가시키고 같은 트랜잭션에서 요약 감사 로그를 기록합니다.
 

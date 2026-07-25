@@ -101,5 +101,5 @@ export const sourcingResearchInputSchema = z.object({
 export const applySourcingRegistrationDraftSchema = z.object({
   productId: z.uuid(),
   title: z.string().trim().min(1, "상품명 초안을 입력해 주세요.").max(200),
-  searchTags: z.array(z.string().trim().min(1).max(30)).max(20),
+  searchTags: z.array(z.string().trim().min(1).max(30)).max(10),
 });

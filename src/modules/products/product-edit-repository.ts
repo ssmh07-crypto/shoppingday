@@ -157,6 +157,7 @@ export class ProductEditRepository {
           supplierProducts,
           eq(supplierProducts.id, productSupplierLinks.supplierProductId),
         )
+        .innerJoin(suppliers, eq(suppliers.id, supplierProducts.supplierId))
         .where(where),
       this.database
         .select({
@@ -176,6 +177,7 @@ export class ProductEditRepository {
           supplierProducts,
           eq(supplierProducts.id, productSupplierLinks.supplierProductId),
         )
+        .innerJoin(suppliers, eq(suppliers.id, supplierProducts.supplierId))
         .where(and(ownership, ne(suppliers.code, "sourcing"))),
     ]);
     return {

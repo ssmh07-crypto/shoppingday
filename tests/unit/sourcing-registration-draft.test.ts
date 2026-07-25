@@ -21,6 +21,20 @@ describe("소싱 상품 등록 초안", () => {
     expect(draft.searchTags).toEqual(["화장실슬리퍼", "욕실슬리퍼"]);
   });
 
+  it("태그 후보 전체는 유지하되 기본 선택은 검색수 순으로 10개까지만 만든다", () => {
+    const draft = buildSourcingRegistrationDraft(
+      "욕실화",
+      Array.from({ length: 11 }, (_, index) =>
+        keyword(`태그${index + 1}`, 11 - index, "tag"),
+      ),
+    );
+
+    expect(draft.tagCandidates).toHaveLength(11);
+    expect(draft.searchTags).toHaveLength(10);
+    expect(draft.searchTags).not.toContain("태그11");
+    expect(draft.warnings.join(" ")).toContain("최대 10개");
+  });
+
   it("카테고리 키워드를 상품명 재료로 사용하지 않는다", () => {
     const draft = buildSourcingRegistrationDraft("도시락통", [
       keyword("스텐도시락통", 800, "product_name"),

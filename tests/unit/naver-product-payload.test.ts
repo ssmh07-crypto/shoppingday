@@ -84,7 +84,16 @@ const profile: NaverPublicationProfile = {
   deliveryInfo: {
     deliveryType: "DELIVERY",
     deliveryAttributeType: "NORMAL",
+    deliveryCompany: "HANJIN",
     deliveryFee: { deliveryFeeType: "FREE" },
+    claimDeliveryInfo: {
+      returnDeliveryCompanyPriorityType: "PRIMARY",
+      returnDeliveryFee: 3000,
+      exchangeDeliveryFee: 6000,
+      shippingAddressId: 101,
+      returnAddressId: 202,
+      freeReturnInsuranceYn: false,
+    },
   },
   afterServiceInfo: {
     afterServiceTelephoneNumber: "02-1234-5678",
@@ -167,7 +176,9 @@ describe("네이버 v2 상품 payload 변환", () => {
     const second = buildNaverProductPayload(source, {
       ...profile,
       deliveryInfo: {
+        claimDeliveryInfo: profile.deliveryInfo?.claimDeliveryInfo ?? {},
         deliveryFee: { deliveryFeeType: "FREE" },
+        deliveryCompany: "HANJIN",
         deliveryAttributeType: "NORMAL",
         deliveryType: "DELIVERY",
       },
@@ -220,6 +231,29 @@ describe("네이버 v2 상품 payload 변환", () => {
         "originProduct.detailAttribute.minorPurchasable",
         "smartstoreChannelProduct.naverShoppingRegistration",
         "smartstoreChannelProduct.channelProductDisplayStatusType",
+      ]),
+    );
+  });
+
+  it("택배 배송의 출고지·반품지·택배사 누락을 등록 전에 표시한다", () => {
+    const result = buildNaverProductPayload(source, {
+      ...profile,
+      deliveryInfo: {
+        deliveryType: "DELIVERY",
+        deliveryAttributeType: "NORMAL",
+        deliveryFee: { deliveryFeeType: "FREE" },
+        claimDeliveryInfo: {},
+      },
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.issues.map((issue) => issue.path)).toEqual(
+      expect.arrayContaining([
+        "originProduct.deliveryInfo.deliveryCompany",
+        "originProduct.deliveryInfo.claimDeliveryInfo.shippingAddressId",
+        "originProduct.deliveryInfo.claimDeliveryInfo.returnAddressId",
+        "originProduct.deliveryInfo.claimDeliveryInfo.returnDeliveryCompanyPriorityType",
       ]),
     );
   });

@@ -1,12 +1,15 @@
 // @vitest-environment jsdom
 
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { NaverPublicationPolicyForm } from "@/app/admin/components/naver-publication-policy-form";
 import { emptyNaverPublicationPolicy } from "@/modules/channels/naver/naver-publication-policy";
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
 
 describe("네이버 판매 정책 설정", () => {
   it("빈 필드는 유지하고 관리자가 선택한 기본 정책만 저장한다", async () => {
@@ -14,6 +17,19 @@ describe("네이버 판매 정책 설정", () => {
     const fetchMock = vi.fn((input: RequestInfo | URL) => {
       if (String(input).includes("provided-notices")) {
         return Promise.resolve(Response.json({ success: true, data: [] }));
+      }
+      if (String(input).includes("delivery-options")) {
+        return Promise.resolve(
+          Response.json({
+            success: true,
+            data: {
+              releaseAddresses: [],
+              returnAddresses: [],
+              bundleGroups: [],
+              returnDeliveryCompanies: [],
+            },
+          }),
+        );
       }
       return Promise.resolve(Response.json({ success: true, policy: saved }));
     });
@@ -39,5 +55,103 @@ describe("네이버 판매 정책 설정", () => {
       "/api/settings/channels/naver",
       expect.objectContaining({ method: "PATCH", body: JSON.stringify(saved) }),
     );
+  });
+
+  it("스마트스토어 주소록과 반품 택배사를 선택해 배송 정책으로 저장한다", async () => {
+    let savedBody: Record<string, unknown> | undefined;
+    const fetchMock = vi.fn(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (url.includes("provided-notices")) {
+          return Response.json({ success: true, data: [] });
+        }
+        if (url.includes("delivery-options")) {
+          return Response.json({
+            success: true,
+            data: {
+              releaseAddresses: [
+                {
+                  addressBookNo: 101,
+                  name: "기본 출고지",
+                  addressType: "RELEASE",
+                  address: "서울시 테스트구",
+                  baseAddress: "",
+                  detailAddress: "",
+                },
+              ],
+              returnAddresses: [
+                {
+                  addressBookNo: 202,
+                  name: "기본 반품지",
+                  addressType: "REFUND_OR_EXCHANGE",
+                  address: "서울시 반품구",
+                  baseAddress: "",
+                  detailAddress: "",
+                },
+              ],
+              bundleGroups: [
+                { id: 303, name: "기본 묶음배송", baseGroup: true },
+              ],
+              returnDeliveryCompanies: [
+                {
+                  id: 404,
+                  name: "한진택배",
+                  returnDeliveryCompanyPriorityType: "PRIMARY",
+                },
+              ],
+            },
+          });
+        }
+        savedBody = JSON.parse(String(init?.body));
+        return Response.json({
+          success: true,
+          policy: savedBody,
+        });
+      },
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <NaverPublicationPolicyForm
+        mode="default"
+        endpoint="/api/settings/channels/naver"
+        initialDefaults={emptyNaverPublicationPolicy}
+      />,
+    );
+
+    await screen.findByText("스마트스토어 배송 정보를 불러왔습니다.");
+    fireEvent.change(screen.getByLabelText("발송 택배사"), {
+      target: { value: "HANJIN" },
+    });
+    fireEvent.change(screen.getByLabelText("출고지"), {
+      target: { value: "101" },
+    });
+    fireEvent.change(screen.getByLabelText("반품·교환지"), {
+      target: { value: "202" },
+    });
+    fireEvent.change(screen.getByLabelText("반품 택배사 계약"), {
+      target: { value: "PRIMARY" },
+    });
+    fireEvent.change(screen.getByLabelText("반품 배송비"), {
+      target: { value: "3000" },
+    });
+    fireEvent.change(screen.getByLabelText("교환 배송비"), {
+      target: { value: "6000" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "기본 정책 저장" }));
+
+    await waitFor(() => expect(savedBody).toBeDefined());
+    expect(savedBody?.deliveryInfo).toMatchObject({
+      deliveryType: "DELIVERY",
+      deliveryAttributeType: "NORMAL",
+      deliveryCompany: "HANJIN",
+      claimDeliveryInfo: {
+        shippingAddressId: 101,
+        returnAddressId: 202,
+        returnDeliveryCompanyPriorityType: "PRIMARY",
+        returnDeliveryFee: 3000,
+        exchangeDeliveryFee: 6000,
+      },
+    });
   });
 });

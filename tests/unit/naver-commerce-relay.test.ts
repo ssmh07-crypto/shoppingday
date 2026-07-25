@@ -85,6 +85,9 @@ const productPayload = {
 
 function metadataClientMocks() {
   return {
+    fetchSellerAddresses: vi.fn().mockResolvedValue([]),
+    fetchDeliveryBundleGroups: vi.fn().mockResolvedValue([]),
+    fetchReturnDeliveryCompanies: vi.fn().mockResolvedValue([]),
     fetchChannelProduct: vi.fn().mockResolvedValue({
       originProduct: {
         leafCategoryId: "50000805",
@@ -136,6 +139,36 @@ async function signedRequest(path = "/v1/categories") {
 }
 
 describe("네이버 커머스API 중계 인증", () => {
+  it("배송 주소록과 묶음배송 및 반품 택배사 조회 경로를 전달한다", async () => {
+    const client = {
+      fetchCategories: vi.fn().mockResolvedValue(categories),
+      fetchProductModels: vi.fn().mockResolvedValue(productModels),
+      ...metadataClientMocks(),
+    };
+    const cases = [
+      ["/v1/seller/addressbooks-for-page", client.fetchSellerAddresses],
+      [
+        "/v1/product-delivery-info/bundle-groups",
+        client.fetchDeliveryBundleGroups,
+      ],
+      [
+        "/v2/product-delivery-info/return-delivery-companies",
+        client.fetchReturnDeliveryCompanies,
+      ],
+    ] as const;
+
+    for (const [path, method] of cases) {
+      const handler = createNaverCommerceRelayHandler({
+        sharedSecret,
+        client,
+        now: () => now,
+      });
+      const response = await handler(await signedRequest(path));
+      expect(response.status).toBe(200);
+      expect(method).toHaveBeenCalledOnce();
+    }
+  });
+
   it("상품정보제공고시 목록과 단건 경로만 제한적으로 전달한다", async () => {
     const client = {
       fetchCategories: vi.fn().mockResolvedValue(categories),

@@ -39,7 +39,13 @@ describe("판매 상품 도메인", () => {
     expect(
       draftInputSchema.safeParse({
         ...base,
-        searchTags: Array.from({ length: 21 }, (_, i) => String(i)),
+        searchTags: Array.from({ length: 10 }, (_, i) => String(i)),
+      }).success,
+    ).toBe(true);
+    expect(
+      draftInputSchema.safeParse({
+        ...base,
+        searchTags: Array.from({ length: 11 }, (_, i) => String(i)),
       }).success,
     ).toBe(false);
   });
@@ -58,6 +64,35 @@ describe("판매 상품 도메인", () => {
         })),
       }),
     ).toHaveProperty("selectedImages");
+  });
+  it("상품 이미지는 대표 1개와 추가 9개까지 허용한다", () => {
+    const tenImages = Array.from({ length: 10 }, (_, index) => ({
+      ...base.selectedImages[0]!,
+      id: `image-${index}`,
+      sourceUrl: `https://example.test/${index}.jpg`,
+      isPrimary: index === 0,
+    }));
+
+    expect(
+      draftInputSchema.safeParse({
+        ...base,
+        selectedImages: tenImages,
+      }).success,
+    ).toBe(true);
+    expect(
+      draftInputSchema.safeParse({
+        ...base,
+        selectedImages: [
+          ...tenImages,
+          {
+            ...tenImages[0]!,
+            id: "image-10",
+            sourceUrl: "https://example.test/10.jpg",
+            isPrimary: false,
+          },
+        ],
+      }).success,
+    ).toBe(false);
   });
   it("사용자가 직접 추가한 공개 이미지 URL을 허용한다", () => {
     const result = draftInputSchema.parse({

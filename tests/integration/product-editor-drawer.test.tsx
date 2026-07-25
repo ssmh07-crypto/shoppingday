@@ -276,6 +276,50 @@ describe("상품 편집 서랍", () => {
       expect(screen.getByText("상세페이지")).toBeInTheDocument(),
     );
   });
+
+  it("대표 이미지와 추가 이미지를 표시하고 드래그로 순서를 바꾼다", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(
+      editorResponse({
+        id: "image-order-product",
+        title: "이미지 순서 상품",
+        selectedImages: [
+          selectedImage("first", "첫 이미지", true, 0),
+          selectedImage("second", "두 번째 이미지", false, 1),
+        ],
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    render(<ProductEditorDrawer initialProductId="image-order-product" />);
+
+    await screen.findByDisplayValue("이미지 순서 상품");
+    fireEvent.click(screen.getByRole("button", { name: /이미지·상세/ }));
+
+    expect(
+      await screen.findByText("사용 이미지 2/10 · 대표 1개 + 추가 최대 9개"),
+    ).toBeVisible();
+    expect(screen.getByText("대표 이미지")).toBeVisible();
+    expect(screen.getByText("추가 이미지 1")).toBeVisible();
+
+    const firstCard = screen.getByAltText("첫 이미지").closest("article")!;
+    const secondCard = screen
+      .getByAltText("두 번째 이미지")
+      .closest("article")!;
+    const transfer = {
+      effectAllowed: "none",
+      dropEffect: "none",
+      setData: vi.fn(),
+      getData: vi.fn(() => "first"),
+    };
+    fireEvent.dragStart(firstCard, { dataTransfer: transfer });
+    fireEvent.dragOver(secondCard, { dataTransfer: transfer });
+    fireEvent.drop(secondCard, { dataTransfer: transfer });
+
+    expect(
+      screen
+        .getAllByRole("listitem")
+        .map((item) => item.querySelector("img")?.getAttribute("alt")),
+    ).toEqual(["두 번째 이미지", "첫 이미지"]);
+  });
 });
 
 function editorResponse({
@@ -284,12 +328,14 @@ function editorResponse({
   originalName = "공급처 원본 상품",
   naverCategoryId = "50001799",
   applyCategoryQueryToTitleByDefault = false,
+  selectedImages = [],
 }: {
   id: string;
   title: string;
   originalName?: string;
   naverCategoryId?: string | null;
   applyCategoryQueryToTitleByDefault?: boolean;
+  selectedImages?: ReturnType<typeof selectedImage>[];
 }) {
   return Response.json({
     success: true,
@@ -308,7 +354,7 @@ function editorResponse({
         description: "",
         categoryId: null,
         naverCategoryId,
-        selectedImages: [],
+        selectedImages,
         editedOptions: { groups: [], combinations: [] },
         naverAttributes: [],
         draftVersion: 1,
@@ -334,4 +380,22 @@ function editorResponse({
       },
     },
   });
+}
+
+function selectedImage(
+  id: string,
+  altText: string,
+  isPrimary: boolean,
+  sortOrder: number,
+) {
+  return {
+    id,
+    source: "supplier" as const,
+    sourceUrl: `https://example.test/${id}.jpg`,
+    storedUrl: null,
+    altText,
+    sortOrder,
+    isPrimary,
+    enabled: true,
+  };
 }

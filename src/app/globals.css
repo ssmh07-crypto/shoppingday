@@ -1412,8 +1412,40 @@ td small {
   font-size: 12px;
   font-weight: 600;
 }
+.drawer-options > summary span.needs-attention {
+  color: #b54708;
+  font-weight: 800;
+}
 .drawer-options > .option-editor {
   margin-top: 20px;
+}
+.option-editor .page-head {
+  align-items: flex-start;
+  gap: 12px;
+}
+.option-editor .page-head h3,
+.option-editor .page-head p {
+  margin: 0;
+}
+.option-editor .page-head p {
+  margin-top: 4px;
+  color: #697386;
+  font-size: 12px;
+}
+.option-combination-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.option-combination-warning {
+  margin: 10px 0;
+  padding: 10px 12px;
+  border-radius: 6px;
+  background: #fff7ed;
+  color: #9a4a0a;
+  font-size: 12px;
+  font-weight: 700;
 }
 .drawer-image-count {
   margin: -4px 0 0;
@@ -1468,7 +1500,23 @@ td small {
   padding: 10px;
   border: 1px solid #dfe4ec;
   border-radius: 8px;
-  transition: opacity 0.15s ease;
+  cursor: grab;
+  transition:
+    opacity 0.15s ease,
+    border-color 0.15s ease,
+    box-shadow 0.15s ease,
+    transform 0.15s ease;
+}
+.drawer-images article:active {
+  cursor: grabbing;
+}
+.drawer-images article.dragging {
+  opacity: 0.35;
+  transform: scale(0.98);
+}
+.drawer-images article.drop-target {
+  border-color: #2457d6;
+  box-shadow: 0 0 0 3px rgba(36, 87, 214, 0.16);
 }
 .drawer-images article.disabled {
   opacity: 0.45;
@@ -1771,6 +1819,14 @@ td small {
 .drawer-category-requirements p {
   margin: 0;
   line-height: 1.5;
+}
+.drawer-category-requirements > button {
+  justify-self: start;
+}
+.drawer-category-requirements li > button {
+  flex: none;
+  min-height: 28px;
+  padding: 4px 8px;
 }
 .drawer-publication-status {
   display: grid !important;
@@ -2203,6 +2259,53 @@ td small {
   padding: 0 !important;
   border: 0 !important;
 }
+.naver-policy-field:has(.naver-delivery-policy) {
+  grid-column: 1 / -1;
+}
+.naver-delivery-policy {
+  display: grid;
+  gap: 12px;
+}
+.naver-delivery-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.naver-delivery-toolbar button {
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid #aeb8ca;
+  border-radius: 5px;
+  background: #fff;
+  color: #253047;
+  font-weight: 700;
+}
+.naver-delivery-toolbar small {
+  color: #526075;
+}
+.naver-delivery-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+.naver-policy-control {
+  display: grid;
+  gap: 5px;
+  color: #344054;
+  font-size: 12px;
+  font-weight: 700;
+}
+.naver-delivery-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: #344054;
+  font-size: 12px;
+  font-weight: 700;
+}
+.naver-delivery-checkbox input {
+  width: auto;
+}
 .naver-policy-error {
   color: #b42318;
 }
@@ -2258,6 +2361,9 @@ td small {
 }
 @media (max-width: 720px) {
   .naver-policy-grid {
+    grid-template-columns: 1fr;
+  }
+  .naver-delivery-grid {
     grid-template-columns: 1fr;
   }
 }

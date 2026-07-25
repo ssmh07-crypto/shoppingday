@@ -10,11 +10,11 @@ import type { SupplierProduct } from "@/modules/suppliers/core/types";
 
 export const PRODUCT_LIMITS = {
   title: 200,
-  tags: 20,
+  tags: 10,
   tagLength: 30,
   price: 1_000_000_000,
   description: 200_000,
-  images: 30,
+  images: 10,
   groups: 3,
   values: 50,
   combinations: 500,

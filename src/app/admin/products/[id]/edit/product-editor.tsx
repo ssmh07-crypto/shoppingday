@@ -133,6 +133,10 @@ export function ProductEditor({
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [thumbnailUrl, setThumbnailUrl] = useState("");
   const [detailImageUrls, setDetailImageUrls] = useState("");
+  const [draggedImageId, setDraggedImageId] = useState<string | null>(null);
+  const [imageDropTargetId, setImageDropTargetId] = useState<string | null>(
+    null,
+  );
   const [naverCategorySearch, setNaverCategorySearch] = useState("");
   const [naverCategoryResults, setNaverCategoryResults] = useState<
     NaverCategoryOption[]
@@ -152,6 +156,13 @@ export function ProductEditor({
     useState<CategoryRequirements | null>(null);
   const [categoryRequirementsStatus, setCategoryRequirementsStatus] =
     useState("");
+  const [categoryRequirementsFailed, setCategoryRequirementsFailed] =
+    useState(false);
+  const [categoryRequirementsRefreshKey, setCategoryRequirementsRefreshKey] =
+    useState(0);
+  const [optionEditorOpen, setOptionEditorOpen] = useState(
+    initial.product.editedOptions.groups.length > 0,
+  );
   const [publicationInspection, setPublicationInspection] =
     useState<PublicationInspection | null>(null);
   const [publicationInspectionStatus, setPublicationInspectionStatus] =
@@ -195,22 +206,31 @@ export function ProductEditor({
     const controller = new AbortController();
     async function loadRequirements(categoryId: string) {
       setCategoryRequirements(null);
+      setCategoryRequirementsFailed(false);
       setCategoryRequirementsStatus("카테고리 필수정보를 확인하는 중입니다.");
       try {
-        const response = await fetch(
-          `/api/integrations/naver/category-requirements?categoryId=${encodeURIComponent(categoryId)}`,
-          { signal: controller.signal },
-        );
-        const body = await response.json();
+        const url = `/api/integrations/naver/category-requirements?categoryId=${encodeURIComponent(categoryId)}`;
+        let response = await fetch(url, {
+          signal: controller.signal,
+          cache: "no-store",
+        });
+        if (!response.ok && response.status >= 500) {
+          response = await fetch(url, {
+            signal: controller.signal,
+            cache: "no-store",
+          });
+        }
+        const body = await response.json().catch(() => null);
         if (!response.ok) {
           throw new Error(
-            body.error?.message ?? "카테고리 필수정보를 조회하지 못했습니다.",
+            body?.error?.message ?? "카테고리 필수정보를 조회하지 못했습니다.",
           );
         }
         setCategoryRequirements(body.requirements);
         setCategoryRequirementsStatus("");
       } catch (error) {
         if (controller.signal.aborted) return;
+        setCategoryRequirementsFailed(true);
         setCategoryRequirementsStatus(
           error instanceof Error
             ? error.message
@@ -220,7 +240,11 @@ export function ProductEditor({
     }
     void loadRequirements(form.naverCategoryId);
     return () => controller.abort();
-  }, [activeTab, form.naverCategoryId]);
+  }, [
+    activeTab,
+    form.naverCategoryId,
+    categoryRequirementsRefreshKey,
+  ]);
 
   useEffect(() => {
     if (activeTab !== "market") return;
@@ -567,8 +591,8 @@ export function ProductEditor({
           searchTags: current.searchTags.filter((item) => item !== normalized),
         };
       }
-      if (current.searchTags.filter((item) => item.trim()).length >= 20) {
-        setTagSelectionStatus("검색 태그는 최대 20개까지 선택할 수 있습니다.");
+      if (current.searchTags.filter((item) => item.trim()).length >= 10) {
+        setTagSelectionStatus("검색 태그는 최대 10개까지 선택할 수 있습니다.");
         return current;
       }
       setTagSelectionStatus("");
@@ -727,7 +751,36 @@ export function ProductEditor({
         selectedImages[target]!,
         selectedImages[index]!,
       ];
-      return { ...old, selectedImages };
+      return {
+        ...old,
+        selectedImages: selectedImages.map((image, sortOrder) => ({
+          ...image,
+          sortOrder,
+        })),
+      };
+    });
+  }
+
+  function reorderImage(draggedId: string, targetId: string) {
+    if (draggedId === targetId) return;
+    setForm((old) => {
+      const selectedImages = [...old.selectedImages];
+      const sourceIndex = selectedImages.findIndex(
+        (image) => image.id === draggedId,
+      );
+      const targetIndex = selectedImages.findIndex(
+        (image) => image.id === targetId,
+      );
+      if (sourceIndex < 0 || targetIndex < 0) return old;
+      const [moved] = selectedImages.splice(sourceIndex, 1);
+      selectedImages.splice(targetIndex, 0, moved!);
+      return {
+        ...old,
+        selectedImages: selectedImages.map((image, sortOrder) => ({
+          ...image,
+          sortOrder,
+        })),
+      };
     });
   }
 
@@ -737,8 +790,10 @@ export function ProductEditor({
       setMessage("http 또는 https로 시작하는 이미지 URL을 입력해 주세요.");
       return;
     }
-    if (form.selectedImages.length >= 30) {
-      setMessage("썸네일 이미지는 최대 30개까지 추가할 수 있습니다.");
+    if (form.selectedImages.length >= 10) {
+      setMessage(
+        "상품 이미지는 대표 이미지 1개와 추가 이미지 9개, 총 10개까지 등록할 수 있습니다.",
+      );
       return;
     }
     if (form.selectedImages.some((image) => image.sourceUrl === url)) {
@@ -1236,17 +1291,22 @@ export function ProductEditor({
                 <div className="registration-tag-selector">
                   <strong>
                     검색 태그 선택 (
-                    {form.searchTags.filter((tag) => tag.trim()).length}/20)
+                    {form.searchTags.filter((tag) => tag.trim()).length}/10)
                   </strong>
                   <p>
-                    소싱 조사에서 태그로 분류한 후보입니다. 검색수와 관계없이
-                    실제 등록할 태그를 직접 선택하세요.
+                    소싱 조사에서 태그로 분류한 후보입니다. 월 검색수를 참고해
+                    실제 등록할 태그를 최대 10개까지 직접 선택하세요.
                   </p>
                   {sourcingRegistrationDraft.tagCandidates.length ? (
                     <div>
                       {sourcingRegistrationDraft.tagCandidates.map((tag) => {
                         const tooLong = tag.length > 30;
                         const selected = form.searchTags.includes(tag);
+                        const source = registrationContext?.relatedKeywords.find(
+                          (item) =>
+                            item.placement === "tag" &&
+                            item.keyword === tag,
+                        );
                         return (
                           <label
                             key={tag}
@@ -1259,7 +1319,12 @@ export function ProductEditor({
                               onChange={() => toggleSourcingTag(tag)}
                             />
                             <span>{tag}</span>
-                            <small>{tooLong ? "30자 초과" : "태그 후보"}</small>
+                            <small>
+                              {source?.monthlySearchVolume == null
+                                ? "월 검색수 미입력"
+                                : `월 검색수 ${source.monthlySearchVolume.toLocaleString("ko-KR")}`}
+                              {tooLong ? " · 30자 초과" : ""}
+                            </small>
                           </label>
                         );
                       })}
@@ -1284,7 +1349,7 @@ export function ProductEditor({
                       })
                     }
                   />
-                  <small>최대 20개까지 입력할 수 있습니다.</small>
+                  <small>최대 10개까지 입력할 수 있습니다.</small>
                 </label>
               )}
               <div className="drawer-price-grid">
@@ -1327,10 +1392,32 @@ export function ProductEditor({
               />
             </section>
 
-            <details className="drawer-options">
+            <details
+              className="drawer-options"
+              open={optionEditorOpen}
+              onToggle={(event) =>
+                setOptionEditorOpen(event.currentTarget.open)
+              }
+            >
               <summary>
                 옵션 정보 편집{" "}
-                <span>{form.editedOptions.groups.length}개 그룹</span>
+                <span
+                  className={
+                    form.editedOptions.groups.length > 0 &&
+                    !form.editedOptions.combinations.some(
+                      (combination) => combination.enabled,
+                    )
+                      ? "needs-attention"
+                      : undefined
+                  }
+                >
+                  {form.editedOptions.groups.length > 0 &&
+                  !form.editedOptions.combinations.some(
+                    (combination) => combination.enabled,
+                  )
+                    ? "활성 조합 입력 필요"
+                    : `${form.editedOptions.groups.length}개 그룹`}
+                </span>
               </summary>
               <OptionEditor
                 value={form.editedOptions}
@@ -1350,7 +1437,8 @@ export function ProductEditor({
                 <div>
                   <h3>썸네일 이미지</h3>
                   <p>
-                    사용할 이미지와 대표 이미지를 선택하고 순서를 조정하세요.
+                    대표 이미지 1개와 추가 이미지 9개까지 등록할 수 있습니다.
+                    이미지를 끌어 놓아 노출 순서를 바꾸세요.
                   </p>
                 </div>
                 <div className="drawer-section-actions">
@@ -1377,8 +1465,7 @@ export function ProductEditor({
                 </div>
               </div>
               <p className="drawer-image-count">
-                전체 {form.selectedImages.length}개 중 {enabledImageCount}개
-                사용
+                사용 이미지 {enabledImageCount}/10 · 대표 1개 + 추가 최대 9개
               </p>
               <div className="drawer-url-import">
                 <label htmlFor="thumbnail-url">썸네일 이미지 URL</label>
@@ -1399,22 +1486,75 @@ export function ProductEditor({
                   </button>
                 </div>
                 <small>
-                  외부 이미지 주소를 추가한 뒤 네이버 이미지 업로드를
-                  실행하세요.
+                  외부 이미지 주소를 최대 10개까지 추가한 뒤 네이버 이미지
+                  업로드를 실행하세요.
                 </small>
               </div>
-              <div className="drawer-images">
+              <div
+                className="drawer-images"
+                role="list"
+                aria-label="상품 이미지 순서"
+              >
                 {form.selectedImages.map((image, index) => (
                   <article
                     key={image.id}
-                    className={!image.enabled ? "disabled" : ""}
+                    role="listitem"
+                    aria-label={`${image.isPrimary ? "대표 이미지" : "추가 이미지"} ${index + 1}`}
+                    draggable={!saving && !uploadingImages}
+                    className={[
+                      !image.enabled ? "disabled" : "",
+                      draggedImageId === image.id ? "dragging" : "",
+                      imageDropTargetId === image.id ? "drop-target" : "",
+                    ]
+                      .filter(Boolean)
+                      .join(" ")}
+                    onDragStart={(event) => {
+                      setDraggedImageId(image.id);
+                      event.dataTransfer.effectAllowed = "move";
+                      event.dataTransfer.setData("text/plain", image.id);
+                    }}
+                    onDragOver={(event) => {
+                      event.preventDefault();
+                      event.dataTransfer.dropEffect = "move";
+                      setImageDropTargetId(image.id);
+                    }}
+                    onDragLeave={() =>
+                      setImageDropTargetId((current) =>
+                        current === image.id ? null : current,
+                      )
+                    }
+                    onDrop={(event) => {
+                      event.preventDefault();
+                      const sourceId =
+                        event.dataTransfer.getData("text/plain") ||
+                        draggedImageId;
+                      if (sourceId) reorderImage(sourceId, image.id);
+                      setDraggedImageId(null);
+                      setImageDropTargetId(null);
+                    }}
+                    onDragEnd={() => {
+                      setDraggedImageId(null);
+                      setImageDropTargetId(null);
+                    }}
                   >
                     <div className="drawer-image-preview">
                       <img
                         src={image.storedUrl ?? image.sourceUrl}
                         alt={image.altText}
                       />
-                      {image.isPrimary && image.enabled && <span>대표</span>}
+                      {image.enabled && (
+                        <span>
+                          {image.isPrimary
+                            ? "대표 이미지"
+                            : `추가 이미지 ${form.selectedImages
+                                .slice(0, index + 1)
+                                .filter(
+                                  (candidate) =>
+                                    candidate.enabled &&
+                                    !candidate.isPrimary,
+                                ).length}`}
+                        </span>
+                      )}
                       {image.storedUrl && <small>네이버 업로드 완료</small>}
                     </div>
                     <label>
@@ -1542,6 +1682,19 @@ export function ProductEditor({
               {categoryRequirementsStatus && (
                 <p role="status">{categoryRequirementsStatus}</p>
               )}
+              {categoryRequirementsFailed && (
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={() =>
+                    setCategoryRequirementsRefreshKey(
+                      (current) => current + 1,
+                    )
+                  }
+                >
+                  카테고리 필수속성 다시 불러오기
+                </button>
+              )}
               {categoryRequirements && (
                 <>
                   <div>
@@ -1643,7 +1796,19 @@ export function ProductEditor({
                     <ul>
                       {(publicationInspection.issues ?? []).map((issue) => (
                         <li key={`${issue.path}-${issue.message}`}>
-                          {issue.message}
+                          <span>{issue.message}</span>
+                          {issue.path.includes("optionInfo") && (
+                            <button
+                              type="button"
+                              className="secondary"
+                              onClick={() => {
+                                setOptionEditorOpen(true);
+                                void changeTab("basic");
+                              }}
+                            >
+                              옵션 입력으로 이동
+                            </button>
+                          )}
                         </li>
                       ))}
                     </ul>

@@ -49,11 +49,127 @@ describe("소싱 상품 등록 전용 편집", () => {
     const highVolumeTag = screen.getByRole("checkbox", {
       name: /화장실슬리퍼/,
     });
+    expect(
+      screen.getByText("월 검색수 12,000"),
+    ).toBeVisible();
+    expect(screen.getByText("월 검색수 700")).toBeVisible();
+    expect(screen.getByText("검색 태그 선택 (1/10)")).toBeVisible();
     expect(bathroomTag).toBeChecked();
     expect(highVolumeTag).not.toBeChecked();
 
     fireEvent.click(highVolumeTag);
     await waitFor(() => expect(highVolumeTag).toBeChecked());
+  });
+
+  it("카테고리 필수속성 조회 실패 후 다시 불러와 입력란을 표시한다", async () => {
+    let requirementsAttempts = 0;
+    const fetchMock = vi.fn().mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.startsWith("/api/products/")) {
+        if (url.endsWith("/naver-publication")) {
+          return Promise.resolve(
+            Response.json({
+              success: true,
+              inspection: {
+                ready: false,
+                issues: [],
+                publication: null,
+              },
+            }),
+          );
+        }
+        return Promise.resolve(editorResponse());
+      }
+      if (url.startsWith("/api/integrations/naver/category-requirements")) {
+        requirementsAttempts += 1;
+        if (requirementsAttempts <= 2) {
+          return Promise.resolve(
+            Response.json(
+              {
+                success: false,
+                error: { message: "카테고리 필수정보를 조회하지 못했습니다." },
+              },
+              { status: 500 },
+            ),
+          );
+        }
+        return Promise.resolve(
+          Response.json({
+            success: true,
+            requirements: {
+              categoryId: "50001799",
+              attributes: [
+                {
+                  attributeSeq: 100,
+                  attributeName: "주요소재",
+                  attributeClassificationType: "SINGLE_SELECT",
+                },
+              ],
+              requiredAttributes: [
+                {
+                  attributeSeq: 100,
+                  attributeName: "주요소재",
+                  attributeClassificationType: "SINGLE_SELECT",
+                },
+              ],
+              attributeValues: [
+                {
+                  attributeSeq: 100,
+                  attributeValueSeq: 200,
+                  minAttributeValue: "EVA",
+                },
+              ],
+              units: [],
+              standardOptions: {
+                useStandardOption: false,
+                standardOptionCategoryGroups: [],
+              },
+              requiredOptionGroups: [],
+              stale: false,
+            },
+          }),
+        );
+      }
+      if (url.startsWith("/api/integrations/naver/provided-notices")) {
+        return Promise.resolve(
+          Response.json({ success: true, notices: [] }),
+        );
+      }
+      if (url.startsWith("/api/integrations/naver/delivery-options")) {
+        return Promise.resolve(
+          Response.json({
+            success: true,
+            data: {
+              releaseAddresses: [],
+              returnAddresses: [],
+              bundleGroups: [],
+              returnDeliveryCompanies: [],
+            },
+          }),
+        );
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <RegistrationProductEditor
+        productId="00000000-0000-4000-8000-000000000010"
+        registrationContext={registrationContext()}
+      />,
+    );
+
+    await screen.findByDisplayValue("물빠짐 미끄럼방지 욕실화");
+    fireEvent.click(screen.getByRole("button", { name: /스마트스토어/ }));
+    const retry = await screen.findByRole("button", {
+      name: "카테고리 필수속성 다시 불러오기",
+    });
+    fireEvent.click(retry);
+
+    expect(
+      await screen.findByRole("combobox", { name: "주요소재" }),
+    ).toBeVisible();
+    expect(requirementsAttempts).toBe(3);
   });
 });
 
@@ -95,9 +211,9 @@ function editorResponse() {
         applyCategoryQueryToTitleByDefault: false,
       },
       naverPublicationPolicy: {
-        defaults: {},
+        defaults: emptyPublicationPolicy(),
         overrides: {},
-        effective: {},
+        effective: emptyPublicationPolicy(),
       },
       product: {
         id: "00000000-0000-4000-8000-000000000010",
@@ -133,4 +249,18 @@ function editorResponse() {
       },
     },
   });
+}
+
+function emptyPublicationPolicy() {
+  return {
+    singleStockQuantity: null,
+    deliveryInfo: null,
+    afterServiceInfo: null,
+    originAreaInfo: null,
+    productInfoProvidedNotice: null,
+    taxType: null,
+    minorPurchasable: null,
+    naverShoppingRegistration: null,
+    channelProductDisplayStatusType: null,
+  };
 }

@@ -8,7 +8,7 @@ const inputSchema = z.object({
   title: z.string().trim().min(2).max(200),
   originalTitle: z.string().trim().max(300).optional(),
   categoryPath: z.string().trim().max(500).optional(),
-  searchTags: z.array(z.string().trim().max(50)).max(20).default([]),
+  searchTags: z.array(z.string().trim().max(50)).max(10).default([]),
 });
 
 export async function POST(
