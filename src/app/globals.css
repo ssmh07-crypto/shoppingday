@@ -1602,7 +1602,8 @@ td small {
   font-family: var(--app-font-family);
 }
 .drawer-market {
-  max-width: 620px;
+  width: 100%;
+  max-width: 840px;
   margin: 0 auto;
   padding: 34px;
   text-align: center;
@@ -1912,29 +1913,39 @@ td small {
   font-size: 14px;
 }
 .drawer-naver-attribute-options {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 7px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  overflow-x: auto;
+  padding: 1px 1px 5px;
+  scrollbar-width: thin;
 }
 .drawer-naver-attribute-options label {
-  display: flex;
-  align-items: flex-start;
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
   gap: 7px;
-  min-width: 0;
-  padding: 9px;
+  min-height: 38px;
+  padding: 8px 11px;
   border: 1px solid #e1e5ec;
-  border-radius: 5px;
+  border-radius: 999px;
   background: #fff;
   font-size: 13px;
+  cursor: pointer;
+}
+.drawer-naver-attribute-options label:has(input:checked) {
+  border-color: #73d49a;
+  background: #effbf4;
+  color: #08734d;
 }
 .drawer-naver-attribute-options input {
   flex: 0 0 auto;
 }
 .drawer-naver-attribute-options span {
-  min-width: 0;
-  line-height: 1.45;
-  overflow-wrap: anywhere;
-  white-space: normal;
+  line-height: 1.2;
+  white-space: nowrap;
 }
 .drawer-naver-range-inputs {
   display: grid;
@@ -2503,9 +2514,6 @@ td small {
   }
   .inventory-drawer-head {
     padding: 0 16px;
-  }
-  .drawer-naver-attribute-options {
-    grid-template-columns: 1fr;
   }
   .drawer-naver-range-inputs {
     grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
