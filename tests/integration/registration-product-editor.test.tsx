@@ -178,7 +178,7 @@ describe("소싱 상품 등록 전용 편집", () => {
     );
 
     await screen.findByDisplayValue("물빠짐 미끄럼방지 욕실화");
-    fireEvent.click(screen.getByRole("button", { name: /스마트스토어/ }));
+    fireEvent.click(screen.getByRole("button", { name: /속성/ }));
     const retry = await screen.findByRole("button", {
       name: "카테고리 필수속성 다시 불러오기",
     });
@@ -187,6 +187,7 @@ describe("소싱 상품 등록 전용 편집", () => {
     expect(
       await screen.findByRole("combobox", { name: "주요소재" }),
     ).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: /스마트스토어/ }));
     fireEvent.change(
       screen.getByRole("combobox", { name: "배송정책 관리번호" }),
       {

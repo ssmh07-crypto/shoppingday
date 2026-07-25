@@ -264,7 +264,7 @@ describe("상품 편집 서랍", () => {
 
     const title = await screen.findByDisplayValue("저장 전 상품명");
     fireEvent.change(title, { target: { value: "자동 저장 상품명" } });
-    fireEvent.click(screen.getByRole("button", { name: /이미지·상세/ }));
+    fireEvent.click(screen.getByRole("button", { name: /이미지/ }));
 
     await waitFor(() =>
       expect(fetchMock).toHaveBeenLastCalledWith(
@@ -292,7 +292,7 @@ describe("상품 편집 서랍", () => {
     render(<ProductEditorDrawer initialProductId="image-order-product" />);
 
     await screen.findByDisplayValue("이미지 순서 상품");
-    fireEvent.click(screen.getByRole("button", { name: /이미지·상세/ }));
+    fireEvent.click(screen.getByRole("button", { name: /이미지/ }));
 
     expect(
       await screen.findByText("사용 이미지 2/10 · 대표 1개 + 추가 최대 9개"),

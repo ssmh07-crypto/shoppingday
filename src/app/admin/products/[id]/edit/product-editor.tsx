@@ -14,7 +14,7 @@ import type {
   SourcingRegistrationContext,
 } from "./product-editor-types";
 
-type EditorTab = "basic" | "content" | "market";
+type EditorTab = "basic" | "content" | "attributes" | "market";
 type CategoryRequirements = {
   categoryId: string;
   attributes: Array<{
@@ -277,7 +277,15 @@ export function ProductEditor({
   }, [dirty, onDirtyChange]);
 
   useEffect(() => {
-    if (activeTab !== "market" || !form.naverCategoryId) return;
+    if (
+      !["attributes", "market"].includes(activeTab) ||
+      !form.naverCategoryId
+    ) {
+      return;
+    }
+    if (categoryRequirements?.categoryId === form.naverCategoryId) {
+      return;
+    }
     const controller = new AbortController();
     async function loadRequirements(categoryId: string) {
       setCategoryRequirements(null);
@@ -317,6 +325,7 @@ export function ProductEditor({
     return () => controller.abort();
   }, [
     activeTab,
+    categoryRequirements?.categoryId,
     form.naverCategoryId,
     categoryRequirementsRefreshKey,
   ]);
@@ -1002,13 +1011,20 @@ export function ProductEditor({
           disabled={saving}
           onClick={() => void changeTab("content")}
           number="2"
-          label="이미지·상세"
+          label="이미지"
+        />
+        <TabButton
+          active={activeTab === "attributes"}
+          disabled={saving}
+          onClick={() => void changeTab("attributes")}
+          number="3"
+          label="속성"
         />
         <TabButton
           active={activeTab === "market"}
           disabled={saving}
           onClick={() => void changeTab("market")}
-          number="3"
+          number="4"
           label="스마트스토어"
         />
       </nav>
@@ -1733,6 +1749,50 @@ export function ProductEditor({
           </div>
         )}
 
+        {activeTab === "attributes" && (
+          <section className="drawer-attributes">
+            <div className="drawer-section-title">
+              <span>03</span>
+              <div>
+                <h3>네이버 카테고리 속성</h3>
+                <p>
+                  주요 소재, 사이즈 특징 등 카테고리 속성을 항목별 한 행에서
+                  선택하세요.
+                </p>
+              </div>
+            </div>
+            {!form.naverCategoryId ? (
+              <div className="drawer-attributes-empty">
+                <strong>네이버 카테고리를 먼저 선택해 주세요.</strong>
+                <p>
+                  기본정보에서 최종 카테고리를 선택하면 해당 카테고리의 공식
+                  속성을 불러옵니다.
+                </p>
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={() => void changeTab("basic")}
+                >
+                  기본정보로 이동
+                </button>
+              </div>
+            ) : (
+              <NaverAttributesPanel
+                requirements={categoryRequirements}
+                status={categoryRequirementsStatus}
+                failed={categoryRequirementsFailed}
+                value={form.naverAttributes}
+                onRetry={() =>
+                  setCategoryRequirementsRefreshKey((current) => current + 1)
+                }
+                onChange={(naverAttributes) =>
+                  setForm({ ...form, naverAttributes })
+                }
+              />
+            )}
+          </section>
+        )}
+
         {activeTab === "market" && (
           <section className="drawer-market">
             <div className="drawer-market-brand">N</div>
@@ -1750,96 +1810,6 @@ export function ProductEditor({
                   <strong>{check.done ? "완료" : "필요"}</strong>
                 </div>
               ))}
-            </div>
-            <div className="drawer-category-requirements">
-              <strong>네이버 카테고리별 공식 속성</strong>
-              <p>
-                최종 카테고리를 기준으로 네이버 커머스 API에서 필수 속성,
-                선택값, 단위와 표준 옵션을 불러옵니다.
-              </p>
-              {categoryRequirementsStatus && (
-                <p role="status">{categoryRequirementsStatus}</p>
-              )}
-              {categoryRequirementsFailed && (
-                <button
-                  type="button"
-                  className="secondary"
-                  onClick={() =>
-                    setCategoryRequirementsRefreshKey(
-                      (current) => current + 1,
-                    )
-                  }
-                >
-                  카테고리 필수속성 다시 불러오기
-                </button>
-              )}
-              {categoryRequirements && (
-                <>
-                  <div>
-                    <span>카테고리 상품 속성</span>
-                    <strong>
-                      전체 {categoryRequirements.attributes.length}개 · 필수{" "}
-                      {categoryRequirements.requiredAttributes.length}개
-                    </strong>
-                  </div>
-                  <ul>
-                    {categoryRequirements.requiredAttributes.map(
-                      (attribute) => (
-                        <li key={attribute.attributeSeq}>
-                          {attribute.attributeName}
-                          <small>
-                            {attributeTypeLabel(
-                              attribute.attributeClassificationType,
-                            )}
-                          </small>
-                        </li>
-                      ),
-                    )}
-                    {!categoryRequirements.requiredAttributes.length && (
-                      <li>필수 상품 속성 없음</li>
-                    )}
-                  </ul>
-                  {categoryRequirements.attributes.length > 0 && (
-                    <NaverAttributeEditor
-                      attributes={categoryRequirements.attributes}
-                      candidates={categoryRequirements.attributeValues}
-                      units={categoryRequirements.units}
-                      value={form.naverAttributes}
-                      onChange={(naverAttributes) =>
-                        setForm({ ...form, naverAttributes })
-                      }
-                    />
-                  )}
-                  <div>
-                    <span>필수 표준 옵션</span>
-                    <strong>
-                      {categoryRequirements.requiredOptionGroups.length}개
-                    </strong>
-                  </div>
-                  <ul>
-                    {categoryRequirements.requiredOptionGroups.map((group) => (
-                      <li
-                        key={`${group.groupName ?? ""}-${group.attributeName}`}
-                      >
-                        {group.groupName || group.attributeName}
-                        {group.groupName && (
-                          <small>{group.attributeName}</small>
-                        )}
-                      </li>
-                    ))}
-                    {!categoryRequirements.requiredOptionGroups.length && (
-                      <li>
-                        {categoryRequirements.standardOptions.useStandardOption
-                          ? "필수 표준 옵션 없음"
-                          : "표준 옵션을 사용하지 않는 카테고리"}
-                      </li>
-                    )}
-                  </ul>
-                  {categoryRequirements.stale && (
-                    <p>릴레이 연결 문제로 마지막 조회 결과를 표시합니다.</p>
-                  )}
-                </>
-              )}
             </div>
             <div className="drawer-category-requirements">
               <strong>스마트스토어 발행 상태</strong>
@@ -2078,6 +2048,82 @@ function TabButton({
   );
 }
 
+function NaverAttributesPanel({
+  requirements,
+  status,
+  failed,
+  value,
+  onRetry,
+  onChange,
+}: {
+  requirements: CategoryRequirements | null;
+  status: string;
+  failed: boolean;
+  value: NaverProductAttribute[];
+  onRetry: () => void;
+  onChange: (value: NaverProductAttribute[]) => void;
+}) {
+  return (
+    <div className="drawer-category-requirements drawer-attributes-panel">
+      <strong>네이버 카테고리별 공식 속성</strong>
+      <p>
+        최종 카테고리를 기준으로 네이버 커머스 API에서 필수 속성, 선택값,
+        단위와 표준 옵션을 불러옵니다.
+      </p>
+      {status && <p role="status">{status}</p>}
+      {failed && (
+        <button type="button" className="secondary" onClick={onRetry}>
+          카테고리 필수속성 다시 불러오기
+        </button>
+      )}
+      {requirements && (
+        <>
+          <div>
+            <span>카테고리 상품 속성</span>
+            <strong>
+              전체 {requirements.attributes.length}개 · 필수{" "}
+              {requirements.requiredAttributes.length}개
+            </strong>
+          </div>
+          {requirements.attributes.length > 0 ? (
+            <NaverAttributeEditor
+              attributes={requirements.attributes}
+              candidates={requirements.attributeValues}
+              units={requirements.units}
+              value={value}
+              onChange={onChange}
+            />
+          ) : (
+            <p>입력할 카테고리 상품 속성이 없습니다.</p>
+          )}
+          <div>
+            <span>필수 표준 옵션</span>
+            <strong>{requirements.requiredOptionGroups.length}개</strong>
+          </div>
+          <ul>
+            {requirements.requiredOptionGroups.map((group) => (
+              <li key={`${group.groupName ?? ""}-${group.attributeName}`}>
+                {group.groupName || group.attributeName}
+                {group.groupName && <small>{group.attributeName}</small>}
+              </li>
+            ))}
+            {!requirements.requiredOptionGroups.length && (
+              <li>
+                {requirements.standardOptions.useStandardOption
+                  ? "필수 표준 옵션 없음"
+                  : "표준 옵션을 사용하지 않는 카테고리"}
+              </li>
+            )}
+          </ul>
+          {requirements.stale && (
+            <p>릴레이 연결 문제로 마지막 조회 결과를 표시합니다.</p>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 function isNaverAttributeComplete(
   attributeSeq: number,
   candidates: CategoryRequirements["attributeValues"],
@@ -2097,17 +2143,6 @@ function isNaverAttributeComplete(
         ),
       )
     : attributeSelections.some((value) => value.minValue || value.maxValue);
-}
-
-function attributeTypeLabel(
-  type: CategoryRequirements["requiredAttributes"][number]["attributeClassificationType"],
-) {
-  if (!type) return "입력";
-  return {
-    SINGLE_SELECT: "단일 선택",
-    MULTI_SELECT: "복수 선택",
-    RANGE: "범위 입력",
-  }[type];
 }
 
 function publicationStatusLabel(inspection: PublicationInspection) {
