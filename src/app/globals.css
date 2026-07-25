@@ -1589,6 +1589,16 @@ td small {
   border: 0;
   background: #fff;
 }
+.drawer-description-html {
+  display: grid;
+  gap: 7px;
+  color: #344054;
+  font-size: 12px;
+  font-weight: 800;
+}
+.drawer-description-html textarea {
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+}
 .drawer-market {
   max-width: 620px;
   margin: 0 auto;
@@ -3247,6 +3257,63 @@ td small {
   font-size: 12px;
   line-height: 1.6;
 }
+
+.naver-store-connections {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.naver-store-connection-card {
+  align-items: center;
+  background: var(--surface-subtle, #f7f9fc);
+  border: 1px solid var(--border, #dbe1ea);
+  border-radius: 0.9rem;
+  display: flex;
+  justify-content: space-between;
+  padding: 1rem;
+}
+
+.naver-store-connection-card > div {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.naver-store-connection-card > div:last-child {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.naver-store-connection-card span {
+  align-items: center;
+  display: flex;
+  gap: 0.5rem;
+}
+
+.naver-store-connection-card span strong {
+  background: #e3f5e9;
+  border-radius: 999px;
+  color: #16733a;
+  font-size: 0.72rem;
+  padding: 0.15rem 0.45rem;
+}
+
+.naver-store-connection-card h3 {
+  margin: 0;
+}
+
+.naver-store-connection-editor {
+  border-top: 1px solid var(--border, #dbe1ea);
+  margin-top: 1rem;
+  padding-top: 1rem;
+}
+
+.naver-store-default-check {
+  align-items: center;
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
 .naver-store-form-heading > strong {
   align-self: start;
   padding: 5px 9px;
@@ -3274,6 +3341,17 @@ td small {
   border: 1px solid #ccd3df;
   border-radius: 7px;
   font-size: 14px;
+}
+.naver-store-form-grid input:disabled {
+  background: #f2f4f7;
+  color: #7b8494;
+  cursor: not-allowed;
+}
+.naver-store-form-grid small {
+  color: #697386;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.5;
 }
 .naver-store-form-actions {
   display: flex;

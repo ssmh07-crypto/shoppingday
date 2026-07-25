@@ -59,6 +59,15 @@ const naverClient = new NaverCommerceClient({
 const relayHandler = createNaverCommerceRelayHandler({
   sharedSecret: relayEnv.NAVER_COMMERCE_RELAY_SHARED_SECRET,
   client: naverClient,
+  clientFactory: ({ tokenType, accountId }) =>
+    new NaverCommerceClient({
+      apiUrl: relayEnv.NAVER_COMMERCE_API_URL,
+      clientId: relayEnv.NAVER_COMMERCE_CLIENT_ID,
+      clientSecret: relayEnv.NAVER_COMMERCE_CLIENT_SECRET,
+      tokenType,
+      accountId: accountId ?? undefined,
+      timeoutMs: relayEnv.NAVER_COMMERCE_TIMEOUT_MS,
+    }),
   maxClockSkewMs: relayEnv.NAVER_RELAY_MAX_CLOCK_SKEW_MS,
 });
 

@@ -13,7 +13,11 @@ import { ProductNotFoundError } from "@/modules/products/product-errors";
 export class NaverPublicationRepository {
   constructor(private readonly database: Database) {}
 
-  async findForProduct(productId: string, ownerId: string) {
+  async findForProduct(
+    productId: string,
+    ownerId: string,
+    storeConnectionId?: string,
+  ) {
     const [row] = await this.database
       .select({ publication: productPublications })
       .from(productPublications)
@@ -22,6 +26,9 @@ export class NaverPublicationRepository {
         and(
           eq(productPublications.productId, productId),
           eq(productPublications.channel, "naver"),
+          ...(storeConnectionId
+            ? [eq(productPublications.storeConnectionId, storeConnectionId)]
+            : []),
           or(eq(products.ownerId, ownerId), isNull(products.ownerId)),
         ),
       )
@@ -34,8 +41,12 @@ export class NaverPublicationRepository {
     ownerId: string,
     payloadHash: string,
     operation: "create" | "update",
+    storeConnectionId?: string,
   ) {
     assertPayloadHash(payloadHash);
+    if (!storeConnectionId) {
+      throw new Error("스마트스토어 발행 대상을 선택해 주세요.");
+    }
     return this.database.transaction(async (tx) => {
       const [owned] = await tx
         .select({ id: products.id })
@@ -60,6 +71,7 @@ export class NaverPublicationRepository {
           and(
             eq(productPublications.productId, productId),
             eq(productPublications.channel, "naver"),
+            eq(productPublications.storeConnectionId, storeConnectionId),
           ),
         )
         .for("update")
@@ -104,6 +116,7 @@ export class NaverPublicationRepository {
           .values({
             productId,
             channel: "naver",
+            storeConnectionId,
             status: "publishing",
             attemptedPayloadHash: payloadHash,
             lastRequestId: requestId,

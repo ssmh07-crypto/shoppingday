@@ -299,6 +299,17 @@ describe("상품 편집 서랍", () => {
     ).toBeVisible();
     expect(screen.getByText("대표 이미지")).toBeVisible();
     expect(screen.getByText("추가 이미지 1")).toBeVisible();
+    const preview = screen.getByTitle("판매 상세페이지 미리보기");
+    const detailUrls = screen.getByLabelText("상세 이미지 URL");
+    const htmlEditor = screen.getByText("HTML 편집").closest("label")!;
+    expect(
+      preview.compareDocumentPosition(detailUrls) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      detailUrls.compareDocumentPosition(htmlEditor) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
 
     const firstCard = screen.getByAltText("첫 이미지").closest("article")!;
     const secondCard = screen

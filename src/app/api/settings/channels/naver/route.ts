@@ -5,11 +5,15 @@ import { withDbReadRecovery, withDbSession } from "@/lib/db";
 import { naverPublicationPolicySchema } from "@/modules/channels/naver/naver-publication-policy";
 import { NaverPublicationPolicyRepository } from "@/modules/channels/naver/naver-publication-policy-repository";
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     return await withDbReadRecovery(async (database) => {
       const user = await requireAdmin(database);
-      const policy = await new NaverPublicationPolicyRepository(database).getDefault(user.id);
+      const storeConnectionId =
+        new URL(request.url).searchParams.get("storeConnectionId") ?? undefined;
+      const policy = await new NaverPublicationPolicyRepository(
+        database,
+      ).getDefault(user.id, storeConnectionId);
       return NextResponse.json(
         { success: true, policy },
         { headers: { "Cache-Control": "private, no-store" } },
@@ -25,7 +29,11 @@ export async function PATCH(request: Request) {
     try {
       const user = await requireAdmin(database);
       const input = naverPublicationPolicySchema.parse(await request.json());
-      const policy = await new NaverPublicationPolicyRepository(database).saveDefault(user.id, input);
+      const storeConnectionId =
+        new URL(request.url).searchParams.get("storeConnectionId") ?? undefined;
+      const policy = await new NaverPublicationPolicyRepository(
+        database,
+      ).saveDefault(user.id, input, storeConnectionId);
       return NextResponse.json({ success: true, policy });
     } catch (error) {
       return policyError(error);

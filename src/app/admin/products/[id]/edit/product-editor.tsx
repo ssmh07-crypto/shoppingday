@@ -121,6 +121,10 @@ export function ProductEditor({
   const [saving, setSaving] = useState(false);
   const [uploadingImages, setUploadingImages] = useState(false);
   const [publishingNaver, setPublishingNaver] = useState(false);
+  const [selectedStoreId, setSelectedStoreId] = useState(
+    initial.naverStoreConnectionId ?? "",
+  );
+  const [savingStoreTarget, setSavingStoreTarget] = useState(false);
   const [recommendingTitle, setRecommendingTitle] = useState(false);
   const [titleRecommendation, setTitleRecommendation] =
     useState<TitleRecommendation | null>(null);
@@ -178,6 +182,37 @@ export function ProductEditor({
         : null,
     [form.sellingPrice, initial.supplier.supplierPrice],
   );
+
+  async function selectStoreTarget(storeConnectionId: string) {
+    setSelectedStoreId(storeConnectionId);
+    setSavingStoreTarget(true);
+    setMessage("발행 대상 스토어를 변경하는 중입니다.");
+    try {
+      const response = await fetch(
+        `/api/products/${initial.product.id}/naver-store-target`,
+        {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ storeConnectionId }),
+        },
+      );
+      const body = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(
+          body?.error?.message ?? "발행 대상 스토어를 변경하지 못했습니다.",
+        );
+      }
+      window.location.reload();
+    } catch (error) {
+      setSelectedStoreId(initial.naverStoreConnectionId ?? "");
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : "발행 대상 스토어를 변경하지 못했습니다.",
+      );
+      setSavingStoreTarget(false);
+    }
+  }
   const sourcingRegistrationDraft = useMemo(
     () =>
       registrationContext
@@ -1613,13 +1648,14 @@ export function ProductEditor({
                   <p>판매 페이지에 표시할 HTML을 편집하고 미리 확인하세요.</p>
                 </div>
               </div>
-              <textarea
-                rows={13}
-                value={form.description}
-                onChange={(event) =>
-                  setForm({ ...form, description: event.target.value })
-                }
-              />
+              <div className="drawer-description-preview">
+                <span>미리보기</span>
+                <iframe
+                  sandbox=""
+                  srcDoc={form.description}
+                  title="판매 상세페이지 미리보기"
+                />
+              </div>
               <div className="drawer-url-import detail">
                 <label htmlFor="detail-image-urls">상세 이미지 URL</label>
                 <textarea
@@ -1643,14 +1679,16 @@ export function ProductEditor({
                   HTML에 추가합니다.
                 </small>
               </div>
-              <div className="drawer-description-preview">
-                <span>미리보기</span>
-                <iframe
-                  sandbox=""
-                  srcDoc={form.description}
-                  title="판매 상세페이지 미리보기"
+              <label className="drawer-description-html">
+                <span>HTML 편집</span>
+                <textarea
+                  rows={13}
+                  value={form.description}
+                  onChange={(event) =>
+                    setForm({ ...form, description: event.target.value })
+                  }
                 />
-              </div>
+              </label>
             </section>
           </div>
         )}
@@ -1765,6 +1803,39 @@ export function ProductEditor({
             </div>
             <div className="drawer-category-requirements">
               <strong>스마트스토어 발행 상태</strong>
+              <div className="naver-store-target-field">
+                <strong>발행 대상 스마트스토어</strong>
+                {(initial.naverStoreConnections ?? []).length ? (
+                  <>
+                    <select
+                      aria-label="발행 대상 스마트스토어"
+                      value={selectedStoreId}
+                      disabled={savingStoreTarget || publishingNaver}
+                      onChange={(event) =>
+                        void selectStoreTarget(event.target.value)
+                      }
+                    >
+                      {(initial.naverStoreConnections ?? []).map((connection) => (
+                        <option key={connection.id} value={connection.id}>
+                          {connection.storeName}
+                          {connection.authType === "SELLER"
+                            ? " · 다른 판매자"
+                            : " · 내 스토어"}
+                          {connection.isDefault ? " · 기본" : ""}
+                        </option>
+                      ))}
+                    </select>
+                    <small>
+                      배송정책, 발행 이력과 실제 등록 계정은 선택한 스토어별로
+                      분리됩니다.
+                    </small>
+                  </>
+                ) : (
+                  <p>
+                    스마트스토어 설정에서 발행 대상 스토어를 먼저 연결해 주세요.
+                  </p>
+                )}
+              </div>
               {publicationInspectionStatus && (
                 <p role="status">{publicationInspectionStatus}</p>
               )}
@@ -1830,6 +1901,7 @@ export function ProductEditor({
                 initialDefaults={initial.naverPublicationPolicy.defaults}
                 initialOverrides={initial.naverPublicationPolicy.overrides}
                 categoryId={form.naverCategoryId}
+                storeConnectionId={selectedStoreId}
                 onSaved={() =>
                   setPublicationRefreshKey((current) => current + 1)
                 }
@@ -1849,6 +1921,7 @@ export function ProductEditor({
                 dirty ||
                 saving ||
                 publishingNaver ||
+                !selectedStoreId ||
                 !publicationInspection?.ready ||
                 !["create", "retry_create"].includes(
                   publicationInspection.action ?? "",

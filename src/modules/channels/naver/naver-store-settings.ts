@@ -13,12 +13,25 @@ const smartstoreUrlSchema = z
 export const naverStoreSettingsInputSchema = z.object({
   storeName: z.string().trim().min(1, "스토어명을 입력해 주세요.").max(100),
   storeUrl: smartstoreUrlSchema,
+  authType: z.enum(["SELF", "SELLER"]).optional(),
   accountId: z
     .string()
     .trim()
     .max(100)
     .transform((value) => value || null),
-});
+  isDefault: z.boolean().default(false),
+}).superRefine((value, context) => {
+  if (value.authType === "SELLER" && !value.accountId) {
+    context.addIssue({
+      code: "custom",
+      path: ["accountId"],
+      message: "다른 판매자 스토어는 판매자 ID 또는 UID가 필요합니다.",
+    });
+  }
+}).transform((value) => ({
+  ...value,
+  authType: value.authType ?? (value.accountId ? "SELLER" : "SELF"),
+}));
 
 export type NaverStoreSettingsInput = z.infer<
   typeof naverStoreSettingsInputSchema

@@ -18,6 +18,7 @@ export function NaverPublicationPolicyForm({
   initialOverrides = {},
   categoryId,
   onSaved,
+  storeConnectionId,
 }: {
   mode: "default" | "product";
   endpoint: string;
@@ -25,6 +26,7 @@ export function NaverPublicationPolicyForm({
   initialOverrides?: NaverPublicationPolicyOverrides;
   categoryId?: string | null;
   onSaved?: () => void;
+  storeConnectionId?: string | null;
 }) {
   const [defaults, setDefaults] = useState(initialDefaults);
   const [overrides, setOverrides] = useState(initialOverrides);
@@ -271,6 +273,7 @@ export function NaverPublicationPolicyForm({
           <NaverDeliveryPolicyInput
             value={policy.deliveryInfo}
             onChange={(value) => setValue("deliveryInfo", value)}
+            storeConnectionId={storeConnectionId}
           />,
         )}
         {wrap(

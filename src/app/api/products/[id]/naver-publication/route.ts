@@ -17,6 +17,7 @@ import {
 } from "@/modules/channels/naver/naver-publication-service";
 import { ProductEditRepository } from "@/modules/products/product-edit-repository";
 import { ProductNotFoundError } from "@/modules/products/product-errors";
+import { NaverStoreTargetRepository } from "@/modules/channels/naver/naver-store-target-repository";
 import {
   withAdminProductReadRoute,
   withAdminProductRoute,
@@ -33,11 +34,17 @@ export async function GET(
 ) {
   return withAdminProductReadRoute(async (user, database) => {
     const { id } = await params;
+    const targetStore = await new NaverStoreTargetRepository(
+      database,
+    ).getForProduct(id, user.id);
+    if (!targetStore) {
+      throw new NaverPublicationUnavailableError();
+    }
     const inspection = await new NaverPublicationService(
       new ProductEditRepository(database),
       new NaverPublicationPolicyRepository(database),
       new NaverPublicationRepository(database),
-    ).inspect(id, user.id);
+    ).inspect(id, user.id, targetStore.id);
     if (!inspection) throw new ProductNotFoundError();
     return NextResponse.json(
       { success: true, inspection },
@@ -54,12 +61,23 @@ export async function POST(
     try {
       const { id } = await params;
       const input = publishInputSchema.parse(await request.json());
+      const targetStore = await new NaverStoreTargetRepository(
+        database,
+      ).getForProduct(id, user.id);
+      if (!targetStore) {
+        throw new NaverPublicationUnavailableError();
+      }
       const result = await new NaverPublicationService(
         new ProductEditRepository(database),
         new NaverPublicationPolicyRepository(database),
         new NaverPublicationRepository(database),
-        await createConfiguredNaverClientForUser(database, user.id),
-      ).publish(id, user.id, input.payloadHash);
+        await createConfiguredNaverClientForUser(
+          database,
+          user.id,
+          undefined,
+          targetStore.id,
+        ),
+      ).publish(id, user.id, input.payloadHash, targetStore.id);
       return NextResponse.json(
         { success: true, result },
         { headers: { "Cache-Control": "private, no-store" } },

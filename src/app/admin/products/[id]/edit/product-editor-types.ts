@@ -14,6 +14,15 @@ export type ProductEditorInitial = {
     overrides: NaverPublicationPolicyOverrides;
     effective: NaverPublicationPolicyData;
   };
+  naverStoreConnections: Array<{
+    id: string;
+    storeName: string;
+    storeUrl: string;
+    authType: "SELF" | "SELLER";
+    accountId: string | null;
+    isDefault: boolean;
+  }>;
+  naverStoreConnectionId: string | null;
   product: {
     id: string;
     status: string;

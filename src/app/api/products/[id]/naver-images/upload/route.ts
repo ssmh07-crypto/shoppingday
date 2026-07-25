@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { NaverCommerceError } from "@/modules/channels/naver/naver-commerce-client";
 import { createConfiguredNaverClientForUser } from "@/modules/channels/naver/naver-category-service";
+import { NaverStoreTargetRepository } from "@/modules/channels/naver/naver-store-target-repository";
 import { NaverImageUploadService } from "@/modules/channels/naver/naver-image-upload-service";
 import { ProductEditRepository } from "@/modules/products/product-edit-repository";
 import { withAdminProductRoute } from "../../../route-utils";
@@ -18,7 +19,17 @@ export async function POST(
       const { draftVersion } = inputSchema.parse(await request.json());
       const data = await new NaverImageUploadService(
         new ProductEditRepository(database),
-        await createConfiguredNaverClientForUser(database, user.id),
+        await createConfiguredNaverClientForUser(
+          database,
+          user.id,
+          undefined,
+          (
+            await new NaverStoreTargetRepository(database).getForProduct(
+              id,
+              user.id,
+            )
+          )?.id,
+        ),
       ).upload(id, user.id, draftVersion);
       return NextResponse.json({ success: true, data });
     } catch (error) {

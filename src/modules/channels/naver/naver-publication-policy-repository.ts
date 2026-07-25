@@ -14,11 +14,13 @@ import {
   parseNaverPublicationPolicyOverrides,
 } from "./naver-publication-policy";
 import { ProductNotFoundError } from "@/modules/products/product-errors";
+import { NaverStoreSettingsRepository } from "./naver-store-settings-repository";
 
 export class NaverPublicationPolicyRepository {
   constructor(private readonly database: Database) {}
 
-  async getDefault(userId: string) {
+  async getDefault(userId: string, storeConnectionId?: string) {
+    const storeId = await this.resolveStoreId(userId, storeConnectionId);
     const [row] = await this.database
       .select({ policy: channelPublicationPolicies.policy })
       .from(channelPublicationPolicies)
@@ -26,30 +28,47 @@ export class NaverPublicationPolicyRepository {
         and(
           eq(channelPublicationPolicies.userId, userId),
           eq(channelPublicationPolicies.channel, "naver"),
+          eq(channelPublicationPolicies.storeConnectionId, storeId),
         ),
       )
       .limit(1);
     return parseNaverPublicationPolicy(row?.policy);
   }
 
-  async saveDefault(userId: string, policy: NaverPublicationPolicyData) {
+  async saveDefault(
+    userId: string,
+    policy: NaverPublicationPolicyData,
+    storeConnectionId?: string,
+  ) {
+    const storeId = await this.resolveStoreId(userId, storeConnectionId);
     const parsed = parseNaverPublicationPolicy(policy);
     await this.database
       .insert(channelPublicationPolicies)
-      .values({ userId, channel: "naver", policy: parsed })
+      .values({
+        userId,
+        channel: "naver",
+        storeConnectionId: storeId,
+        policy: parsed,
+      })
       .onConflictDoUpdate({
         target: [
           channelPublicationPolicies.userId,
           channelPublicationPolicies.channel,
+          channelPublicationPolicies.storeConnectionId,
         ],
         set: { policy: parsed, updatedAt: new Date() },
       });
     return parsed;
   }
 
-  async getForProduct(productId: string, userId: string) {
+  async getForProduct(
+    productId: string,
+    userId: string,
+    storeConnectionId?: string,
+  ) {
+    const storeId = await this.resolveStoreId(userId, storeConnectionId);
     const [defaults, owned, row] = await Promise.all([
-      this.getDefault(userId),
+      this.getDefault(userId, storeId),
       this.database
         .select({ id: products.id })
         .from(products)
@@ -64,6 +83,7 @@ export class NaverPublicationPolicyRepository {
           and(
             eq(productPublicationPolicyOverrides.productId, productId),
             eq(productPublicationPolicyOverrides.channel, "naver"),
+            eq(productPublicationPolicyOverrides.storeConnectionId, storeId),
             eq(products.ownerId, userId),
           ),
         )
@@ -79,7 +99,9 @@ export class NaverPublicationPolicyRepository {
     productId: string,
     userId: string,
     overrides: NaverPublicationPolicyOverrides,
+    storeConnectionId?: string,
   ) {
+    const storeId = await this.resolveStoreId(userId, storeConnectionId);
     const [owned] = await this.database
       .select({ id: products.id })
       .from(products)
@@ -89,15 +111,32 @@ export class NaverPublicationPolicyRepository {
     const parsed = parseNaverPublicationPolicyOverrides(overrides);
     await this.database
       .insert(productPublicationPolicyOverrides)
-      .values({ productId, channel: "naver", policy: parsed })
+      .values({
+        productId,
+        channel: "naver",
+        storeConnectionId: storeId,
+        policy: parsed,
+      })
       .onConflictDoUpdate({
         target: [
           productPublicationPolicyOverrides.productId,
           productPublicationPolicyOverrides.channel,
+          productPublicationPolicyOverrides.storeConnectionId,
         ],
         set: { policy: parsed, updatedAt: new Date() },
       });
-    const defaults = await this.getDefault(userId);
+    const defaults = await this.getDefault(userId, storeId);
     return { defaults, overrides: parsed, effective: mergeNaverPublicationPolicy(defaults, parsed) };
+  }
+
+  private async resolveStoreId(userId: string, storeConnectionId?: string) {
+    const stores = new NaverStoreSettingsRepository(this.database);
+    const store = storeConnectionId
+      ? await stores.getById(userId, storeConnectionId)
+      : await stores.get(userId);
+    if (!store) {
+      throw new Error("스마트스토어 연결을 먼저 설정해 주세요.");
+    }
+    return store.id;
   }
 }

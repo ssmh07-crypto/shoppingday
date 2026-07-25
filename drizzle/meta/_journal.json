@@ -127,6 +127,13 @@
       "when": 1784552669705,
       "tag": "0017_tranquil_iron_monger",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1784966366322,
+      "tag": "0018_hard_big_bertha",
+      "breakpoints": true
     }
   ]
 }

@@ -16,13 +16,17 @@ const RETURN_TYPES = new Set([
   "LOGISTICS_CENTER_REFUND_OR_EXCHANGE",
 ]);
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     return await withDbReadRecovery(async (database) => {
       const user = await requireAdmin(database);
+      const storeConnectionId =
+        new URL(request.url).searchParams.get("storeConnectionId") ?? undefined;
       const client = await createConfiguredNaverClientForUser(
         database,
         user.id,
+        undefined,
+        storeConnectionId,
       );
       const [addresses, bundleGroups, returnDeliveryCompanies] =
         await Promise.all([

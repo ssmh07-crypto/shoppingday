@@ -439,6 +439,46 @@ describe("네이버 커머스API 중계 클라이언트", () => {
     expect(JSON.stringify(init)).not.toContain("client_secret");
   });
 
+  it("서명된 SELLER 컨텍스트로 선택한 판매자 클라이언트를 사용한다", async () => {
+    const fallback = {
+      fetchCategories: vi.fn(),
+      fetchProductModels: vi.fn(),
+      ...metadataClientMocks(),
+    };
+    const seller = {
+      fetchCategories: vi.fn().mockResolvedValue(categories),
+      fetchProductModels: vi.fn(),
+      ...metadataClientMocks(),
+    };
+    const clientFactory = vi.fn().mockReturnValue(seller);
+    const handler = createNaverCommerceRelayHandler({
+      sharedSecret,
+      client: fallback,
+      clientFactory,
+      now: () => now,
+    });
+    const client = new NaverCommerceRelayClient(
+      {
+        relayUrl: "https://relay.example.test",
+        sharedSecret,
+        timeoutMs: 1000,
+        tokenType: "SELLER",
+        accountId: "ncp_seller_uid",
+      },
+      async (input, init) => handler(new Request(input, init)),
+      () => now,
+      () => nonce,
+    );
+
+    await expect(client.fetchCategories()).resolves.toEqual(categories);
+    expect(clientFactory).toHaveBeenCalledWith({
+      tokenType: "SELLER",
+      accountId: "ncp_seller_uid",
+    });
+    expect(seller.fetchCategories).toHaveBeenCalled();
+    expect(fallback.fetchCategories).not.toHaveBeenCalled();
+  });
+
   it("상품명을 서명된 카탈로그 검색 요청으로 전달한다", async () => {
     const fetcher = vi
       .fn<typeof fetch>()

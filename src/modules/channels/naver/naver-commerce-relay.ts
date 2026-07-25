@@ -41,6 +41,8 @@ export type NaverCommerceRelayConfig = {
   relayUrl: string;
   sharedSecret: string;
   timeoutMs: number;
+  tokenType?: "SELF" | "SELLER";
+  accountId?: string | null;
 };
 
 export interface NaverCategoriesClient {
@@ -262,7 +264,15 @@ export class NaverCommerceRelayClient implements NaverCategoriesClient {
     const method = options.method ?? "GET";
     const signature = await createNaverRelaySignature(
       this.config.sharedSecret,
-      { timestamp, nonce, method, pathAndQuery, body: options.body },
+      {
+        timestamp,
+        nonce,
+        method,
+        pathAndQuery,
+        body: options.body,
+        tokenType: this.config.tokenType,
+        accountId: this.config.accountId,
+      },
     );
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.config.timeoutMs);
@@ -276,6 +286,12 @@ export class NaverCommerceRelayClient implements NaverCategoriesClient {
           [NAVER_RELAY_HEADERS.timestamp]: String(timestamp),
           [NAVER_RELAY_HEADERS.nonce]: nonce,
           [NAVER_RELAY_HEADERS.signature]: signature,
+          ...(this.config.tokenType
+            ? { [NAVER_RELAY_HEADERS.tokenType]: this.config.tokenType }
+            : {}),
+          ...(this.config.accountId
+            ? { [NAVER_RELAY_HEADERS.accountId]: this.config.accountId }
+            : {}),
         },
         ...(options.body
           ? { body: new Blob([options.body as BlobPart]) }
@@ -385,6 +401,10 @@ const IMAGE_TYPES = new Set(["image/jpeg", "image/png"]);
 export type NaverRelayHandlerOptions = {
   sharedSecret: string;
   client: NaverCategoriesClient;
+  clientFactory?: (context: {
+    tokenType: "SELF" | "SELLER";
+    accountId: string | null;
+  }) => NaverCategoriesClient;
   now?: () => number;
   replayGuard?: NaverRelayReplayGuard;
   maxClockSkewMs?: number;
@@ -440,12 +460,25 @@ export function createNaverCommerceRelayHandler(
     const timestampHeader = request.headers.get(NAVER_RELAY_HEADERS.timestamp);
     const nonce = request.headers.get(NAVER_RELAY_HEADERS.nonce) ?? "";
     const signature = request.headers.get(NAVER_RELAY_HEADERS.signature) ?? "";
+    const tokenTypeHeader = request.headers.get(NAVER_RELAY_HEADERS.tokenType);
+    const accountIdHeader = request.headers.get(NAVER_RELAY_HEADERS.accountId);
+    const authContext =
+      tokenTypeHeader === null
+        ? null
+        : tokenTypeHeader === "SELF"
+          ? { tokenType: "SELF" as const, accountId: null }
+          : tokenTypeHeader === "SELLER" &&
+              accountIdHeader &&
+              /^[A-Za-z0-9._@-]{1,100}$/.test(accountIdHeader)
+            ? { tokenType: "SELLER" as const, accountId: accountIdHeader }
+            : undefined;
     const timestamp = Number(timestampHeader);
     if (
       !timestampHeader ||
       !Number.isSafeInteger(timestamp) ||
       Math.abs(now() - timestamp) > maxClockSkewMs ||
-      !/^[A-Za-z0-9_-]{16,128}$/.test(nonce)
+      !/^[A-Za-z0-9_-]{16,128}$/.test(nonce) ||
+      authContext === undefined
     ) {
       return relayJson(
         401,
@@ -467,7 +500,15 @@ export function createNaverCommerceRelayHandler(
     const pathAndQuery = `${url.pathname}${url.search}`;
     const valid = await verifyNaverRelaySignature(
       options.sharedSecret,
-      { timestamp, nonce, method: request.method, pathAndQuery, body },
+      {
+        timestamp,
+        nonce,
+        method: request.method,
+        pathAndQuery,
+        body,
+        tokenType: authContext?.tokenType,
+        accountId: authContext?.accountId,
+      },
       signature,
     );
     if (!valid || !replayGuard.consume(nonce, timestamp + maxClockSkewMs)) {
@@ -479,7 +520,11 @@ export function createNaverCommerceRelayHandler(
     }
 
     try {
-      const result = await handleRelayRequest(url, options.client, request, body);
+      const client =
+        authContext && options.clientFactory
+          ? options.clientFactory(authContext)
+          : options.client;
+      const result = await handleRelayRequest(url, client, request, body);
       if (result instanceof Response) return result;
       return Response.json(result, {
         headers: { "cache-control": "no-store" },

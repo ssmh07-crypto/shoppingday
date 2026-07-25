@@ -4,6 +4,8 @@ export const NAVER_RELAY_HEADERS = {
   timestamp: "x-shoppingday-timestamp",
   nonce: "x-shoppingday-nonce",
   signature: "x-shoppingday-signature",
+  tokenType: "x-shoppingday-naver-token-type",
+  accountId: "x-shoppingday-naver-account-id",
 } as const;
 
 export type NaverRelaySignatureInput = {
@@ -12,6 +14,8 @@ export type NaverRelaySignatureInput = {
   method: string;
   pathAndQuery: string;
   body?: string | Uint8Array | ArrayBuffer;
+  tokenType?: "SELF" | "SELLER";
+  accountId?: string | null;
 };
 
 export async function createNaverRelaySignature(
@@ -66,6 +70,8 @@ async function canonicalRequest(input: NaverRelaySignatureInput) {
     input.nonce,
     input.method.toUpperCase(),
     input.pathAndQuery,
+    input.tokenType ?? "",
+    input.accountId ?? "",
     bodyHash,
   ].join("\n");
 }

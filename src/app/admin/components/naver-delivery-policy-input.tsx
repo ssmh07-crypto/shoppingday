@@ -35,12 +35,20 @@ const DELIVERY_COMPANIES = [
   ["EPOST", "우체국택배"],
 ] as const;
 
+function deliveryOptionsUrl(storeConnectionId?: string | null) {
+  return storeConnectionId
+    ? `/api/integrations/naver/delivery-options?storeConnectionId=${encodeURIComponent(storeConnectionId)}`
+    : "/api/integrations/naver/delivery-options";
+}
+
 export function NaverDeliveryPolicyInput({
   value,
   onChange,
+  storeConnectionId,
 }: {
   value: DatabaseJsonObject | null;
   onChange: (value: DatabaseJsonObject | null) => void;
+  storeConnectionId?: string | null;
 }) {
   const [options, setOptions] = useState<DeliveryOptions | null>(null);
   const [status, setStatus] = useState("");
@@ -50,7 +58,7 @@ export function NaverDeliveryPolicyInput({
     setLoading(true);
     setStatus("");
     try {
-      const response = await fetch("/api/integrations/naver/delivery-options", {
+      const response = await fetch(deliveryOptionsUrl(storeConnectionId), {
         cache: "no-store",
       });
       const body = await response.json().catch(() => null);
@@ -75,7 +83,7 @@ export function NaverDeliveryPolicyInput({
 
   useEffect(() => {
     const controller = new AbortController();
-    void fetch("/api/integrations/naver/delivery-options", {
+    void fetch(deliveryOptionsUrl(storeConnectionId), {
       cache: "no-store",
       signal: controller.signal,
     })
@@ -102,7 +110,7 @@ export function NaverDeliveryPolicyInput({
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, []);
+  }, [storeConnectionId]);
 
   const deliveryFee = objectValue(value?.deliveryFee);
   const areaFee = objectValue(deliveryFee.deliveryFeeByArea);

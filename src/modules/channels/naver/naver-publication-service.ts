@@ -21,11 +21,15 @@ export class NaverPublicationService {
     private readonly client?: Pick<NaverCategoriesClient, "createProduct">,
   ) {}
 
-  async inspect(productId: string, ownerId: string) {
+  async inspect(
+    productId: string,
+    ownerId: string,
+    storeConnectionId?: string,
+  ) {
     const [current, policy, publication] = await Promise.all([
       this.products.find(productId, ownerId),
-      this.policies.getForProduct(productId, ownerId),
-      this.publications.findForProduct(productId, ownerId),
+      this.policies.getForProduct(productId, ownerId, storeConnectionId),
+      this.publications.findForProduct(productId, ownerId, storeConnectionId),
     ]);
     if (!current) return null;
     const result = buildNaverProductPayload(
@@ -62,12 +66,13 @@ export class NaverPublicationService {
     productId: string,
     ownerId: string,
     expectedPayloadHash: string,
+    storeConnectionId?: string,
   ) {
     if (!this.client) throw new NaverPublicationUnavailableError();
     const [current, policy, publication] = await Promise.all([
       this.products.find(productId, ownerId),
-      this.policies.getForProduct(productId, ownerId),
-      this.publications.findForProduct(productId, ownerId),
+      this.policies.getForProduct(productId, ownerId, storeConnectionId),
+      this.publications.findForProduct(productId, ownerId, storeConnectionId),
     ]);
     if (!current) throw new ProductNotFoundError();
     const result = buildNaverProductPayload(
@@ -97,12 +102,20 @@ export class NaverPublicationService {
     if (action === "blocked") throw new NaverPublicationBlockedError();
     if (action === "update") throw new NaverPublicationUpdateRequiredError();
 
-    const attempt = await this.publications.beginPublishing(
-      productId,
-      ownerId,
-      result.hash,
-      "create",
-    );
+    const attempt = storeConnectionId
+      ? await this.publications.beginPublishing(
+          productId,
+          ownerId,
+          result.hash,
+          "create",
+          storeConnectionId,
+        )
+      : await this.publications.beginPublishing(
+          productId,
+          ownerId,
+          result.hash,
+          "create",
+        );
     let created;
     try {
       created = await this.client.createProduct(result.payload);

@@ -33,7 +33,7 @@ async function renderPage(
       leafOnly: true,
       limit: 100,
     }),
-    new NaverStoreSettingsRepository(database).get(user.id),
+    new NaverStoreSettingsRepository(database).list(user.id),
   ]);
   const configured = isNaverCommerceConfigured();
 

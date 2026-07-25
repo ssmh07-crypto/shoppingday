@@ -3,13 +3,16 @@ import { z } from "zod";
 import { AuthenticationError, requireAdmin } from "@/lib/auth/admin";
 import { withDbReadRecovery, withDbSession } from "@/lib/db";
 import { naverStoreSettingsInputSchema } from "@/modules/channels/naver/naver-store-settings";
-import { NaverStoreSettingsRepository } from "@/modules/channels/naver/naver-store-settings-repository";
+import {
+  NaverStoreConnectionLimitError,
+  NaverStoreSettingsRepository,
+} from "@/modules/channels/naver/naver-store-settings-repository";
 
 export async function GET() {
   try {
     return await withDbReadRecovery(async (database) => {
       const user = await requireAdmin(database);
-      const settings = await new NaverStoreSettingsRepository(database).get(
+      const settings = await new NaverStoreSettingsRepository(database).list(
         user.id,
       );
       return NextResponse.json(
@@ -22,12 +25,12 @@ export async function GET() {
   }
 }
 
-export async function PATCH(request: Request) {
+export async function POST(request: Request) {
   return withDbSession(async (database) => {
     try {
       const user = await requireAdmin(database);
       const input = naverStoreSettingsInputSchema.parse(await request.json());
-      const settings = await new NaverStoreSettingsRepository(database).save(
+      const settings = await new NaverStoreSettingsRepository(database).create(
         user.id,
         input,
       );
@@ -55,6 +58,18 @@ function storeSettingsError(error: unknown) {
         },
       },
       { status: 400 },
+    );
+  }
+  if (error instanceof NaverStoreConnectionLimitError) {
+    return NextResponse.json(
+      {
+        success: false,
+        error: {
+          code: "store_connection_limit",
+          message: "스마트스토어는 최대 5개까지 연결할 수 있습니다.",
+        },
+      },
+      { status: 409 },
     );
   }
   return NextResponse.json(

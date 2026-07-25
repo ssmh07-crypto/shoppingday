@@ -371,20 +371,64 @@ export const products = pgTable(
   ],
 );
 
-export const naverStoreSettings = pgTable("naver_store_settings", {
-  userId: uuid("user_id")
-    .primaryKey()
-    .references(() => userProfiles.userId, { onDelete: "cascade" }),
-  storeName: text("store_name").notNull(),
-  storeUrl: text("store_url").notNull(),
-  accountId: text("account_id"),
-  createdAt: timestamp("created_at", { withTimezone: true })
-    .notNull()
-    .defaultNow(),
-  updatedAt: timestamp("updated_at", { withTimezone: true })
-    .notNull()
-    .defaultNow(),
-});
+export const naverStoreConnections = pgTable(
+  "naver_store_settings",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => userProfiles.userId, { onDelete: "cascade" }),
+    storeName: text("store_name").notNull(),
+    storeUrl: text("store_url").notNull(),
+    authType: text("auth_type").$type<"SELF" | "SELLER">().notNull(),
+    accountId: text("account_id"),
+    isDefault: boolean("is_default").notNull().default(false),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("naver_store_connections_user_idx").on(table.userId, table.createdAt),
+    uniqueIndex("naver_store_connections_user_url_uidx").on(
+      table.userId,
+      table.storeUrl,
+    ),
+    check(
+      "naver_store_connections_auth_type_check",
+      sql`${table.authType} in ('SELF', 'SELLER')`,
+    ),
+    check(
+      "naver_store_connections_seller_account_check",
+      sql`(${table.authType} = 'SELF' and ${table.accountId} is null) or (${table.authType} = 'SELLER' and length(${table.accountId}) > 0)`,
+    ),
+  ],
+);
+
+export const productNaverStoreTargets = pgTable(
+  "product_naver_store_targets",
+  {
+    productId: uuid("product_id")
+      .primaryKey()
+      .references(() => products.id, { onDelete: "cascade" }),
+    storeConnectionId: uuid("store_connection_id")
+      .notNull()
+      .references(() => naverStoreConnections.id, { onDelete: "restrict" }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("product_naver_store_targets_connection_idx").on(
+      table.storeConnectionId,
+    ),
+  ],
+);
 
 export const channelPublicationPolicies = pgTable(
   "channel_publication_policies",
@@ -393,6 +437,9 @@ export const channelPublicationPolicies = pgTable(
     userId: uuid("user_id")
       .notNull()
       .references(() => userProfiles.userId, { onDelete: "cascade" }),
+    storeConnectionId: uuid("store_connection_id")
+      .notNull()
+      .references(() => naverStoreConnections.id, { onDelete: "cascade" }),
     channel: text("channel").$type<PublicationChannel>().notNull(),
     policy: jsonb("policy")
       .$type<NaverPublicationPolicyData>()
@@ -416,9 +463,10 @@ export const channelPublicationPolicies = pgTable(
       .defaultNow(),
   },
   (table) => [
-    uniqueIndex("channel_publication_policies_user_channel_uidx").on(
+    uniqueIndex("channel_publication_policies_user_channel_store_uidx").on(
       table.userId,
       table.channel,
+      table.storeConnectionId,
     ),
     check(
       "channel_publication_policies_channel_check",
@@ -434,6 +482,9 @@ export const productPublicationPolicyOverrides = pgTable(
     productId: uuid("product_id")
       .notNull()
       .references(() => products.id, { onDelete: "cascade" }),
+    storeConnectionId: uuid("store_connection_id")
+      .notNull()
+      .references(() => naverStoreConnections.id, { onDelete: "cascade" }),
     channel: text("channel").$type<PublicationChannel>().notNull(),
     policy: jsonb("policy")
       .$type<NaverPublicationPolicyOverrides>()
@@ -447,9 +498,10 @@ export const productPublicationPolicyOverrides = pgTable(
       .defaultNow(),
   },
   (table) => [
-    uniqueIndex("product_publication_policy_overrides_product_channel_uidx").on(
+    uniqueIndex("product_publication_policy_overrides_product_channel_store_uidx").on(
       table.productId,
       table.channel,
+      table.storeConnectionId,
     ),
     check(
       "product_publication_policy_overrides_channel_check",
@@ -465,6 +517,9 @@ export const productPublications = pgTable(
     productId: uuid("product_id")
       .notNull()
       .references(() => products.id, { onDelete: "cascade" }),
+    storeConnectionId: uuid("store_connection_id")
+      .notNull()
+      .references(() => naverStoreConnections.id, { onDelete: "restrict" }),
     channel: text("channel").$type<PublicationChannel>().notNull(),
     status: productPublicationStatusEnum("status").notNull(),
     originProductNo: text("origin_product_no"),
@@ -489,9 +544,10 @@ export const productPublications = pgTable(
       .defaultNow(),
   },
   (table) => [
-    uniqueIndex("product_publications_product_channel_uidx").on(
+    uniqueIndex("product_publications_product_channel_store_uidx").on(
       table.productId,
       table.channel,
+      table.storeConnectionId,
     ),
     index("product_publications_status_idx").on(table.status, table.updatedAt),
     check(

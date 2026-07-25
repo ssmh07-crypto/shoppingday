@@ -28,4 +28,25 @@ describe("스마트스토어 등록 대상 설정", () => {
       }).accountId,
     ).toBeNull();
   });
+
+  it("SELLER 연결은 판매자 ID 또는 UID를 필수로 받는다", () => {
+    expect(
+      naverStoreSettingsInputSchema.safeParse({
+        storeName: "외부 판매자 스토어",
+        storeUrl: "https://smartstore.naver.com/external-seller",
+        authType: "SELLER",
+        accountId: "",
+        isDefault: false,
+      }).success,
+    ).toBe(false);
+    expect(
+      naverStoreSettingsInputSchema.parse({
+        storeName: "외부 판매자 스토어",
+        storeUrl: "https://smartstore.naver.com/external-seller",
+        authType: "SELLER",
+        accountId: "ncp_seller_uid",
+        isDefault: false,
+      }).authType,
+    ).toBe("SELLER");
+  });
 });
