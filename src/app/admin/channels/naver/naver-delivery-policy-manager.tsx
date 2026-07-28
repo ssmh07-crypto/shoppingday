@@ -31,6 +31,8 @@ export function NaverDeliveryPolicyManager({
   const [name, setName] = useState("");
   const [deliveryInfo, setDeliveryInfo] =
     useState<DatabaseJsonObject | null>(null);
+  const [sourceProduct, setSourceProduct] = useState("");
+  const [importing, setImporting] = useState(false);
   const [loading, setLoading] = useState(Boolean(storeConnectionId));
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
@@ -70,6 +72,7 @@ export function NaverDeliveryPolicyManager({
     setEditingId("new");
     setName("");
     setDeliveryInfo(null);
+    setSourceProduct("");
     setMessage("");
   }
 
@@ -77,7 +80,51 @@ export function NaverDeliveryPolicyManager({
     setEditingId(policy.id);
     setName(policy.name);
     setDeliveryInfo(policy.deliveryInfo);
+    setSourceProduct("");
     setMessage("");
+  }
+
+  async function importFromProduct() {
+    if (!sourceProduct.trim()) {
+      setMessage("기존 스마트스토어 상품 링크나 상품번호를 입력해 주세요.");
+      return;
+    }
+    setImporting(true);
+    setMessage("");
+    try {
+      const response = await fetch(
+        "/api/integrations/naver/delivery-policy-from-product",
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            storeConnectionId,
+            product: sourceProduct,
+          }),
+        },
+      );
+      const body = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(
+          body?.error?.message ?? "기존 상품의 배송정책을 불러오지 못했습니다.",
+        );
+      }
+      setDeliveryInfo(body.data.deliveryInfo);
+      setName((current) =>
+        current.trim() ? current : `${body.data.productName} 배송정책`,
+      );
+      setMessage(
+        `채널상품번호 ${body.data.channelProductNo}의 배송정책을 불러왔습니다. 내용을 확인한 뒤 저장해 주세요.`,
+      );
+    } catch (error) {
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : "기존 상품의 배송정책을 불러오지 못했습니다.",
+      );
+    } finally {
+      setImporting(false);
+    }
   }
 
   async function save() {
@@ -254,6 +301,30 @@ export function NaverDeliveryPolicyManager({
                 placeholder="예: 기본 무료배송"
               />
             </label>
+          </div>
+          <div className="drawer-url-import">
+            <label htmlFor="delivery-policy-source-product">
+              기존 스마트스토어 상품
+            </label>
+            <div>
+              <input
+                id="delivery-policy-source-product"
+                value={sourceProduct}
+                onChange={(event) => setSourceProduct(event.target.value)}
+                placeholder="상품 링크 또는 채널상품번호"
+              />
+              <button
+                type="button"
+                onClick={() => void importFromProduct()}
+                disabled={importing}
+              >
+                {importing ? "불러오는 중…" : "기존 배송정책 불러오기"}
+              </button>
+            </div>
+            <small>
+              판매 중인 상품의 배송정보를 가져온 뒤 이 스토어의 6자리
+              관리번호로 저장합니다.
+            </small>
           </div>
           <NaverDeliveryPolicyInput
             value={deliveryInfo}

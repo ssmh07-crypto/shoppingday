@@ -20,6 +20,16 @@ describe("네이버 상품 이미지 업로드", () => {
         isPrimary: true,
         enabled: true,
       },
+      {
+        id: "image-2",
+        source: "supplier" as const,
+        sourceUrl: "https://supplier.example/product-2.jpg",
+        storedUrl: null,
+        altText: "",
+        sortOrder: 1,
+        isPrimary: false,
+        enabled: true,
+      },
     ];
     const product = { draftVersion: 2, selectedImages };
     const repo = {
@@ -31,7 +41,7 @@ describe("네이버 상품 이미지 업로드", () => {
           draftVersion: 3,
           selectedImages: selectedImages.map((image) => ({
             ...image,
-            storedUrl: "https://shop-phinf.pstatic.net/uploaded.jpg",
+            storedUrl: `https://shop-phinf.pstatic.net/${image.id}.jpg`,
           })),
         },
       }),
@@ -39,11 +49,14 @@ describe("네이버 상품 이미지 업로드", () => {
     const client = {
       uploadProductImages: vi
         .fn()
-        .mockResolvedValue([
-          { url: "https://shop-phinf.pstatic.net/uploaded.jpg" },
+        .mockResolvedValueOnce([
+          { url: "https://shop-phinf.pstatic.net/image-1.jpg" },
+        ])
+        .mockResolvedValueOnce([
+          { url: "https://shop-phinf.pstatic.net/image-2.jpg" },
         ]),
     };
-    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+    const fetcher = vi.fn<typeof fetch>().mockImplementation(async () =>
       new Response(jpeg, {
         headers: { "content-type": "image/jpeg", "content-length": "4" },
       }),
@@ -55,8 +68,11 @@ describe("네이버 상품 이미지 업로드", () => {
       fetcher,
     ).upload("product-id", "owner-id", 2);
 
-    expect(result.uploadedCount).toBe(1);
-    expect(client.uploadProductImages).toHaveBeenCalledWith([
+    expect(result.uploadedCount).toBe(2);
+    expect(client.uploadProductImages).toHaveBeenNthCalledWith(1, [
+      expect.objectContaining({ type: "image/jpeg", bytes: jpeg }),
+    ]);
+    expect(client.uploadProductImages).toHaveBeenNthCalledWith(2, [
       expect.objectContaining({ type: "image/jpeg", bytes: jpeg }),
     ]);
     expect(repo.saveNaverImageUrls).toHaveBeenCalledWith(
@@ -67,7 +83,12 @@ describe("네이버 상품 이미지 업로드", () => {
         {
           imageId: "image-1",
           sourceUrl: "https://supplier.example/product.jpg",
-          storedUrl: "https://shop-phinf.pstatic.net/uploaded.jpg",
+          storedUrl: "https://shop-phinf.pstatic.net/image-1.jpg",
+        },
+        {
+          imageId: "image-2",
+          sourceUrl: "https://supplier.example/product-2.jpg",
+          storedUrl: "https://shop-phinf.pstatic.net/image-2.jpg",
         },
       ],
     );

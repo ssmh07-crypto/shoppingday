@@ -85,6 +85,39 @@ describe("네이버 판매 정책 설정", () => {
             },
           });
         }
+        if (url.includes("delivery-policy-from-product")) {
+          return Response.json({
+            success: true,
+            data: {
+              channelProductNo: "1234567890",
+              productName: "기존 판매 상품",
+              deliveryInfo: {
+                deliveryType: "DELIVERY",
+                deliveryAttributeType: "NORMAL",
+                deliveryCompany: "HANJIN",
+                deliveryBundleGroupUsable: false,
+                deliveryFee: {
+                  deliveryFeeType: "FREE",
+                  baseFee: 0,
+                  deliveryFeePayType: "PREPAID",
+                  deliveryFeeByArea: {
+                    deliveryAreaType: "AREA_2",
+                    area2extraFee: 3000,
+                    area3extraFee: 0,
+                  },
+                },
+                claimDeliveryInfo: {
+                  returnDeliveryCompanyPriorityType: "PRIMARY",
+                  returnDeliveryFee: 3000,
+                  exchangeDeliveryFee: 6000,
+                  shippingAddressId: 101,
+                  returnAddressId: 202,
+                  freeReturnInsuranceYn: false,
+                },
+              },
+            },
+          });
+        }
         if (init?.method === "POST") {
           savedBody = JSON.parse(String(init.body));
           return Response.json(
@@ -119,27 +152,27 @@ describe("네이버 판매 정책 설정", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "배송정책 추가" }));
     await screen.findByText("스마트스토어 배송 정보를 불러왔습니다.");
-    fireEvent.change(screen.getByPlaceholderText("예: 기본 무료배송"), {
-      target: { value: "기본 무료배송" },
+    fireEvent.change(screen.getByPlaceholderText("상품 링크 또는 채널상품번호"), {
+      target: {
+        value:
+          "https://smartstore.naver.com/sample/products/1234567890",
+      },
     });
-    fireEvent.change(screen.getByLabelText("발송 택배사"), {
-      target: { value: "HANJIN" },
-    });
-    fireEvent.change(screen.getByLabelText("출고지"), {
-      target: { value: "101" },
-    });
-    fireEvent.change(screen.getByLabelText("반품·교환지"), {
-      target: { value: "202" },
-    });
-    fireEvent.change(screen.getByLabelText("반품 택배사 계약"), {
-      target: { value: "PRIMARY" },
-    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "기존 배송정책 불러오기" }),
+    );
+    await screen.findByText(/채널상품번호 1234567890의 배송정책/);
+    expect(screen.getByPlaceholderText("예: 기본 무료배송")).toHaveValue(
+      "기존 판매 상품 배송정책",
+    );
+    expect(screen.getByLabelText("출고지")).toHaveValue("101");
+    expect(screen.getByLabelText("반품·교환지")).toHaveValue("202");
     fireEvent.click(screen.getByRole("button", { name: "배송정책 저장" }));
 
     await screen.findByText("000001");
     expect(savedBody).toMatchObject({
       storeConnectionId: "11111111-1111-4111-8111-111111111111",
-      name: "기본 무료배송",
+      name: "기존 판매 상품 배송정책",
       deliveryInfo: {
         deliveryCompany: "HANJIN",
         claimDeliveryInfo: {

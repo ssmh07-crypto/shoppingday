@@ -332,6 +332,11 @@ describe("네이버 커머스API 클라이언트", () => {
       originProduct: {
         leafCategoryId: "50000805",
         name: "린넨 여름 원피스",
+        deliveryInfo: {
+          deliveryType: "DELIVERY",
+          deliveryCompany: "HANJIN",
+          deliveryFee: { deliveryFeeType: "FREE", baseFee: 0 },
+        },
         detailAttribute: {
           productAttributes: [
             { attributeSeq: 10, attributeValueSeq: 100 },

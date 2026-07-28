@@ -1,4 +1,7 @@
-import type { NaverImageUploadFile } from "./naver-commerce-client";
+import type {
+  NaverCommerceUploadedImage,
+  NaverImageUploadFile,
+} from "./naver-commerce-client";
 import type { NaverCategoriesClient } from "./naver-commerce-relay";
 import type { ProductEditRepository } from "@/modules/products/product-edit-repository";
 import {
@@ -54,11 +57,13 @@ export class NaverImageUploadService {
       downloaded.push({ imageId: image.id, sourceUrl: image.sourceUrl, file });
     }
 
-    const uploaded = await this.client.uploadProductImages(
-      downloaded.map((item) => item.file),
-    );
-    if (uploaded.length !== downloaded.length) {
-      throw new Error("naver_image_upload_count_mismatch");
+    const uploaded: NaverCommerceUploadedImage[] = [];
+    for (const item of downloaded) {
+      const result = await this.client.uploadProductImages([item.file]);
+      if (result.length !== 1) {
+        throw new Error("naver_image_upload_count_mismatch");
+      }
+      uploaded.push(result[0]!);
     }
     const result = await this.repo.saveNaverImageUrls(
       productId,

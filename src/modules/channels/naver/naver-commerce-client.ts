@@ -110,6 +110,7 @@ const channelProductSellerTagSchema = z.looseObject({
   code: z.number().int().optional(),
   text: z.string().trim().min(1),
 });
+const channelProductDeliveryInfoSchema = z.record(z.string(), z.json());
 const channelProductSchema = z.looseObject({
   originProductNo: z
     .union([z.string(), z.number().int()])
@@ -121,6 +122,7 @@ const channelProductSchema = z.looseObject({
     statusType: z.string().optional(),
     salePrice: z.number().int().nonnegative().optional(),
     stockQuantity: z.number().int().nonnegative().optional(),
+    deliveryInfo: channelProductDeliveryInfoSchema.optional(),
     images: z
       .looseObject({
         representativeImage: z
