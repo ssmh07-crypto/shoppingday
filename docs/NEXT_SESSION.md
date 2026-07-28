@@ -8,6 +8,17 @@
 
 이 절이 현재 상태의 기준이다. 아래 절은 구현 이력으로 참고한다.
 
+### 현재 Git·PR·배포 상태
+
+- 작업 브랜치: `agent/growth-sourcing-management`
+- 성장상품관리 기능 커밋: `19d23f1` `expand growth product management`
+- 기능 커밋과 이 인수인계 갱신은 원격 브랜치에 푸시한다.
+- Draft PR:
+  [#18 Optimize sourcing, Naver publishing, and bulk product operations](https://github.com/ssmh07-crypto/shoppingday/pull/18)
+- 이번 변경에는 DB migration이 없다. 최근 판매 집계는 기존 성장 상품의
+  `product_input` JSON에 저장한다.
+- Cloudflare 운영 Worker 배포는 하지 않았다. 운영 반영에는 별도 배포가 필요하다.
+
 ### 성장상품관리 확장
 
 - `/admin/keywords`의 본문 좌우 여백과 카드 내부 패딩을 보강했다.
