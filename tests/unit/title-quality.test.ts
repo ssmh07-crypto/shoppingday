@@ -27,6 +27,14 @@ describe("상품명 기본 품질 검사", () => {
     ]);
   });
 
+  it("장식용 특수문자를 검색 품질 문제로 안내한다", () => {
+    expect(
+      assessProductTitle("★철제 바느질 골무▶", "골무").map(
+        (issue) => issue.code,
+      ),
+    ).toContain("decorative-character");
+  });
+
   it("간결하고 구체적인 상품명은 문제로 표시하지 않는다", () => {
     expect(assessProductTitle("철제 바느질 골무", "골무")).toEqual([]);
   });

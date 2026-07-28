@@ -196,7 +196,7 @@ describe("성장 상품 키워드 관리 화면", () => {
       target: { value: "성장형 여름 원피스" },
     });
     fireEvent.change(screen.getByLabelText(/검색 태그/), {
-      target: { value: "여름원피스, 린넨원피스" },
+      target: { value: "휴양지룩, 하객룩" },
     });
     fireEvent.click(
       screen.getByRole("button", { name: "변경사항 스마트스토어 반영" }),
@@ -210,7 +210,7 @@ describe("성장 상품 키워드 관리 화면", () => {
           body: JSON.stringify({
             confirmed: true,
             title: "성장형 여름 원피스",
-            searchTags: ["여름원피스", "린넨원피스"],
+            searchTags: ["휴양지룩", "하객룩"],
           }),
         }),
       ),

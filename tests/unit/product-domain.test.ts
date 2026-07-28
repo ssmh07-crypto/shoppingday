@@ -49,6 +49,20 @@ describe("판매 상품 도메인", () => {
       }).success,
     ).toBe(false);
   });
+  it("상품명 중복 및 홍보성 검색 태그를 저장하지 않는다", () => {
+    const result = draftInputSchema.safeParse({
+      ...base,
+      title: "미끄럼방지 욕실화",
+      searchTags: ["욕실화", "무료배송상품"],
+    });
+
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    expect(result.error.issues.map((issue) => issue.path)).toEqual([
+      ["searchTags", 0],
+      ["searchTags", 1],
+    ]);
+  });
   it("대표 이미지와 정렬을 검증한다", () => {
     const parsed = draftInputSchema.parse({
       ...base,

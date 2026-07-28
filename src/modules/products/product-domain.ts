@@ -7,6 +7,7 @@ import type {
   SupplierProductRow,
 } from "@/lib/db/schema";
 import type { SupplierProduct } from "@/modules/suppliers/core/types";
+import { addSearchTagQualityIssues } from "@/modules/keywords/search-tag-quality";
 
 export const PRODUCT_LIMITS = {
   title: 200,
@@ -176,6 +177,8 @@ export const draftInputSchema = z.object({
     .transform(normalizeImages),
   editedOptions: editedOptionsSchema,
   naverAttributes: naverAttributesSchema,
+}).superRefine((input, context) => {
+  addSearchTagQualityIssues(context, input.searchTags, input.title);
 });
 export type DraftInput = z.infer<typeof draftInputSchema>;
 

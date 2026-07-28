@@ -1,5 +1,6 @@
 import bcrypt from "bcryptjs";
 import { z } from "zod";
+import { logger } from "@/lib/logging/logger";
 import type { NaverProductPayload } from "./naver-product-payload";
 
 const tokenSchema = z.object({
@@ -769,6 +770,9 @@ export class NaverCommerceClient {
   ) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.config.timeoutMs);
+    const started = performance.now();
+    let responseStatus: number | undefined;
+    let errorCode: string | undefined;
     try {
       const response = await this.fetcher(url, {
         ...init,
@@ -776,6 +780,7 @@ export class NaverCommerceClient {
         signal: controller.signal,
         cache: "no-store",
       });
+      responseStatus = response.status;
       if (allowUnauthorized && response.status === 401) return response;
       if (response.status >= 300 && response.status < 400) {
         throw new NaverCommerceError(
@@ -808,6 +813,8 @@ export class NaverCommerceClient {
       }
       return response;
     } catch (error) {
+      errorCode =
+        error instanceof NaverCommerceError ? error.code : "request_failed";
       if (error instanceof NaverCommerceError) throw error;
       if (error instanceof Error && error.name === "AbortError") {
         throw new NaverCommerceError(
@@ -821,9 +828,40 @@ export class NaverCommerceClient {
       );
     } finally {
       clearTimeout(timeout);
+      logNaverRequestTiming({
+        transport: "direct",
+        method: init.method ?? "GET",
+        path: url.pathname,
+        responseStatus,
+        errorCode,
+        started,
+      });
     }
   }
 }
+
+function logNaverRequestTiming(input: {
+  transport: "direct" | "relay";
+  method: string;
+  path: string;
+  responseStatus?: number;
+  errorCode?: string;
+  started: number;
+}) {
+  const durationMs = Math.round(performance.now() - input.started);
+  if (durationMs < 1_000 && !input.errorCode && (input.responseStatus ?? 0) < 400)
+    return;
+  logger.info("naver_api_request_timing", {
+    transport: input.transport,
+    method: input.method,
+    path: input.path,
+    responseStatus: input.responseStatus,
+    errorCode: input.errorCode,
+    durationMs,
+  });
+}
+
+export { logNaverRequestTiming };
 
 async function readGatewayError(response: Response) {
   const contentType = response.headers.get("content-type") ?? "";

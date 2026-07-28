@@ -1,4 +1,5 @@
 import type { SourcingRelatedKeyword } from "./types";
+import { assessSearchTag } from "@/modules/keywords/search-tag-quality";
 
 const TITLE_LIMIT = 50;
 const TITLE_REVIEW_LENGTH = 40;
@@ -58,9 +59,6 @@ export function buildSourcingRegistrationDraft(
     diverseTitleKeywords.selected,
   );
   const tagCandidates = sortedTagKeywords(relatedKeywords);
-  const selectableTagKeywords = tagCandidates.filter(
-    (keyword) => keyword.length <= TAG_LENGTH_LIMIT,
-  );
   const attributeKeywords = sortedKeywords(relatedKeywords, "attribute");
   const categoryKeywords = sortedKeywords(relatedKeywords, "category");
   const warnings: string[] = [];
@@ -100,6 +98,12 @@ export function buildSourcingRegistrationDraft(
     },
   );
   const title = limitedTitle.title;
+  const lengthEligibleTagKeywords = tagCandidates.filter(
+    (keyword) => keyword.length <= TAG_LENGTH_LIMIT,
+  );
+  const selectableTagKeywords = lengthEligibleTagKeywords.filter(
+    (keyword) => assessSearchTag(keyword, { title }).length === 0,
+  );
   const usedTitleKeywords = uniqueKeywords(
     [
       composedTitle.baseSourceKeyword,
@@ -151,6 +155,14 @@ export function buildSourcingRegistrationDraft(
   }
   if (tagCandidates.some((keyword) => keyword.length > TAG_LENGTH_LIMIT)) {
     warnings.push("30자를 넘는 태그 후보는 표시하지만 상품 등록 태그로 선택할 수 없습니다.");
+  }
+  const excludedTagKeywords = lengthEligibleTagKeywords.filter(
+    (keyword) => assessSearchTag(keyword, { title }).length > 0,
+  );
+  if (excludedTagKeywords.length) {
+    warnings.push(
+      `상품명과 중복되거나 홍보성인 태그는 기본 선택에서 제외했습니다: ${excludedTagKeywords.join(", ")}`,
+    );
   }
   if (selectableTagKeywords.length > TAG_LIMIT) {
     warnings.push("태그 후보 전체를 추출했습니다. 상품 등록에는 최대 10개를 직접 선택해 주세요.");

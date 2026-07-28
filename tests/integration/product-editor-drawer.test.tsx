@@ -104,6 +104,7 @@ describe("상품 편집 서랍", () => {
     expect(screen.getByDisplayValue("빠른 편집 상품")).toBeInTheDocument();
     expect(fetchMock).toHaveBeenLastCalledWith(
       "/api/integrations/naver/categories/recommend?productName=%EB%B9%A0%EB%A5%B8%20%ED%8E%B8%EC%A7%91%20%EC%83%81%ED%92%88",
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
   });
 

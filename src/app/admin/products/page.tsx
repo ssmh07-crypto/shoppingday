@@ -7,6 +7,7 @@ import { createProductEditService } from "@/modules/products/product-edit-factor
 import { ProductEditorDrawer } from "./[id]/edit/product-editor-drawer";
 import { ProductSyncControl } from "./product-sync-control";
 import { ProductTitleInlineEditor } from "./product-title-inline-editor";
+import { ProductBulkActions } from "./product-bulk-actions";
 
 type SearchParams = Record<string, string | undefined>;
 
@@ -171,6 +172,9 @@ async function renderProductsPage(
                 </Link>
               )}
             </form>
+            <ProductBulkActions
+              productIds={result.items.map((item) => item.id)}
+            />
           </div>
 
           <div className="inventory-table-scroll">
@@ -193,10 +197,7 @@ async function renderProductsPage(
               </thead>
               <tbody>
                 {result.items.map((item) => {
-                  const image =
-                    item.selectedImages.find(
-                      (entry) => entry.enabled && entry.isPrimary,
-                    ) ?? item.selectedImages.find((entry) => entry.enabled);
+                  const image = item.primaryImage;
                   return (
                     <tr key={item.id}>
                       <td>

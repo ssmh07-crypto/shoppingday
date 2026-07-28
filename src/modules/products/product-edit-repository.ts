@@ -2,6 +2,7 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import { and, asc, desc, eq, ilike, isNull, ne, or, sql } from "drizzle-orm";
 import { getDb, type Database } from "@/lib/db";
+import { logger } from "@/lib/logging/logger";
 import {
   productAuditLogs,
   productCategories,
@@ -66,6 +67,7 @@ export class ProductEditRepository {
   constructor(private readonly database: Database = getDb()) {}
 
   async list(query: ListQuery) {
+    const started = performance.now();
     const ownership = or(
       eq(products.ownerId, query.ownerId),
       isNull(products.ownerId),
@@ -119,16 +121,22 @@ export class ProductEditRepository {
         title: products.title,
         draftVersion: products.draftVersion,
         sellingPrice: products.sellingPrice,
-        selectedImages: products.selectedImages,
-        categoryId: products.categoryId,
+        primaryImage: sql<SelectedImage | null>`coalesce(
+          jsonb_path_query_first(
+            ${products.selectedImages},
+            '$[*] ? (@.enabled == true && @.isPrimary == true)'
+          ),
+          jsonb_path_query_first(
+            ${products.selectedImages},
+            '$[*] ? (@.enabled == true)'
+          )
+        )`,
         updatedAt: products.updatedAt,
-        supplierCode: suppliers.code,
         supplierName: suppliers.name,
         externalProductId: supplierProducts.externalProductId,
         originalName: supplierProducts.originalName,
         supplierPrice: supplierProducts.supplierPrice,
         availability: supplierProducts.availability,
-        lastSyncedAt: supplierProducts.lastSyncedAt,
       })
       .from(products)
       .innerJoin(
@@ -141,24 +149,28 @@ export class ProductEditRepository {
       )
       .innerJoin(suppliers, eq(suppliers.id, supplierProducts.supplierId))
       .where(where);
+    const needsFilteredCount = Boolean(search || query.filter);
+    const countRequest = needsFilteredCount
+      ? this.database
+          .select({ count: sql<number>`count(*)::int` })
+          .from(products)
+          .innerJoin(
+            productSupplierLinks,
+            eq(productSupplierLinks.productId, products.id),
+          )
+          .innerJoin(
+            supplierProducts,
+            eq(supplierProducts.id, productSupplierLinks.supplierProductId),
+          )
+          .innerJoin(suppliers, eq(suppliers.id, supplierProducts.supplierId))
+          .where(where)
+      : Promise.resolve([] as Array<{ count: number }>);
     const [items, countRows, statsRows] = await Promise.all([
       base
         .orderBy(order)
         .limit(query.pageSize)
         .offset((query.page - 1) * query.pageSize),
-      this.database
-        .select({ count: sql<number>`count(*)::int` })
-        .from(products)
-        .innerJoin(
-          productSupplierLinks,
-          eq(productSupplierLinks.productId, products.id),
-        )
-        .innerJoin(
-          supplierProducts,
-          eq(supplierProducts.id, productSupplierLinks.supplierProductId),
-        )
-        .innerJoin(suppliers, eq(suppliers.id, supplierProducts.supplierId))
-        .where(where),
+      countRequest,
       this.database
         .select({
           total: sql<number>`count(*)::int`,
@@ -180,9 +192,11 @@ export class ProductEditRepository {
         .innerJoin(suppliers, eq(suppliers.id, supplierProducts.supplierId))
         .where(and(ownership, ne(suppliers.code, "sourcing"))),
     ]);
-    return {
+    const result = {
       items,
-      total: countRows[0]?.count ?? 0,
+      total: needsFilteredCount
+        ? countRows[0]?.count ?? 0
+        : statsRows[0]?.total ?? 0,
       page: query.page,
       pageSize: query.pageSize,
       stats: statsRows[0] ?? {
@@ -192,6 +206,20 @@ export class ProductEditRepository {
         unregistered: 0,
       },
     };
+    const durationMs = Math.round(performance.now() - started);
+    if (durationMs >= 500) {
+      logger.info("product_list_query_timing", {
+        durationMs,
+        itemCount: items.length,
+        total: result.total,
+        page: query.page,
+        pageSize: query.pageSize,
+        filter: query.filter ?? "all",
+        sort: query.sort ?? "created",
+        searched: Boolean(search),
+      });
+    }
+    return result;
   }
 
   async find(id: string, ownerId: string): Promise<ProductEditorRecord | null> {

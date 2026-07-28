@@ -168,6 +168,14 @@ export const supplierProducts = pgTable(
       table.supplierId,
       table.externalProductId,
     ),
+    index("supplier_products_original_name_trgm_idx").using(
+      "gin",
+      table.originalName.op("gin_trgm_ops"),
+    ),
+    index("supplier_products_external_id_trgm_idx").using(
+      "gin",
+      table.externalProductId.op("gin_trgm_ops"),
+    ),
     check(
       "supplier_products_price_non_negative",
       sql`${table.supplierPrice} is null or ${table.supplierPrice} >= 0`,
@@ -367,6 +375,16 @@ export const products = pgTable(
       sql`${table.sellingPrice} is null or ${table.sellingPrice} > 0`,
     ),
     index("products_owner_updated_idx").on(table.ownerId, table.updatedAt),
+    index("products_owner_created_idx").on(table.ownerId, table.createdAt),
+    index("products_owner_status_created_idx").on(
+      table.ownerId,
+      table.status,
+      table.createdAt,
+    ),
+    index("products_title_trgm_idx").using(
+      "gin",
+      table.title.op("gin_trgm_ops"),
+    ),
     index("products_naver_category_idx").on(table.naverCategoryId),
   ],
 );
@@ -639,6 +657,130 @@ export const productPublications = pgTable(
     check(
       "product_publications_attempt_count_positive",
       sql`${table.attemptCount} > 0`,
+    ),
+  ],
+);
+
+export const naverImageUploadCache = pgTable(
+  "naver_image_upload_cache",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    storeConnectionId: uuid("store_connection_id")
+      .notNull()
+      .references(() => naverStoreConnections.id, { onDelete: "cascade" }),
+    sourceUrlHash: text("source_url_hash").notNull(),
+    sourceUrl: text("source_url").notNull(),
+    storedUrl: text("stored_url").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("naver_image_upload_cache_store_hash_uidx").on(
+      table.storeConnectionId,
+      table.sourceUrlHash,
+    ),
+    index("naver_image_upload_cache_updated_idx").on(table.updatedAt),
+    check(
+      "naver_image_upload_cache_hash_check",
+      sql`${table.sourceUrlHash} ~ '^[0-9a-f]{64}$'`,
+    ),
+  ],
+);
+
+export const naverBulkJobs = pgTable(
+  "naver_bulk_jobs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    ownerId: uuid("owner_id")
+      .notNull()
+      .references(() => userProfiles.userId, { onDelete: "cascade" }),
+    type: text("type").$type<"upload_images" | "publish">().notNull(),
+    status: text("status")
+      .$type<"queued" | "running" | "completed" | "partial_failed">()
+      .notNull()
+      .default("queued"),
+    total: integer("total").notNull(),
+    processed: integer("processed").notNull().default(0),
+    succeeded: integer("succeeded").notNull().default(0),
+    failed: integer("failed").notNull().default(0),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("naver_bulk_jobs_owner_created_idx").on(
+      table.ownerId,
+      table.createdAt,
+    ),
+    index("naver_bulk_jobs_status_updated_idx").on(
+      table.status,
+      table.updatedAt,
+    ),
+    check(
+      "naver_bulk_jobs_type_check",
+      sql`${table.type} in ('upload_images', 'publish')`,
+    ),
+    check(
+      "naver_bulk_jobs_status_check",
+      sql`${table.status} in ('queued', 'running', 'completed', 'partial_failed')`,
+    ),
+  ],
+);
+
+export const naverBulkJobItems = pgTable(
+  "naver_bulk_job_items",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    jobId: uuid("job_id")
+      .notNull()
+      .references(() => naverBulkJobs.id, { onDelete: "cascade" }),
+    productId: uuid("product_id")
+      .notNull()
+      .references(() => products.id, { onDelete: "cascade" }),
+    status: text("status")
+      .$type<"queued" | "running" | "succeeded" | "failed">()
+      .notNull()
+      .default("queued"),
+    attempts: integer("attempts").notNull().default(0),
+    availableAt: timestamp("available_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    lastError: text("last_error"),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("naver_bulk_job_items_job_product_uidx").on(
+      table.jobId,
+      table.productId,
+    ),
+    index("naver_bulk_job_items_claim_idx").on(
+      table.jobId,
+      table.status,
+      table.availableAt,
+    ),
+    check(
+      "naver_bulk_job_items_status_check",
+      sql`${table.status} in ('queued', 'running', 'succeeded', 'failed')`,
+    ),
+    check(
+      "naver_bulk_job_items_attempts_check",
+      sql`${table.attempts} between 0 and 3`,
     ),
   ],
 );

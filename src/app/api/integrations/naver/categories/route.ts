@@ -8,6 +8,8 @@ import {
   isNaverCommerceConfigured,
 } from "@/modules/channels/naver/naver-category-service";
 import { NaverCommerceError } from "@/modules/channels/naver/naver-commerce-client";
+import { invalidateNaverCategoryMetadata } from "@/modules/channels/naver/naver-category-metadata";
+import { invalidateNaverProvidedNoticeCache } from "@/modules/channels/naver/naver-provided-notice-service";
 
 const querySchema = z.object({
   search: z.string().trim().max(100).optional(),
@@ -60,6 +62,8 @@ export async function POST() {
         );
       }
       const result = await createNaverCategoryService(database).sync();
+      invalidateNaverCategoryMetadata();
+      invalidateNaverProvidedNoticeCache();
       return NextResponse.json(
         { success: true, result },
         { headers: { "Cache-Control": "private, no-store" } },

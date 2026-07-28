@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   downloadNaverImage,
   NaverImageUploadService,
+  NaverImageUploadProgressError,
 } from "@/modules/channels/naver/naver-image-upload-service";
 import type { SelectedImage } from "@/lib/db/schema";
 import type { ProductEditRepository } from "@/modules/products/product-edit-repository";
@@ -85,6 +86,7 @@ describe("네이버 상품 이미지 업로드", () => {
     ).upload("product-id", "owner-id", 2);
 
     expect(result.uploadedCount).toBe(2);
+    expect(result.reusedCount).toBe(0);
     expect(client.uploadProductImages).toHaveBeenNthCalledWith(1, [
       expect.objectContaining({ type: "image/jpeg", bytes: jpeg }),
     ]);
@@ -176,13 +178,32 @@ describe("네이버 상품 이미지 업로드", () => {
       }),
     );
 
-    await expect(
-      new NaverImageUploadService(repo, client, fetcher).upload(
+    const operation = new NaverImageUploadService(
+      repo,
+      client,
+      fetcher,
+    ).upload(
         "product-id",
         "owner-id",
         2,
-      ),
-    ).rejects.toThrow("second_upload_failed");
+      );
+    await expect(operation).rejects.toMatchObject({
+      uploadedCount: 1,
+      product: {
+        draftVersion: 3,
+        selectedImages: [
+          expect.objectContaining({
+            id: "image-1",
+            storedUrl: "https://shop-phinf.pstatic.net/image-1.jpg",
+          }),
+          expect.objectContaining({ id: "image-2", storedUrl: null }),
+        ],
+      },
+    });
+    await operation.catch((error) => {
+      expect(error).toBeInstanceOf(NaverImageUploadProgressError);
+      expect(error.message).toBe("second_upload_failed");
+    });
 
     expect(saveNaverImageUrls).toHaveBeenCalledTimes(1);
     expect(saveNaverImageUrls).toHaveBeenCalledWith(
@@ -196,6 +217,62 @@ describe("네이버 상품 이미지 업로드", () => {
           storedUrl: "https://shop-phinf.pstatic.net/image-1.jpg",
         },
       ],
+    );
+  });
+
+  it("같은 스토어에서 이미 올린 공급처 URL은 다운로드 없이 재사용한다", async () => {
+    const selectedImages: SelectedImage[] = [
+      {
+        id: "image-1",
+        source: "supplier",
+        sourceUrl: "https://supplier.example/reused.jpg",
+        storedUrl: null,
+        altText: "",
+        sortOrder: 0,
+        isPrimary: true,
+        enabled: true,
+      },
+    ];
+    const repo = {
+      find: vi.fn().mockResolvedValue({
+        product: { draftVersion: 2, selectedImages },
+      }),
+      saveNaverImageUrls: vi.fn().mockResolvedValue({
+        kind: "ok",
+        product: {
+          draftVersion: 3,
+          selectedImages: [
+            {
+              ...selectedImages[0]!,
+              storedUrl: "https://shop-phinf.pstatic.net/reused.jpg",
+            },
+          ],
+        },
+      }),
+    } as unknown as ProductEditRepository;
+    const client = { uploadProductImages: vi.fn() };
+    const fetcher = vi.fn<typeof fetch>();
+    const cache = {
+      find: vi
+        .fn()
+        .mockResolvedValue("https://shop-phinf.pstatic.net/reused.jpg"),
+      save: vi.fn().mockResolvedValue(undefined),
+    };
+
+    const result = await new NaverImageUploadService(
+      repo,
+      client,
+      fetcher,
+      cache,
+      "store-id",
+    ).upload("product-id", "owner-id", 2);
+
+    expect(result).toMatchObject({ uploadedCount: 0, reusedCount: 1 });
+    expect(fetcher).not.toHaveBeenCalled();
+    expect(client.uploadProductImages).not.toHaveBeenCalled();
+    expect(cache.find).toHaveBeenCalledWith(
+      "store-id",
+      "https://supplier.example/reused.jpg",
     );
   });
 
@@ -217,6 +294,25 @@ describe("네이버 상품 이미지 업로드", () => {
       ),
     ).rejects.toMatchObject({
       errors: { selectedImages: "이미지 파일 형식이나 크기를 확인해 주세요." },
+    });
+  });
+
+  it("Content-Length가 없는 대용량 응답은 제한을 넘는 즉시 중단한다", async () => {
+    const oversized = new Uint8Array(10 * 1024 * 1024 + 1);
+    oversized.set(jpeg);
+
+    await expect(
+      downloadNaverImage(
+        "https://supplier.example/large.jpg",
+        0,
+        vi.fn<typeof fetch>().mockResolvedValue(
+          new Response(oversized, {
+            headers: { "content-type": "image/jpeg" },
+          }),
+        ),
+      ),
+    ).rejects.toMatchObject({
+      errors: { selectedImages: "이미지는 파일당 10 MiB 이하여야 합니다." },
     });
   });
 });

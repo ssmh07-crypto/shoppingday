@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { keywordLimits } from "./config";
+import { addSearchTagQualityIssues } from "./search-tag-quality";
 
 const shortText = z.string().trim().max(300).default("");
 const stringList = z.array(z.string().trim().min(1).max(100)).max(30).default([]);
@@ -65,6 +66,8 @@ export const applyManagedProductToNaverSchema = z.object({
     .array(z.string().trim().min(1).max(40))
     .max(10)
     .transform((values) => [...new Set(values)]),
+}).superRefine((input, context) => {
+  addSearchTagQualityIssues(context, input.searchTags, input.title);
 });
 
 export const productAnalysisSchema = z.object({

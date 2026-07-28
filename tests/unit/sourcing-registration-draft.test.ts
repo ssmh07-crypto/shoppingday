@@ -35,6 +35,23 @@ describe("소싱 상품 등록 초안", () => {
     expect(draft.warnings.join(" ")).toContain("최대 10개");
   });
 
+  it("상품명 중복 및 홍보성 태그는 후보에 남기고 기본 선택에서 제외한다", () => {
+    const draft = buildSourcingRegistrationDraft("욕실화", [
+      keyword("미끄럼방지욕실화", 900, "product_name"),
+      keyword("욕실화", 800, "tag"),
+      keyword("무료배송욕실", 700, "tag"),
+      keyword("화장실슬리퍼", 600, "tag"),
+    ]);
+
+    expect(draft.tagCandidates).toEqual([
+      "욕실화",
+      "무료배송욕실",
+      "화장실슬리퍼",
+    ]);
+    expect(draft.searchTags).toEqual(["화장실슬리퍼"]);
+    expect(draft.warnings.join(" ")).toContain("기본 선택에서 제외");
+  });
+
   it("카테고리 키워드를 상품명 재료로 사용하지 않는다", () => {
     const draft = buildSourcingRegistrationDraft("도시락통", [
       keyword("스텐도시락통", 800, "product_name"),

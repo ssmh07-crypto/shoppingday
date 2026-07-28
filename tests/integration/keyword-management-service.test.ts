@@ -294,14 +294,14 @@ describe("키워드 관리 서비스", () => {
     await service.applyToNaver("owner-1", "product-1", {
       confirmed: true,
       title: "여름 린넨 원피스",
-      searchTags: ["여름원피스", "린넨원피스"],
+      searchTags: ["휴양지룩", "하객룩"],
     });
 
     expect(updater.apply).toHaveBeenCalledWith(
       "1234567890",
       {
         title: "여름 린넨 원피스",
-        searchTags: ["여름원피스", "린넨원피스"],
+        searchTags: ["휴양지룩", "하객룩"],
       },
       undefined,
     );
@@ -310,7 +310,7 @@ describe("키워드 관리 서비스", () => {
       "product-1",
       {
         title: "여름 린넨 원피스",
-        searchTags: ["여름원피스", "린넨원피스"],
+        searchTags: ["휴양지룩", "하객룩"],
       },
     );
   });

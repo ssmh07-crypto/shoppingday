@@ -10,6 +10,7 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test",
+    "analyze:bundle": "node scripts/report-client-bundles.mjs --check",
     "cf:build": "opennextjs-cloudflare build",
     "cf:deploy": "OPEN_NEXT_DEPLOY=true wrangler deploy",
     "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",

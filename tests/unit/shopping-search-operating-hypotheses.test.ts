@@ -10,7 +10,15 @@ describe("스마트스토어 순위 운영 가설", () => {
       "상품명", "스토어명", "카테고리", "속성", "태그",
     ]);
     expect(shoppingSearchOperatingHypotheses.resultPageSize).toBe(40);
-    expect(shoppingSearchOperatingHypotheses.assumeUniformResults).toBe(true);
+    expect(
+      shoppingSearchOperatingHypotheses.plusStorePersonalizedResults,
+    ).toBe(true);
+    expect(
+      shoppingSearchOperatingHypotheses.uniformResultsAssumptionScope,
+    ).toBe("price-comparison-sampling-only");
+    expect(shoppingSearchOperatingHypotheses.popularityWindowLabel).toBe(
+      "최근 1개월",
+    );
     expect(shoppingSearchOperatingHypotheses.beginnerMaximumMonthlySearchVolume).toBe(1_000);
   });
 
@@ -25,5 +33,26 @@ describe("스마트스토어 순위 운영 가설", () => {
       relevance: 0.5,
       trust: 1,
     })).toBeNull();
+  });
+
+  it("N+스토어는 실제 선호도 입력이 있을 때만 점수를 계산한다", () => {
+    expect(
+      calculateOperatingHypothesisScore({
+        popularity: 5_000,
+        relevance: 0.5,
+        trust: 1,
+        surface: "plus-store",
+        preference: null,
+      }),
+    ).toBeNull();
+    expect(
+      calculateOperatingHypothesisScore({
+        popularity: 5_000,
+        relevance: 0.5,
+        trust: 1,
+        surface: "plus-store",
+        preference: 0.8,
+      }),
+    ).toBe(2_000);
   });
 });

@@ -1,0 +1,2 @@
+CREATE INDEX "products_owner_created_idx" ON "products" USING btree ("owner_id","created_at");--> statement-breakpoint
+CREATE INDEX "products_owner_status_created_idx" ON "products" USING btree ("owner_id","status","created_at");

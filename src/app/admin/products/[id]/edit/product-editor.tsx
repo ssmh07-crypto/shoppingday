@@ -2,17 +2,40 @@
 /* eslint-disable @next/next/no-img-element -- supplier URLs are intentionally loaded directly; no image storage/optimizer proxy */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import dynamic from "next/dynamic";
 import type { NaverProductAttribute, SelectedImage } from "@/lib/db/schema";
-import { OptionEditor } from "./option-editor";
-import { MarginCalculator } from "./margin-calculator";
-import { NaverAttributeEditor } from "./naver-attribute-editor";
-import { NaverPublicationPolicyForm } from "@/app/admin/components/naver-publication-policy-form";
 import { buildSourcingRegistrationDraft } from "@/modules/sourcing/registration-draft";
+import { assessSearchTag } from "@/modules/keywords/search-tag-quality";
 import type {
   NaverCategoryOption,
   ProductEditorInitial,
+  ProductEditorMarketData,
   SourcingRegistrationContext,
 } from "./product-editor-types";
+
+const OptionEditor = dynamic(
+  () => import("./option-editor").then((module) => module.OptionEditor),
+  { loading: () => <PanelLoading label="옵션 편집기" /> },
+);
+const MarginCalculator = dynamic(
+  () =>
+    import("./margin-calculator").then((module) => module.MarginCalculator),
+  { loading: () => <PanelLoading label="마진 계산기" /> },
+);
+const NaverAttributeEditor = dynamic(
+  () =>
+    import("./naver-attribute-editor").then(
+      (module) => module.NaverAttributeEditor,
+    ),
+  { loading: () => <PanelLoading label="네이버 속성 편집기" /> },
+);
+const NaverPublicationPolicyForm = dynamic(
+  () =>
+    import("@/app/admin/components/naver-publication-policy-form").then(
+      (module) => module.NaverPublicationPolicyForm,
+    ),
+  { loading: () => <PanelLoading label="판매 정책 편집기" /> },
+);
 
 type EditorTab = "basic" | "content" | "attributes" | "market";
 type CategoryRequirements = {
@@ -122,6 +145,21 @@ export function ProductEditor({
   const [saving, setSaving] = useState(false);
   const [uploadingImages, setUploadingImages] = useState(false);
   const [publishingNaver, setPublishingNaver] = useState(false);
+  const [marketData, setMarketData] = useState<ProductEditorMarketData | null>(
+    () =>
+      initial.naverPublicationPolicy &&
+      initial.naverStoreConnections &&
+      initial.naverDeliveryPolicies
+        ? {
+            naverPublicationPolicy: initial.naverPublicationPolicy,
+            naverStoreConnections: initial.naverStoreConnections,
+            naverDeliveryPolicies: initial.naverDeliveryPolicies,
+            naverStoreConnectionId:
+              initial.naverStoreConnectionId ?? null,
+          }
+        : null,
+  );
+  const [marketDataStatus, setMarketDataStatus] = useState("");
   const [selectedStoreId, setSelectedStoreId] = useState(
     initial.naverStoreConnectionId ?? "",
   );
@@ -178,6 +216,10 @@ export function ProductEditor({
     useState("");
   const [publicationRefreshKey, setPublicationRefreshKey] = useState(0);
   const autoRecommendationStarted = useRef(false);
+  const publicationLoadedKey = useRef(-1);
+  const categoryRecommendationController = useRef<AbortController | null>(
+    null,
+  );
   const titleBeforeCategoryQuery = useRef(initial.product.title);
   const dirty = JSON.stringify(form) !== baseline;
   const margin = useMemo(
@@ -333,7 +375,55 @@ export function ProductEditor({
 
   useEffect(() => {
     if (activeTab !== "market") return;
+    if (marketData) return;
     const controller = new AbortController();
+    async function loadMarketData() {
+      setMarketDataStatus("스토어와 판매 정책을 불러오는 중입니다.");
+      try {
+        const response = await fetch(
+          `/api/products/${initial.product.id}/market-settings`,
+          {
+            signal: controller.signal,
+            cache: "no-store",
+          },
+        );
+        const body = await response.json().catch(() => null);
+        if (!response.ok) {
+          throw new Error(
+            body?.error?.message ??
+              "스토어와 판매 정책을 불러오지 못했습니다.",
+          );
+        }
+        const data = body.data as ProductEditorMarketData;
+        setMarketData(data);
+        setSelectedStoreId(data.naverStoreConnectionId ?? "");
+        setSelectedDeliveryPolicyId(
+          data.naverPublicationPolicy.deliveryPolicy?.id ?? "",
+        );
+        setMarketDataStatus("");
+      } catch (error) {
+        if (controller.signal.aborted) return;
+        setMarketDataStatus(
+          error instanceof Error
+            ? error.message
+            : "스토어와 판매 정책을 불러오지 못했습니다.",
+        );
+      }
+    }
+    void loadMarketData();
+    return () => controller.abort();
+  }, [activeTab, initial.product.id, marketData]);
+
+  useEffect(() => {
+    if (activeTab !== "market") return;
+    if (
+      publicationInspection &&
+      publicationLoadedKey.current === publicationRefreshKey
+    ) {
+      return;
+    }
+    const controller = new AbortController();
+    setPublicationInspectionStatus("발행 준비 상태를 확인하는 중입니다.");
     void fetch(`/api/products/${initial.product.id}/naver-publication`, {
       signal: controller.signal,
       cache: "no-store",
@@ -345,11 +435,13 @@ export function ProductEditor({
             body?.error?.message ?? "발행 준비 상태를 확인하지 못했습니다.",
           );
         }
+        publicationLoadedKey.current = publicationRefreshKey;
         setPublicationInspection(body.inspection);
         setPublicationInspectionStatus("");
       })
       .catch((error) => {
         if (controller.signal.aborted) return;
+        publicationLoadedKey.current = -1;
         setPublicationInspection(null);
         setPublicationInspectionStatus(
           error instanceof Error
@@ -358,7 +450,12 @@ export function ProductEditor({
         );
       });
     return () => controller.abort();
-  }, [activeTab, initial.product.id, publicationRefreshKey]);
+  }, [
+    activeTab,
+    initial.product.id,
+    publicationInspection,
+    publicationRefreshKey,
+  ]);
 
   useEffect(() => {
     const search = naverCategorySearch.trim();
@@ -403,10 +500,14 @@ export function ProductEditor({
         setCategoryRecommendationStatus("상품명을 두 글자 이상 입력해 주세요.");
         return;
       }
+      categoryRecommendationController.current?.abort();
+      const controller = new AbortController();
+      categoryRecommendationController.current = controller;
       setCategoryRecommendationStatus("상품명으로 카테고리를 찾는 중입니다.");
       try {
         const response = await fetch(
           `/api/integrations/naver/categories/recommend?productName=${encodeURIComponent(name)}`,
+          { signal: controller.signal },
         );
         const body = await response.json();
         if (!response.ok)
@@ -455,14 +556,24 @@ export function ProductEditor({
               : "동기화된 카테고리를 기준으로 자동 적용했습니다.",
         );
       } catch (error) {
+        if (controller.signal.aborted) return;
         setCategoryRecommendationStatus(
           error instanceof Error
             ? error.message
             : "카테고리를 추천하지 못했습니다.",
         );
+      } finally {
+        if (categoryRecommendationController.current === controller) {
+          categoryRecommendationController.current = null;
+        }
       }
     },
     [applyCategoryQueryToTitle],
+  );
+
+  useEffect(
+    () => () => categoryRecommendationController.current?.abort(),
+    [],
   );
 
   useEffect(() => {
@@ -707,6 +818,18 @@ export function ProductEditor({
         },
       );
       const body = await response.json().catch(() => null);
+      const uploadedProduct = body?.data?.product;
+      if (uploadedProduct) {
+        const next = {
+          ...form,
+          draftVersion: uploadedProduct.draftVersion,
+          selectedImages: uploadedProduct.selectedImages,
+        };
+        setForm(next);
+        setBaseline(JSON.stringify(next));
+        setStatus(uploadedProduct.status);
+        onMutated?.();
+      }
       if (!response.ok) {
         setErrors(body?.error?.errors ?? {});
         throw new Error(
@@ -723,8 +846,17 @@ export function ProductEditor({
       setBaseline(JSON.stringify(next));
       setStatus(product.status);
       setMessage(
-        body.data.uploadedCount
-          ? `네이버 이미지 ${body.data.uploadedCount}개를 업로드했습니다.`
+        body.data.uploadedCount || body.data.reusedCount
+          ? [
+              body.data.uploadedCount
+                ? `네이버 이미지 ${body.data.uploadedCount}개 업로드`
+                : "",
+              body.data.reusedCount
+                ? `기존 이미지 ${body.data.reusedCount}개 재사용`
+                : "",
+            ]
+              .filter(Boolean)
+              .join(" · ")
           : "모든 이미지가 이미 업로드되어 있습니다.",
       );
       onMutated?.();
@@ -743,19 +875,10 @@ export function ProductEditor({
     setPublishingNaver(true);
     setErrors({});
     try {
-      const inspectionResponse = await fetch(
-        `/api/products/${initial.product.id}/naver-publication`,
-        { cache: "no-store" },
-      );
-      const inspectionBody = await inspectionResponse.json().catch(() => null);
-      if (!inspectionResponse.ok) {
-        throw new Error(
-          inspectionBody?.error?.message ??
-            "발행 준비 상태를 확인하지 못했습니다.",
-        );
+      const inspection = publicationInspection;
+      if (!inspection) {
+        throw new Error("발행 준비 상태를 먼저 확인해 주세요.");
       }
-      const inspection = inspectionBody.inspection as PublicationInspection;
-      setPublicationInspection(inspection);
       if (!inspection.ready || !inspection.payloadHash) {
         throw new Error("필수 상품 정보와 판매 정책을 먼저 입력해 주세요.");
       }
@@ -1479,6 +1602,9 @@ export function ProductEditor({
                     <div>
                       {sourcingRegistrationDraft.tagCandidates.map((tag) => {
                         const tooLong = tag.length > 30;
+                        const qualityIssues = assessSearchTag(tag, {
+                          title: form.title,
+                        });
                         const selected = form.searchTags.includes(tag);
                         const source = registrationContext?.relatedKeywords.find(
                           (item) =>
@@ -1493,7 +1619,7 @@ export function ProductEditor({
                             <input
                               type="checkbox"
                               checked={selected}
-                              disabled={tooLong}
+                              disabled={tooLong || qualityIssues.length > 0}
                               onChange={() => toggleSourcingTag(tag)}
                             />
                             <span>{tag}</span>
@@ -1502,6 +1628,9 @@ export function ProductEditor({
                                 ? "월 검색수 미입력"
                                 : `월 검색수 ${source.monthlySearchVolume.toLocaleString("ko-KR")}`}
                               {tooLong ? " · 30자 초과" : ""}
+                              {qualityIssues.length
+                                ? ` · ${qualityIssues[0]?.message}`
+                                : ""}
                             </small>
                           </label>
                         );
@@ -1527,7 +1656,20 @@ export function ProductEditor({
                       })
                     }
                   />
-                  <small>최대 10개까지 입력할 수 있습니다.</small>
+                  <small>
+                    최대 10개까지 입력할 수 있습니다. 상품명과 중복되거나
+                    배송·할인 등 홍보성인 태그는 저장할 수 없습니다.
+                  </small>
+                  {form.searchTags.flatMap((tag) =>
+                    assessSearchTag(tag, { title: form.title }).map((issue) => (
+                      <small
+                        className="field-error"
+                        key={`${tag}-${issue.code}`}
+                      >
+                        {tag.trim()}: {issue.message}
+                      </small>
+                    )),
+                  )}
                 </label>
               )}
               <div className="drawer-price-grid">
@@ -1597,12 +1739,14 @@ export function ProductEditor({
                     : `${form.editedOptions.groups.length}개 그룹`}
                 </span>
               </summary>
-              <OptionEditor
-                value={form.editedOptions}
-                onChange={(editedOptions) =>
-                  setForm({ ...form, editedOptions })
-                }
-              />
+              {optionEditorOpen && (
+                <OptionEditor
+                  value={form.editedOptions}
+                  onChange={(editedOptions) =>
+                    setForm({ ...form, editedOptions })
+                  }
+                />
+              )}
             </details>
           </div>
         )}
@@ -1616,7 +1760,9 @@ export function ProductEditor({
                   <h3>썸네일 이미지</h3>
                   <p>
                     대표 이미지 1개와 추가 이미지 9개까지 등록할 수 있습니다.
-                    이미지를 끌어 놓아 노출 순서를 바꾸세요.
+                    이미지를 끌어 놓아 노출 순서를 바꾸세요. 대표 이미지에는
+                    텍스트·워터마크·허위 이벤트 문구나 여러 상품 나열을 넣지
+                    마세요.
                   </p>
                 </div>
                 <div className="drawer-section-actions">
@@ -1902,7 +2048,7 @@ export function ProductEditor({
               <strong>스마트스토어 발행 상태</strong>
               <div className="naver-store-target-field">
                 <strong>발행 대상 스마트스토어</strong>
-                {(initial.naverStoreConnections ?? []).length ? (
+                {marketData?.naverStoreConnections.length ? (
                   <>
                     <select
                       aria-label="발행 대상 스마트스토어"
@@ -1912,7 +2058,7 @@ export function ProductEditor({
                         void selectStoreTarget(event.target.value)
                       }
                     >
-                      {(initial.naverStoreConnections ?? []).map((connection) => (
+                      {marketData.naverStoreConnections.map((connection) => (
                         <option key={connection.id} value={connection.id}>
                           {connection.storeName}
                           {connection.authType === "SELLER"
@@ -1935,7 +2081,7 @@ export function ProductEditor({
               </div>
               <div className="naver-store-target-field">
                 <strong>배송정책 관리번호</strong>
-                {(initial.naverDeliveryPolicies ?? []).length ? (
+                {marketData?.naverDeliveryPolicies.length ? (
                   <>
                     <select
                       aria-label="배송정책 관리번호"
@@ -1950,7 +2096,7 @@ export function ProductEditor({
                       }
                     >
                       <option value="">배송정책을 선택해 주세요</option>
-                      {(initial.naverDeliveryPolicies ?? []).map((policy) => (
+                      {marketData.naverDeliveryPolicies.map((policy) => (
                         <option key={policy.id} value={policy.id}>
                           {policy.policyCode} · {policy.name}
                         </option>
@@ -1973,6 +2119,7 @@ export function ProductEditor({
               {publicationInspectionStatus && (
                 <p role="status">{publicationInspectionStatus}</p>
               )}
+              {marketDataStatus && <p role="status">{marketDataStatus}</p>}
               {publicationInspection && (
                 <div className="drawer-publication-status">
                   <div>
@@ -2090,16 +2237,20 @@ export function ProductEditor({
             </div>
             <div className="drawer-category-requirements">
               <strong>상품별 판매 정책</strong>
-              <NaverPublicationPolicyForm
-                mode="product"
-                endpoint={`/api/products/${initial.product.id}/naver-publication-policy`}
-                initialDefaults={initial.naverPublicationPolicy.defaults}
-                initialOverrides={initial.naverPublicationPolicy.overrides}
-                categoryId={form.naverCategoryId}
-                onSaved={() =>
-                  setPublicationRefreshKey((current) => current + 1)
-                }
-              />
+              {marketData ? (
+                <NaverPublicationPolicyForm
+                  mode="product"
+                  endpoint={`/api/products/${initial.product.id}/naver-publication-policy`}
+                  initialDefaults={marketData.naverPublicationPolicy.defaults}
+                  initialOverrides={marketData.naverPublicationPolicy.overrides}
+                  categoryId={form.naverCategoryId}
+                  onSaved={() =>
+                    setPublicationRefreshKey((current) => current + 1)
+                  }
+                />
+              ) : (
+                <PanelLoading label="판매 정책" />
+              )}
             </div>
             <div className="drawer-market-notice">
               <strong>실제 상품 등록 전 확인</strong>
@@ -2204,6 +2355,10 @@ function TabButton({
       {label}
     </button>
   );
+}
+
+function PanelLoading({ label }: { label: string }) {
+  return <p role="status">{label} 불러오는 중…</p>;
 }
 
 function NaverAttributesPanel({

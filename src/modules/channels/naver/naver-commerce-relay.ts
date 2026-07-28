@@ -1,6 +1,7 @@
 import { z } from "zod";
 import {
   NaverCommerceError,
+  logNaverRequestTiming,
   parseNaverCommerceCategories,
   parseNaverCommerceProductAttributes,
   parseNaverCommerceProductAttributeUnits,
@@ -340,6 +341,9 @@ export class NaverCommerceRelayClient implements NaverCategoriesClient {
     );
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.config.timeoutMs);
+    const started = performance.now();
+    let responseStatus: number | undefined;
+    let errorCode: string | undefined;
 
     try {
       const response = await this.fetcher(url, {
@@ -364,6 +368,7 @@ export class NaverCommerceRelayClient implements NaverCategoriesClient {
         signal: controller.signal,
         cache: "no-store",
       });
+      responseStatus = response.status;
       if (response.status >= 300 && response.status < 400) {
         throw new NaverCommerceError(
           "request_failed",
@@ -386,6 +391,8 @@ export class NaverCommerceRelayClient implements NaverCategoriesClient {
       }
       return response;
     } catch (error) {
+      errorCode =
+        error instanceof NaverCommerceError ? error.code : "request_failed";
       if (error instanceof NaverCommerceError) throw error;
       if (error instanceof Error && error.name === "AbortError") {
         throw new NaverCommerceError(
@@ -399,6 +406,14 @@ export class NaverCommerceRelayClient implements NaverCategoriesClient {
       );
     } finally {
       clearTimeout(timeout);
+      logNaverRequestTiming({
+        transport: "relay",
+        method,
+        path: url.pathname,
+        responseStatus,
+        errorCode,
+        started,
+      });
     }
   }
 }

@@ -31,7 +31,16 @@ export async function GET(request: Request) {
           : await service.listAll();
       return NextResponse.json(
         { success: true, data: result.value, cached: result.cached, stale: result.stale },
-        { headers: { "Cache-Control": "private, max-age=300" } },
+        {
+          headers: {
+            "Cache-Control": "private, max-age=300",
+            "X-Shoppingday-Cache": result.stale
+              ? "stale"
+              : result.cached
+                ? "hit"
+                : "miss",
+          },
+        },
       );
     });
   } catch (error) {

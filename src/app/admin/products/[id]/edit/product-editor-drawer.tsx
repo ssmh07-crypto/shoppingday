@@ -1,8 +1,13 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ProductEditor } from "./product-editor";
 import type { ProductEditorInitial } from "./product-editor-types";
+
+const ProductEditor = dynamic(
+  () => import("./product-editor").then((module) => module.ProductEditor),
+  { loading: () => <DrawerEditorLoading /> },
+);
 
 const PREFETCH_TTL_MS = 15_000;
 const editorCache = new Map<
@@ -289,6 +294,15 @@ function DrawerSkeleton() {
         <i />
         <i />
       </div>
+    </div>
+  );
+}
+
+function DrawerEditorLoading() {
+  return (
+    <div className="drawer-load-state" aria-live="polite" aria-busy="true">
+      <span className="drawer-spinner" />
+      <strong>편집 도구를 불러오고 있습니다.</strong>
     </div>
   );
 }

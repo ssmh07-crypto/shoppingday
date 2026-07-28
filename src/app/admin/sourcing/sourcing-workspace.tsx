@@ -7,6 +7,7 @@ import {
   parseManualRelatedKeywords,
 } from "@/modules/sourcing/itemscout-import";
 import { buildSourcingRegistrationDraft } from "@/modules/sourcing/registration-draft";
+import { assessSearchTag } from "@/modules/keywords/search-tag-quality";
 import {
   analyzeReviews,
   formatReviewEvidence,
@@ -806,7 +807,10 @@ export function SourcingWorkspace({
 
             <ResearchSection number="06" title="상품 등록 초안" description="상품명은 직접 분류한 검색수 1,000 이하 키워드로 만들고, 태그 후보는 검색수와 관계없이 모두 추출해 직접 선택합니다.">
               <div className="sourcing-registration-rule">
-                <strong>카테고리 키워드는 상품명에 절대 포함하지 않습니다.</strong>
+                <strong>
+                  분류용 카테고리 키워드는 상품명 후보로 쓰지 않고, 실제 상품을
+                  나타내는 구체 상품 유형은 유지합니다.
+                </strong>
                 <span>속성 키워드는 네이버 공식 속성값을 확인한 뒤 상품 편집 화면에서 선택합니다.</span>
               </div>
               <button
@@ -819,10 +823,10 @@ export function SourcingWorkspace({
               </button>
               {registrationPrepared && (
                 <div className="sourcing-registration-draft">
-                  <Field label="판매용 상품명 초안" help={`${registrationTitle.length}/200자 · 정확성, 반복, 홍보어와 관련성을 최종 확인하세요.`}>
+                  <Field label="판매용 상품명 초안" help={`${registrationTitle.length}/50자 · 정확성, 반복, 특수문자, 홍보어와 관련성을 최종 확인하세요.`}>
                     <input
                       value={registrationTitle}
-                      maxLength={200}
+                      maxLength={50}
                       onChange={(event) => setRegistrationTitle(event.target.value)}
                       placeholder="상품명 키워드를 먼저 분류해 주세요."
                     />
@@ -833,17 +837,24 @@ export function SourcingWorkspace({
                       <div className="sourcing-registration-tag-options">
                         {registrationDraft.tagCandidates.map((tag) => {
                           const tooLong = tag.length > 30;
+                          const qualityIssues = assessSearchTag(tag, {
+                            title: registrationTitle,
+                          });
                           const selected = registrationTags.includes(tag);
                           return (
                             <label key={tag} className={selected ? "selected" : undefined}>
                               <input
                                 type="checkbox"
                                 checked={selected}
-                                disabled={tooLong}
+                                disabled={tooLong || qualityIssues.length > 0}
                                 onChange={() => toggleRegistrationTag(tag)}
                               />
                               <span>{tag}</span>
-                              <small>{tooLong ? "30자 초과" : "태그 후보"}</small>
+                              <small>
+                                {tooLong
+                                  ? "30자 초과"
+                                  : qualityIssues[0]?.message ?? "태그 후보"}
+                              </small>
                             </label>
                           );
                         })}

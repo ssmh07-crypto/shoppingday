@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { addSearchTagQualityIssues } from "@/modules/keywords/search-tag-quality";
 
 const nullableIntegerAmount = z.number().int().min(0).max(2_000_000_000).nullable();
 const nullableRevenue = z.number().int().min(0).max(9_000_000_000_000).nullable();
@@ -100,6 +101,8 @@ export const sourcingResearchInputSchema = z.object({
 
 export const applySourcingRegistrationDraftSchema = z.object({
   productId: z.uuid(),
-  title: z.string().trim().min(1, "상품명 초안을 입력해 주세요.").max(200),
+  title: z.string().trim().min(1, "상품명 초안을 입력해 주세요.").max(50),
   searchTags: z.array(z.string().trim().min(1).max(30)).max(10),
+}).superRefine((input, context) => {
+  addSearchTagQualityIssues(context, input.searchTags, input.title);
 });

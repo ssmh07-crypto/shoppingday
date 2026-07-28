@@ -1,6 +1,11 @@
 import type { NaverImageUploadFile } from "./naver-commerce-client";
 import type { NaverCategoriesClient } from "./naver-commerce-relay";
-import type { ProductEditRepository } from "@/modules/products/product-edit-repository";
+import { logger } from "@/lib/logging/logger";
+import type { NaverImageUploadCache } from "./naver-image-upload-cache-repository";
+import type {
+  ProductEditRepository,
+  ProductEditorRecord,
+} from "@/modules/products/product-edit-repository";
 import {
   ProductConflictError,
   ProductNotFoundError,
@@ -16,6 +21,8 @@ export class NaverImageUploadService {
     private readonly repo: ProductEditRepository,
     private readonly client: Pick<NaverCategoriesClient, "uploadProductImages">,
     private readonly fetcher: typeof fetch = fetch,
+    private readonly cache?: NaverImageUploadCache,
+    private readonly storeConnectionId?: string,
   ) {}
 
   async upload(productId: string, ownerId: string, draftVersion: number) {
@@ -34,44 +41,112 @@ export class NaverImageUploadService {
     }
     const pending = enabled.filter((image) => !image.storedUrl);
     if (!pending.length) {
-      return { kind: "ok" as const, product: current.product, uploadedCount: 0 };
+      return {
+        kind: "ok" as const,
+        product: current.product,
+        uploadedCount: 0,
+        reusedCount: 0,
+      };
     }
 
     let totalBytes = 0;
     let product = current.product;
     let version = draftVersion;
     let uploadedCount = 0;
+    let reusedCount = 0;
     for (const [index, image] of pending.entries()) {
-      const file = await downloadNaverImage(image.sourceUrl, index, this.fetcher);
-      totalBytes += file.bytes.byteLength;
-      if (totalBytes > MAX_TOTAL_BYTES) {
-        throw new ProductValidationError({
-          selectedImages: "업로드할 이미지의 전체 크기는 50 MiB 이하여야 합니다.",
-        });
+      try {
+        let storedUrl = await this.findCachedUrl(image.sourceUrl);
+        const reused = Boolean(storedUrl);
+        if (!storedUrl) {
+          const file = await downloadNaverImage(
+            image.sourceUrl,
+            index,
+            this.fetcher,
+          );
+          totalBytes += file.bytes.byteLength;
+          if (totalBytes > MAX_TOTAL_BYTES) {
+            throw new ProductValidationError({
+              selectedImages:
+                "업로드할 이미지의 전체 크기는 50 MiB 이하여야 합니다.",
+            });
+          }
+          const uploaded = await this.client.uploadProductImages([file]);
+          if (uploaded.length !== 1) {
+            throw new Error("naver_image_upload_count_mismatch");
+          }
+          storedUrl = uploaded[0]!.url;
+          await this.saveCachedUrl(image.sourceUrl, storedUrl);
+        }
+        const saved = await this.repo.saveNaverImageUrls(
+          productId,
+          ownerId,
+          version,
+          [
+            {
+              imageId: image.id,
+              sourceUrl: image.sourceUrl,
+              storedUrl,
+            },
+          ],
+        );
+        if (saved.kind === "not_found") throw new ProductNotFoundError();
+        if (saved.kind === "conflict") throw new ProductConflictError();
+        product = saved.product;
+        version = saved.product.draftVersion;
+        if (reused) {
+          reusedCount += 1;
+          await this.saveCachedUrl(image.sourceUrl, storedUrl);
+        } else {
+          uploadedCount += 1;
+        }
+      } catch (error) {
+        if (uploadedCount + reusedCount > 0) {
+          throw new NaverImageUploadProgressError(
+            error,
+            product,
+            uploadedCount,
+            reusedCount,
+          );
+        }
+        throw error;
       }
-      const uploaded = await this.client.uploadProductImages([file]);
-      if (uploaded.length !== 1) {
-        throw new Error("naver_image_upload_count_mismatch");
-      }
-      const saved = await this.repo.saveNaverImageUrls(
-        productId,
-        ownerId,
-        version,
-        [
-          {
-            imageId: image.id,
-            sourceUrl: image.sourceUrl,
-            storedUrl: uploaded[0]!.url,
-          },
-        ],
-      );
-      if (saved.kind === "not_found") throw new ProductNotFoundError();
-      if (saved.kind === "conflict") throw new ProductConflictError();
-      product = saved.product;
-      version = saved.product.draftVersion;
-      uploadedCount += 1;
     }
-    return { kind: "ok" as const, product, uploadedCount };
+    return { kind: "ok" as const, product, uploadedCount, reusedCount };
+  }
+
+  private async findCachedUrl(sourceUrl: string) {
+    if (!this.cache || !this.storeConnectionId) return null;
+    try {
+      return await this.cache.find(this.storeConnectionId, sourceUrl);
+    } catch {
+      logger.info("naver_image_cache_lookup_failed");
+      return null;
+    }
+  }
+
+  private async saveCachedUrl(sourceUrl: string, storedUrl: string) {
+    if (!this.cache || !this.storeConnectionId) return;
+    try {
+      await this.cache.save(this.storeConnectionId, sourceUrl, storedUrl);
+    } catch {
+      logger.info("naver_image_cache_save_failed");
+    }
+  }
+}
+
+export class NaverImageUploadProgressError extends Error {
+  constructor(
+    readonly originalError: unknown,
+    readonly product: ProductEditorRecord["product"],
+    readonly uploadedCount: number,
+    readonly reusedCount: number,
+  ) {
+    super(
+      originalError instanceof Error
+        ? originalError.message
+        : "네이버 이미지 업로드가 중단되었습니다.",
+    );
   }
 }
 
@@ -118,8 +193,8 @@ export async function downloadNaverImage(
       selectedImages: "JPG 또는 PNG 이미지만 업로드할 수 있습니다.",
     });
   }
-  const bytes = new Uint8Array(await response.arrayBuffer());
-  if (bytes.byteLength < 1 || bytes.byteLength > MAX_IMAGE_BYTES || !hasImageSignature(bytes, type)) {
+  const bytes = await readBoundedImageBody(response, MAX_IMAGE_BYTES);
+  if (bytes.byteLength < 1 || !hasImageSignature(bytes, type)) {
     throw new ProductValidationError({
       selectedImages: "이미지 파일 형식이나 크기를 확인해 주세요.",
     });
@@ -129,6 +204,40 @@ export async function downloadNaverImage(
     type,
     bytes,
   };
+}
+
+async function readBoundedImageBody(response: Response, maximumBytes: number) {
+  if (!response.body) {
+    throw new ProductValidationError({
+      selectedImages: "이미지 응답 본문이 비어 있습니다.",
+    });
+  }
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > maximumBytes) {
+        await reader.cancel();
+        throw new ProductValidationError({
+          selectedImages: "이미지는 파일당 10 MiB 이하여야 합니다.",
+        });
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return bytes;
 }
 
 function validateExternalImageUrl(value: string) {

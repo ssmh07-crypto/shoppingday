@@ -750,6 +750,32 @@ td small {
   color: #465166;
   font-size: 12px;
 }
+.inventory-bulk-actions {
+  flex-basis: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.inventory-bulk-actions button {
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid #c8cfdb;
+  border-radius: 6px;
+  background: #fff;
+  color: #344054;
+  font-size: 12px;
+  font-weight: 700;
+}
+.inventory-bulk-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+.inventory-bulk-actions span,
+.inventory-bulk-actions small {
+  color: var(--inv-muted);
+  font-size: 12px;
+}
 .inventory-filter-button {
   height: 36px;
   display: flex;

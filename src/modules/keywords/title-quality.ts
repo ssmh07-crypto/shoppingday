@@ -20,6 +20,7 @@ export type TitleQualityIssueCode =
   | "duplicate-token"
   | "generic-category"
   | "promotional-term"
+  | "decorative-character"
   | "long-title";
 
 export type TitleQualityIssue = {
@@ -86,6 +87,16 @@ export function assessProductTitle(
     issues.push({
       code: "promotional-term",
       message: `홍보성 표현은 상품 속성보다 우선하지 않는 것이 좋습니다: ${promotionalTerms.join(", ")}`,
+    });
+  }
+
+  const decorativeCharacters = Array.from(
+    new Set(cleanTitle.match(/[★☆▶◀◆◇♬♥♡※]/gu) ?? []),
+  );
+  if (decorativeCharacters.length) {
+    issues.push({
+      code: "decorative-character",
+      message: `검색을 방해하는 장식용 특수문자를 제거해 주세요: ${decorativeCharacters.join(" ")}`,
     });
   }
 

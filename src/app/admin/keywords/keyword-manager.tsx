@@ -8,6 +8,7 @@ import {
 } from "@/modules/keywords/keyword-filter";
 import { formatRawTotalSearchVolume } from "@/modules/keywords/keyword-utils";
 import { assessProductTitle } from "@/modules/keywords/title-quality";
+import { assessSearchTag } from "@/modules/keywords/search-tag-quality";
 import { keywordThresholds } from "@/modules/keywords/config";
 import { shoppingSearchOperatingHypotheses } from "@/modules/keywords/shopping-search-operating-hypotheses";
 import type {
@@ -427,6 +428,20 @@ function KeywordProductDetail({
   const [optimizationTags, setOptimizationTags] = useState(
     (detail.product.productInput.searchTags ?? []).join(", "),
   );
+  const optimizationSearchTags = useMemo(
+    () => splitList(optimizationTags),
+    [optimizationTags],
+  );
+  const optimizationTagIssues = useMemo(
+    () =>
+      optimizationSearchTags.flatMap((tag) =>
+        assessSearchTag(tag, { title: optimizationTitle }).map((issue) => ({
+          tag,
+          ...issue,
+        })),
+      ),
+    [optimizationSearchTags, optimizationTitle],
+  );
 
   const rejectedKeywords = detail.keywords.filter((item) => item.reviewStatus === "rejected");
   const keywordsWithSelection = useMemo(
@@ -542,7 +557,7 @@ function KeywordProductDetail({
   }
 
   async function applyOptimizationToNaver() {
-    const searchTags = splitList(optimizationTags).slice(0, 10);
+    const searchTags = optimizationSearchTags.slice(0, 10);
     if (
       !window.confirm(
         `스마트스토어 상품을 실제로 수정할까요?\n\n상품명: ${optimizationTitle}\n검색 태그: ${searchTags.join(", ") || "없음"}`,
@@ -634,8 +649,16 @@ function KeywordProductDetail({
             placeholder="쉼표로 구분"
           />
           <small>
-            현재 {splitList(optimizationTags).slice(0, 10).length}개 선택
+            현재 {optimizationSearchTags.slice(0, 10).length}개 선택
           </small>
+          {optimizationTagIssues.map((issue) => (
+            <small
+              className="field-error"
+              key={`${issue.tag}-${issue.code}`}
+            >
+              {issue.tag}: {issue.message}
+            </small>
+          ))}
         </label>
         <div className="keyword-title-save-row">
           <button
@@ -644,7 +667,8 @@ function KeywordProductDetail({
             disabled={
               Boolean(busy) ||
               !optimizationTitle.trim() ||
-              splitList(optimizationTags).length > 10
+              optimizationSearchTags.length > 10 ||
+              optimizationTagIssues.length > 0
             }
           >
             {busy === "naver-apply"
@@ -696,8 +720,9 @@ function KeywordProductDetail({
             <p>
               사용자 운영 가설: {shoppingSearchOperatingHypotheses.rankingFormulaLabel}, 필드 우선순위는
               {` ${shoppingSearchOperatingHypotheses.fieldPriority.join(" > ")}`}, 자연검색 1페이지는
-              {` ${shoppingSearchOperatingHypotheses.resultPageSize}개`}, 같은 시각의 검색 순위는 동일하다고
-              가정합니다. 네이버 공식 점수나 노출 보장은 아닙니다.
+              {` ${shoppingSearchOperatingHypotheses.resultPageSize}개`}로 봅니다. N+스토어는
+              개인별 선호도가 추가되고 검색 결과가 개인화되므로 같은 시각에도 사용자별
+              순위가 다를 수 있습니다. 네이버 공식 배점이나 노출 보장은 아닙니다.
             </p>
           </details>
           <KeywordFilters filters={filters} onChange={setFilters} />

@@ -20,7 +20,11 @@ describe("소싱 조사 화면", () => {
     expect(screen.getByRole("heading", { name: "상품 리뷰 조사" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "샘플 확인" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "상품 등록 초안" })).toBeInTheDocument();
-    expect(screen.getByText("카테고리 키워드는 상품명에 절대 포함하지 않습니다.")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "분류용 카테고리 키워드는 상품명 후보로 쓰지 않고, 실제 상품을 나타내는 구체 상품 유형은 유지합니다.",
+      ),
+    ).toBeInTheDocument();
     expect(screen.getByText("가격 스펙트럼이 넓은가?")).toBeInTheDocument();
     expect(screen.getByText("메인 키워드가 명확하고 대다수 상품이 일치하는가?")).toBeInTheDocument();
     expect(screen.getByText("인증이 필요한 제품인가?")).toBeInTheDocument();

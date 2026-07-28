@@ -7,8 +7,7 @@ import type { SourcingRelatedKeyword } from "@/modules/sourcing/types";
 import type { ProductProcessingSettings } from "@/modules/products/product-processing-settings";
 import type { NaverPublicationPolicyData, NaverPublicationPolicyOverrides } from "@/lib/db/schema";
 
-export type ProductEditorInitial = {
-  settings: ProductProcessingSettings;
+export type ProductEditorMarketData = {
   naverPublicationPolicy: {
     defaults: NaverPublicationPolicyData;
     overrides: NaverPublicationPolicyOverrides;
@@ -19,7 +18,7 @@ export type ProductEditorInitial = {
       name: string;
     } | null;
   };
-  naverDeliveryPolicies?: Array<{
+  naverDeliveryPolicies: Array<{
     id: string;
     policyCode: string;
     name: string;
@@ -33,6 +32,14 @@ export type ProductEditorInitial = {
     isDefault: boolean;
   }>;
   naverStoreConnectionId: string | null;
+};
+
+export type ProductEditorInitial = {
+  settings: ProductProcessingSettings;
+  naverPublicationPolicy?: ProductEditorMarketData["naverPublicationPolicy"];
+  naverDeliveryPolicies?: ProductEditorMarketData["naverDeliveryPolicies"];
+  naverStoreConnections?: ProductEditorMarketData["naverStoreConnections"];
+  naverStoreConnectionId?: string | null;
   product: {
     id: string;
     status: string;
