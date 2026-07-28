@@ -69,6 +69,8 @@ export type NaverProductPayload = {
 type NaverPayloadAttribute = {
   attributeSeq: number;
   attributeValueSeq: number;
+  attributeRealValue?: string;
+  attributeRealValueUnitCode?: string;
 };
 
 type NaverOptionInfo = {
@@ -273,7 +275,9 @@ export function buildNaverProductPayload(
         },
         ...(options ? { optionInfo: options } : {}),
         productAttributes: attributes,
-        productInfoProvidedNotice: profile.productInfoProvidedNotice!,
+        productInfoProvidedNotice: normalizeProvidedNotice(
+          profile.productInfoProvidedNotice!,
+        ),
         taxType: profile.taxType!,
         minorPurchasable: profile.minorPurchasable!,
         ...(source.searchTags.length
@@ -360,6 +364,13 @@ function mapAttributes(
       {
         attributeSeq: attribute.attributeSeq,
         attributeValueSeq: attribute.attributeValueSeq,
+        ...(attribute.unitCode && (attribute.minValue || attribute.maxValue)
+          ? {
+              attributeRealValue:
+                attribute.minValue.trim() || attribute.maxValue.trim(),
+              attributeRealValueUnitCode: attribute.unitCode,
+            }
+          : {}),
       },
     ];
   });
@@ -667,6 +678,30 @@ function validateProvidedNotice(
       message: `${type} 상품군의 고시 항목이 필요합니다.`,
     });
   }
+}
+
+function normalizeProvidedNotice(
+  notice: NonNullable<NaverPublicationProfile["productInfoProvidedNotice"]>,
+) {
+  const type = notice.productInfoProvidedNoticeType;
+  const bodyKey = type
+    .toLowerCase()
+    .replace(/_([a-z])/g, (_, character: string) => character.toUpperCase());
+  const body = notice[bodyKey];
+  if (
+    !body ||
+    typeof body !== "object" ||
+    Array.isArray(body) ||
+    typeof body.afterServiceDirector !== "string" ||
+    !body.afterServiceDirector.trim() ||
+    typeof body.customerServicePhoneNumber !== "string" ||
+    !body.customerServicePhoneNumber.trim()
+  ) {
+    return notice;
+  }
+  const normalizedBody = { ...body };
+  delete normalizedBody.customerServicePhoneNumber;
+  return { ...notice, [bodyKey]: normalizedBody };
 }
 
 function stableStringify(value: JsonValue | NaverProductPayload): string {

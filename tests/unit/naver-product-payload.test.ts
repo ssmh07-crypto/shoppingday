@@ -137,7 +137,12 @@ describe("네이버 v2 상품 payload 변환", () => {
       detailAttribute: {
         sellerCodeInfo: { sellerManagementCode: "DOME-1234" },
         productAttributes: [
-          { attributeSeq: 10018883, attributeValueSeq: 10809926 },
+          {
+            attributeSeq: 10018883,
+            attributeValueSeq: 10809926,
+            attributeRealValue: "50",
+            attributeRealValueUnitCode: "A02109",
+          },
         ],
         seoInfo: {
           sellerTags: [{ text: "포스트잇" }, { text: "메모지" }],
@@ -187,6 +192,33 @@ describe("네이버 v2 상품 payload 변환", () => {
     expect(first.ok && second.ok && first.hash).toBe(
       second.ok ? second.hash : "",
     );
+  });
+
+  it("상품정보제공고시의 선택 입력 A/S 연락처는 하나만 전송한다", () => {
+    const result = buildNaverProductPayload(source, {
+      ...profile,
+      productInfoProvidedNotice: {
+        productInfoProvidedNoticeType: "ETC",
+        etc: {
+          itemName: "상품 상세 참조",
+          modelName: "상품 상세 참조",
+          afterServiceDirector: "판매자 문의 02-1234-5678",
+          customerServicePhoneNumber: "02-1234-5678",
+        },
+      },
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(
+      result.payload.originProduct.detailAttribute.productInfoProvidedNotice,
+    ).toMatchObject({
+      etc: { afterServiceDirector: "판매자 문의 02-1234-5678" },
+    });
+    expect(
+      result.payload.originProduct.detailAttribute.productInfoProvidedNotice
+        .etc,
+    ).not.toHaveProperty("customerServicePhoneNumber");
   });
 
   it("옵션 없는 상품은 단일 재고를 사용한다", () => {

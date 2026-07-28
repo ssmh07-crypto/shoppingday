@@ -381,6 +381,7 @@ export class NaverCommerceRelayClient implements NaverCategoriesClient {
             ? "네이버 API 중계 서버 인증에 실패했습니다."
             : relayError?.message ?? "네이버 API 중계 요청에 실패했습니다.",
           response.status,
+          relayError?.invalidInputs,
         );
       }
       return response;
@@ -639,7 +640,12 @@ export function createNaverCommerceRelayHandler(
             : error.code === "timeout"
               ? 504
               : 502;
-        return relayJson(status, error.code, error.message);
+        return relayJson(
+          status,
+          error.code,
+          error.message,
+          error.invalidInputs,
+        );
       }
       return relayJson(
         500,
@@ -894,9 +900,14 @@ async function handleProductModels(url: URL, client: NaverCategoriesClient) {
   return client.fetchProductModels(parsed.data.name, parsed.data.size);
 }
 
-function relayJson(status: number, code: string, message: string) {
+function relayJson(
+  status: number,
+  code: string,
+  message: string,
+  invalidInputs: NaverCommerceError["invalidInputs"] = [],
+) {
   return Response.json(
-    { error: { code, message } },
+    { error: { code, message, invalidInputs } },
     { status, headers: { "cache-control": "no-store" } },
   );
 }
@@ -905,10 +916,27 @@ async function readRelayError(response: Response) {
   try {
     const parsed = z
       .object({
-        error: z.object({ code: z.string(), message: z.string().optional() }),
+        error: z.object({
+          code: z.string(),
+          message: z.string().optional(),
+          invalidInputs: z
+            .array(
+              z.object({
+                name: z.string(),
+                type: z.string().optional(),
+                message: z.string(),
+              }),
+            )
+            .optional(),
+        }),
       })
       .safeParse(await response.clone().json());
-    return parsed.success ? parsed.data.error : undefined;
+    return parsed.success
+      ? {
+          ...parsed.data.error,
+          invalidInputs: parsed.data.error.invalidInputs ?? [],
+        }
+      : undefined;
   } catch {
     return undefined;
   }

@@ -3,6 +3,7 @@ import {
   createNaverCommerceRelayHandler,
   NaverCommerceRelayClient,
 } from "@/modules/channels/naver/naver-commerce-relay";
+import { NaverCommerceError } from "@/modules/channels/naver/naver-commerce-client";
 import {
   createNaverRelaySignature,
   NAVER_RELAY_HEADERS,
@@ -146,6 +147,46 @@ async function signedRequest(path = "/v1/categories") {
 }
 
 describe("네이버 커머스API 중계 인증", () => {
+  it("네이버 유효성 오류의 필드별 상세 내용을 중계한다", async () => {
+    const client = {
+      fetchCategories: vi.fn().mockRejectedValue(
+        new NaverCommerceError(
+          "request_failed",
+          "입력한 데이터가 유효하지 않습니다.",
+          400,
+          [
+            {
+              name: "originProduct.deliveryInfo",
+              type: "INVALID",
+              message: "배송 정보를 확인해 주세요.",
+            },
+          ],
+        ),
+      ),
+      fetchProductModels: vi.fn(),
+      ...metadataClientMocks(),
+    };
+    const handler = createNaverCommerceRelayHandler({
+      sharedSecret,
+      client,
+      now: () => now,
+    });
+    const response = await handler(await signedRequest());
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      error: {
+        invalidInputs: [
+          {
+            name: "originProduct.deliveryInfo",
+            type: "INVALID",
+            message: "배송 정보를 확인해 주세요.",
+          },
+        ],
+      },
+    });
+  });
+
   it("배송 주소록과 묶음배송 및 반품 택배사 조회 경로를 전달한다", async () => {
     const client = {
       fetchCategories: vi.fn().mockResolvedValue(categories),

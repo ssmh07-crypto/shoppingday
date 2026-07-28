@@ -66,6 +66,48 @@ describe("네이버 커머스API 클라이언트", () => {
     });
   });
 
+  it("상품 등록 유효성 오류의 필드별 상세 내용을 보존한다", async () => {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        json({ access_token: "token", expires_in: 10800, token_type: "Bearer" }),
+      )
+      .mockResolvedValueOnce(
+        json(
+          {
+            code: "INVALID_INPUT",
+            message: "입력한 데이터가 유효하지 않습니다.",
+            invalidInputs: [
+              {
+                name: "originProduct.detailAttribute.originAreaInfo",
+                type: "INVALID",
+                message: "원산지 정보를 확인해 주세요.",
+              },
+            ],
+          },
+          400,
+        ),
+      );
+
+    await expect(
+      new NaverCommerceClient(config, fetcher, () => now).createProduct(
+        {} as never,
+      ),
+    ).rejects.toMatchObject({
+      code: "request_failed",
+      responseStatus: 400,
+      invalidInputs: [
+        {
+          name: "originProduct.detailAttribute.originAreaInfo",
+          type: "INVALID",
+          message: "원산지 정보를 확인해 주세요.",
+        },
+      ],
+      message:
+        "입력한 데이터가 유효하지 않습니다. - originProduct.detailAttribute.originAreaInfo: 원산지 정보를 확인해 주세요.",
+    });
+  });
+
   it("공식 bcrypt+Base64 방식으로 전자서명을 만든다", async () => {
     const signature = await createNaverCommerceSignature(
       clientId,

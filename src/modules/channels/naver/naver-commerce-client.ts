@@ -363,6 +363,12 @@ export type NaverCommerceConfig = {
   timeoutMs: number;
 };
 
+export type NaverCommerceInvalidInput = {
+  name: string;
+  type?: string;
+  message: string;
+};
+
 export class NaverCommerceError extends Error {
   constructor(
     readonly code:
@@ -374,6 +380,7 @@ export class NaverCommerceError extends Error {
       | "timeout",
     message: string,
     readonly responseStatus?: number,
+    readonly invalidInputs: NaverCommerceInvalidInput[] = [],
   ) {
     super(message);
     this.name = "NaverCommerceError";
@@ -793,9 +800,10 @@ export class NaverCommerceClient {
             : "request_failed",
           response.status === 401 || response.status === 403
             ? "네이버 커머스API 인증 또는 권한을 확인해 주세요."
-            : gatewayError?.message?.trim().slice(0, 1000) ||
+            : formatGatewayErrorMessage(gatewayError) ||
                 "네이버 커머스API 요청에 실패했습니다.",
           response.status,
+          gatewayError?.invalidInputs,
         );
       }
       return response;
@@ -824,16 +832,61 @@ async function readGatewayError(response: Response) {
     const body = (await response.clone().json()) as {
       code?: unknown;
       message?: unknown;
+      invalidInputs?: unknown;
     };
-    return typeof body.code === "string"
-      ? {
-          code: body.code,
-          message: typeof body.message === "string" ? body.message : undefined,
-        }
-      : undefined;
+    const invalidInputs = Array.isArray(body.invalidInputs)
+      ? body.invalidInputs.flatMap((input) => {
+          if (
+            !input ||
+            typeof input !== "object" ||
+            typeof Reflect.get(input, "name") !== "string" ||
+            typeof Reflect.get(input, "message") !== "string"
+          ) {
+            return [];
+          }
+          const type = Reflect.get(input, "type");
+          return [
+            {
+              name: Reflect.get(input, "name") as string,
+              ...(typeof type === "string" ? { type } : {}),
+              message: Reflect.get(input, "message") as string,
+            },
+          ];
+        })
+      : [];
+    if (
+      typeof body.code !== "string" &&
+      typeof body.message !== "string" &&
+      invalidInputs.length === 0
+    ) {
+      return undefined;
+    }
+    return {
+      code: typeof body.code === "string" ? body.code : undefined,
+      message: typeof body.message === "string" ? body.message : undefined,
+      invalidInputs,
+    };
   } catch {
     return undefined;
   }
+}
+
+function formatGatewayErrorMessage(
+  error:
+    | {
+        message?: string;
+        invalidInputs: NaverCommerceInvalidInput[];
+      }
+    | undefined,
+) {
+  if (!error) return undefined;
+  const message = error.message?.trim().slice(0, 1000);
+  if (error.invalidInputs.length === 0) return message;
+  const details = error.invalidInputs
+    .map((input) => `${input.name}: ${input.message}`)
+    .join("; ")
+    .slice(0, 1500);
+  return [message, details].filter(Boolean).join(" - ");
 }
 
 async function parseJson(response: Response): Promise<unknown> {
