@@ -28,6 +28,7 @@ import {
   naverProductImportErrorMessage,
   type ImportedNaverProductData,
   type NaverManagedProductImporter,
+  type NaverManagedProductSalesReader,
   type NaverManagedProductUpdater,
 } from "./naver-product-importer";
 
@@ -44,6 +45,7 @@ export class KeywordManagementService {
     },
     private readonly productImporter: NaverManagedProductImporter | null = null,
     private readonly productUpdater: NaverManagedProductUpdater | null = null,
+    private readonly salesReader: NaverManagedProductSalesReader | null = null,
   ) {}
 
   list(ownerId: string) {
@@ -221,6 +223,10 @@ export class KeywordManagementService {
         {
           title: input.title,
           searchTags: input.searchTags,
+          salePrice: input.salePrice,
+          stockQuantity: input.stockQuantity,
+          statusType: input.statusType,
+          naverAttributes: input.naverAttributes,
         },
         detail.product.storeConnectionId ?? undefined,
       );
@@ -237,7 +243,49 @@ export class KeywordManagementService {
     await this.repository.markNaverApplied(ownerId, id, {
       title: input.title,
       searchTags: input.searchTags,
+      salePrice: input.salePrice,
+      stockQuantity: input.stockQuantity,
+      statusType: input.statusType,
+      naverAttributes: input.naverAttributes,
     });
+    return this.get(ownerId, id);
+  }
+
+  async refreshSalesSummary(ownerId: string, id: string) {
+    const detail = await this.get(ownerId, id);
+    if (!detail.product.channelProductNo) {
+      throw new KeywordManagementError(
+        "naver_product_not_linked",
+        "스마트스토어 채널 상품번호를 확인하지 못했습니다.",
+        409,
+      );
+    }
+    if (!this.salesReader) {
+      throw new KeywordManagementError(
+        "external_api_not_configured",
+        "선택한 스마트스토어의 주문 API 연결을 확인해 주세요.",
+        503,
+      );
+    }
+    try {
+      const salesSummary = await this.salesReader.summarize(
+        detail.product.channelProductNo,
+        detail.product.storeConnectionId ?? undefined,
+      );
+      await this.repository.updateProductInput(ownerId, id, {
+        ...detail.product.productInput,
+        salesSummary,
+      });
+    } catch (error) {
+      throw new KeywordManagementError(
+        "external_api_error",
+        safeExternalMessage(
+          error,
+          "최근 판매 수량을 불러오지 못했습니다.",
+        ),
+        502,
+      );
+    }
     return this.get(ownerId, id);
   }
 

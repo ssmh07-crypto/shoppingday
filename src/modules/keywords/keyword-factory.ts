@@ -15,8 +15,10 @@ import {
 import { NaverCategoryRepository } from "@/modules/channels/naver/naver-category-repository";
 import {
   CommerceApiManagedProductImporter,
+  CommerceApiManagedProductSalesReader,
   CommerceApiManagedProductUpdater,
 } from "./naver-product-importer";
+import type { NaverRegisteredAttribute } from "./types";
 
 export function createKeywordManagementService(
   database: Database,
@@ -68,7 +70,14 @@ export function createKeywordManagementService(
       ? {
           apply: async (
             channelProductNo: string,
-            input: { title: string; searchTags: string[] },
+            input: {
+              title: string;
+              searchTags: string[];
+              salePrice: number;
+              stockQuantity: number;
+              statusType: "SALE" | "OUTOFSTOCK" | "SUSPENSION";
+              naverAttributes: NaverRegisteredAttribute[];
+            },
             storeConnectionId?: string,
           ) =>
             new CommerceApiManagedProductUpdater(
@@ -79,6 +88,23 @@ export function createKeywordManagementService(
                 storeConnectionId,
               ),
             ).apply(channelProductNo, input),
+        }
+      : null;
+  const salesReader =
+    !mock && isNaverCommerceConfigured(env) && ownerId
+      ? {
+          summarize: async (
+            channelProductNo: string,
+            storeConnectionId?: string,
+          ) =>
+            new CommerceApiManagedProductSalesReader(
+              await createConfiguredNaverClientForUser(
+                database,
+                ownerId,
+                env,
+                storeConnectionId,
+              ),
+            ).summarize(channelProductNo),
         }
       : null;
   return new KeywordManagementService(
@@ -93,6 +119,7 @@ export function createKeywordManagementService(
     },
     productImporter,
     productUpdater,
+    salesReader,
   );
 }
 

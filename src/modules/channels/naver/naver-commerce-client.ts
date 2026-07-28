@@ -183,6 +183,39 @@ const returnDeliveryCompanySchema = z.looseObject({
     "SECONDARY_9",
   ]),
 });
+const changedProductOrderSchema = z.object({
+  productOrderId: z.string().min(1),
+  lastChangedDate: z.string().min(1).optional(),
+});
+const changedProductOrderMoreSchema = z
+  .object({
+    moreFrom: z.string().min(1),
+    moreSequence: z.union([z.string(), z.number()]).transform(String),
+  })
+  .optional();
+const changedProductOrdersEnvelopeSchema = z.object({
+  data: z.union([
+    z.array(changedProductOrderSchema),
+    z.object({
+      lastChangeStatuses: z.array(changedProductOrderSchema).default([]),
+      more: changedProductOrderMoreSchema,
+    }),
+  ]),
+});
+const productOrderInfoSchema = z.object({
+  order: z.object({
+    paymentDate: z.string().min(1).nullable().optional(),
+  }),
+  productOrder: z.object({
+    productId: z.union([z.string(), z.number()]).transform(String),
+    productOrderStatus: z.string().default(""),
+    quantity: z.number().int().nonnegative().default(0),
+    remainQuantity: z.number().int().nonnegative().nullable().optional(),
+  }),
+});
+const productOrdersEnvelopeSchema = z.object({
+  data: z.array(productOrderInfoSchema).default([]),
+});
 
 export type NaverCommerceCategory = z.infer<typeof categorySchema>;
 export type NaverCommerceProductModel = z.infer<typeof productModelSchema>;
@@ -213,6 +246,11 @@ export type NaverCommerceDeliveryBundleGroup = z.infer<
 export type NaverCommerceReturnDeliveryCompany = z.infer<
   typeof returnDeliveryCompanySchema
 >;
+export type NaverCommerceChangedProductOrders = {
+  productOrderIds: string[];
+  more?: { moreFrom: string; moreSequence: string };
+};
+export type NaverCommerceProductOrder = z.infer<typeof productOrderInfoSchema>;
 export type NaverImageUploadFile = {
   name: string;
   type: "image/jpeg" | "image/png";
@@ -353,6 +391,35 @@ export async function parseNaverCommerceReturnDeliveryCompanies(
     ["returnDeliveryCompanies", "contents", "content"],
     "네이버 반품 택배사 응답 형식이 올바르지 않습니다.",
   );
+}
+
+export async function parseNaverCommerceChangedProductOrders(
+  response: Response,
+): Promise<NaverCommerceChangedProductOrders> {
+  const parsed = await parseResponse(
+    response,
+    changedProductOrdersEnvelopeSchema,
+    "네이버 변경 상품 주문 응답 형식이 올바르지 않습니다.",
+  );
+  const data = parsed.data;
+  if (Array.isArray(data)) {
+    return { productOrderIds: data.map((item) => item.productOrderId) };
+  }
+  return {
+    productOrderIds: data.lastChangeStatuses.map(
+      (item) => item.productOrderId,
+    ),
+    ...(data.more ? { more: data.more } : {}),
+  };
+}
+
+export async function parseNaverCommerceProductOrders(response: Response) {
+  const parsed = await parseResponse(
+    response,
+    productOrdersEnvelopeSchema,
+    "네이버 상품 주문 상세 응답 형식이 올바르지 않습니다.",
+  );
+  return parsed.data;
 }
 
 export type NaverCommerceConfig = {
@@ -513,6 +580,45 @@ export class NaverCommerceClient {
     );
     return parseNaverCommerceReturnDeliveryCompanies(
       await this.authorizedFetch(url),
+    );
+  }
+
+  async fetchLastChangedProductOrders(input: {
+    lastChangedFrom: string;
+    lastChangedTo: string;
+    moreSequence?: string;
+  }) {
+    const url = new URL(
+      `${this.config.apiUrl}/v1/pay-order/seller/product-orders/last-changed-statuses`,
+    );
+    url.searchParams.set("lastChangedFrom", input.lastChangedFrom);
+    url.searchParams.set("lastChangedTo", input.lastChangedTo);
+    url.searchParams.set("limitCount", "300");
+    if (input.moreSequence) {
+      url.searchParams.set("moreSequence", input.moreSequence);
+    }
+    return parseNaverCommerceChangedProductOrders(
+      await this.authorizedFetch(url),
+    );
+  }
+
+  async fetchProductOrders(productOrderIds: string[]) {
+    if (!productOrderIds.length || productOrderIds.length > 300) {
+      throw new NaverCommerceError(
+        "request_failed",
+        "조회할 상품 주문 번호는 1개 이상 300개 이하여야 합니다.",
+      );
+    }
+    return parseNaverCommerceProductOrders(
+      await this.authorizedJsonPost(
+        new URL(
+          `${this.config.apiUrl}/v1/pay-order/seller/product-orders/query`,
+        ),
+        {
+          productOrderIds,
+          quantityClaimCompatibility: true,
+        },
+      ),
     );
   }
 

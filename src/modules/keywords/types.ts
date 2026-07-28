@@ -39,6 +39,7 @@ export interface ManagedProductInput {
   stockQuantity?: number | null;
   statusType?: string;
   representativeImageUrl?: string;
+  salesSummary?: ManagedProductSalesSummary;
 }
 
 export interface NaverRegisteredAttribute {
@@ -46,6 +47,16 @@ export interface NaverRegisteredAttribute {
   attributeName: string;
   attributeValueSeq: number | null;
   value: string;
+  minValue?: string;
+  maxValue?: string;
+  unitCode?: string | null;
+}
+
+export interface ManagedProductSalesSummary {
+  sevenDays: number;
+  thirtyDays: number;
+  fetchedAt: string;
+  source: "naver_orders";
 }
 
 export interface NaverCommerceImportState {

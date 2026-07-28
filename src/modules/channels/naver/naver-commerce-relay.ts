@@ -16,6 +16,8 @@ import {
   parseNaverCommerceSellerAddresses,
   parseNaverCommerceDeliveryBundleGroups,
   parseNaverCommerceReturnDeliveryCompanies,
+  parseNaverCommerceChangedProductOrders,
+  parseNaverCommerceProductOrders,
   type NaverCommerceCategory,
   type NaverCommerceProductAttribute,
   type NaverCommerceProductAttributeUnit,
@@ -29,6 +31,8 @@ import {
   type NaverCommerceSellerAddress,
   type NaverCommerceDeliveryBundleGroup,
   type NaverCommerceReturnDeliveryCompany,
+  type NaverCommerceChangedProductOrders,
+  type NaverCommerceProductOrder,
   type NaverImageUploadFile,
 } from "./naver-commerce-client";
 import type { NaverProductPayload } from "./naver-product-payload";
@@ -82,6 +86,14 @@ export interface NaverCategoriesClient {
   fetchSellerAddresses(): Promise<NaverCommerceSellerAddress[]>;
   fetchDeliveryBundleGroups(): Promise<NaverCommerceDeliveryBundleGroup[]>;
   fetchReturnDeliveryCompanies(): Promise<NaverCommerceReturnDeliveryCompany[]>;
+  fetchLastChangedProductOrders?(input: {
+    lastChangedFrom: string;
+    lastChangedTo: string;
+    moreSequence?: string;
+  }): Promise<NaverCommerceChangedProductOrders>;
+  fetchProductOrders?(
+    productOrderIds: string[],
+  ): Promise<NaverCommerceProductOrder[]>;
 }
 
 export class NaverCommerceRelayClient implements NaverCategoriesClient {
@@ -278,6 +290,43 @@ export class NaverCommerceRelayClient implements NaverCategoriesClient {
     );
   }
 
+  async fetchLastChangedProductOrders(input: {
+    lastChangedFrom: string;
+    lastChangedTo: string;
+    moreSequence?: string;
+  }) {
+    const url = this.relayUrl(
+      "v1/pay-order/seller/product-orders/last-changed-statuses",
+    );
+    url.searchParams.set("lastChangedFrom", input.lastChangedFrom);
+    url.searchParams.set("lastChangedTo", input.lastChangedTo);
+    url.searchParams.set("limitCount", "300");
+    if (input.moreSequence) {
+      url.searchParams.set("moreSequence", input.moreSequence);
+    }
+    return parseNaverCommerceChangedProductOrders(
+      await this.requestWithRetry(url),
+    );
+  }
+
+  async fetchProductOrders(productOrderIds: string[]) {
+    const body = new TextEncoder().encode(
+      JSON.stringify({
+        productOrderIds,
+        quantityClaimCompatibility: true,
+      }),
+    );
+    const response = await this.request(
+      this.relayUrl("v1/pay-order/seller/product-orders/query"),
+      {
+        method: "POST",
+        body,
+        contentType: "application/json;charset=UTF-8",
+      },
+    );
+    return parseNaverCommerceProductOrders(response);
+  }
+
   private relayUrl(path: string) {
     const base = this.config.relayUrl.endsWith("/")
       ? this.config.relayUrl
@@ -469,6 +518,16 @@ const productStatusChangeSchema = z.object({
   statusType: z.enum(["SALE", "OUTOFSTOCK", "SUSPENSION"]),
   stockQuantity: z.number().int().min(0).max(99_999_999).optional(),
 });
+const orderChangeQuerySchema = z.object({
+  lastChangedFrom: z.string().datetime(),
+  lastChangedTo: z.string().datetime(),
+  limitCount: z.literal("300"),
+  moreSequence: z.string().min(1).max(100).optional(),
+});
+const productOrdersQuerySchema = z.object({
+  productOrderIds: z.array(z.string().min(1).max(30)).min(1).max(300),
+  quantityClaimCompatibility: z.literal(true),
+});
 
 const RELAY_PATHS = [
   "/v1/categories",
@@ -488,6 +547,10 @@ const CHANNEL_PRODUCT_PATH = /^\/v2\/products\/channel-products\/(\d{1,20})$/;
 const ORIGIN_PRODUCT_PATH = /^\/v2\/products\/origin-products\/(\d{1,20})$/;
 const PRODUCT_STATUS_PATH =
   /^\/v1\/products\/origin-products\/(\d{1,20})\/change-status$/;
+const ORDER_CHANGE_PATH =
+  "/v1/pay-order/seller/product-orders/last-changed-statuses";
+const PRODUCT_ORDERS_QUERY_PATH =
+  "/v1/pay-order/seller/product-orders/query";
 const MAX_PRODUCT_BODY_BYTES = 4 * 1024 * 1024;
 const MAX_IMAGE_COUNT = 10;
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
@@ -540,6 +603,7 @@ export function createNaverCommerceRelayHandler(
       request.method === "GET" &&
       (RELAY_PATHS.some((path) => path === url.pathname) ||
         url.pathname.startsWith("/v1/products-for-provided-notice/") ||
+        url.pathname === ORDER_CHANGE_PATH ||
         CHANNEL_PRODUCT_PATH.test(url.pathname));
     const isImageUpload =
       request.method === "POST" && url.pathname === IMAGE_UPLOAD_PATH;
@@ -549,6 +613,9 @@ export function createNaverCommerceRelayHandler(
       request.method === "PUT" && ORIGIN_PRODUCT_PATH.test(url.pathname);
     const isProductStatusChange =
       request.method === "PUT" && PRODUCT_STATUS_PATH.test(url.pathname);
+    const isProductOrdersQuery =
+      request.method === "POST" &&
+      url.pathname === PRODUCT_ORDERS_QUERY_PATH;
     const isProductDelete =
       request.method === "DELETE" &&
       (CHANNEL_PRODUCT_PATH.test(url.pathname) ||
@@ -559,6 +626,7 @@ export function createNaverCommerceRelayHandler(
       !isProductCreate &&
       !isProductUpdate &&
       !isProductStatusChange &&
+      !isProductOrdersQuery &&
       !isProductDelete
     ) {
       return relayJson(
@@ -602,13 +670,17 @@ export function createNaverCommerceRelayHandler(
       isImageUpload ||
       isProductCreate ||
       isProductUpdate ||
-      isProductStatusChange
+      isProductStatusChange ||
+      isProductOrdersQuery
       ? new Uint8Array(await request.arrayBuffer())
       : undefined;
     if (
       body &&
       ((isImageUpload && body.byteLength > MAX_IMAGE_TOTAL_BYTES + 1024 * 1024) ||
-        ((isProductCreate || isProductUpdate || isProductStatusChange) &&
+        ((isProductCreate ||
+          isProductUpdate ||
+          isProductStatusChange ||
+          isProductOrdersQuery) &&
           body.byteLength > MAX_PRODUCT_BODY_BYTES))
     ) {
       return relayJson(413, "payload_too_large", "중계 요청 본문이 너무 큽니다.");
@@ -677,6 +749,61 @@ async function handleRelayRequest(
   request: Request,
   body?: Uint8Array,
 ) {
+  if (url.pathname === ORDER_CHANGE_PATH) {
+    const parsed = orderChangeQuerySchema.safeParse(
+      Object.fromEntries(url.searchParams),
+    );
+    if (!parsed.success) {
+      return relayJson(
+        400,
+        "invalid_request",
+        "주문 변경 내역 조회 기간을 확인해 주세요.",
+      );
+    }
+    if (!client.fetchLastChangedProductOrders) {
+      return relayJson(
+        503,
+        "not_configured",
+        "주문 조회 기능이 설정되지 않았습니다.",
+      );
+    }
+    const result = await client.fetchLastChangedProductOrders(parsed.data);
+    return {
+      data: {
+        lastChangeStatuses: result.productOrderIds.map((productOrderId) => ({
+          productOrderId,
+        })),
+        ...(result.more ? { more: result.more } : {}),
+      },
+    };
+  }
+  if (url.pathname === PRODUCT_ORDERS_QUERY_PATH) {
+    if (url.search) {
+      return relayJson(
+        400,
+        "invalid_request",
+        "상품 주문 상세 조회에는 검색 조건을 사용할 수 없습니다.",
+      );
+    }
+    const input = parseRelayJsonBody(request, body);
+    if (input instanceof Response) return input;
+    const parsed = productOrdersQuerySchema.safeParse(input);
+    if (!parsed.success) {
+      return relayJson(
+        400,
+        "invalid_request",
+        "상품 주문 번호를 확인해 주세요.",
+      );
+    }
+    if (!client.fetchProductOrders) {
+      return relayJson(
+        503,
+        "not_configured",
+        "주문 조회 기능이 설정되지 않았습니다.",
+      );
+    }
+    return { data: await client.fetchProductOrders(parsed.data.productOrderIds) };
+  }
   const channelProductMatch = CHANNEL_PRODUCT_PATH.exec(url.pathname);
   if (channelProductMatch) {
     if (url.search) {

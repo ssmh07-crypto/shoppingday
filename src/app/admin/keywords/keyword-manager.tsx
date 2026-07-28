@@ -1,7 +1,9 @@
 "use client";
 
-import { useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import Image from "next/image";
+import dynamic from "next/dynamic";
+import type { NaverProductAttribute } from "@/lib/db/schema";
 import {
   defaultKeywordFilters,
   filterAndSortKeywords,
@@ -19,6 +21,36 @@ import type {
   ProductAnalysis,
 } from "@/modules/keywords/types";
 
+const NaverAttributeEditor = dynamic(
+  () =>
+    import("../products/[id]/edit/naver-attribute-editor").then(
+      (module) => module.NaverAttributeEditor,
+    ),
+  { loading: () => <p role="status">네이버 공식 속성 편집기를 불러오는 중…</p> },
+);
+
+type CategoryRequirements = {
+  attributes: Array<{
+    attributeSeq: number;
+    attributeName: string;
+    attributeClassificationType?: "SINGLE_SELECT" | "MULTI_SELECT" | "RANGE";
+    unitUsable?: boolean;
+    representativeUnitCode?: string;
+    attributeValueMaxMatchingCount?: number;
+  }>;
+  attributeValues: Array<{
+    attributeSeq: number;
+    attributeValueSeq: number;
+    attributeValueName?: string;
+    minAttributeValue?: string;
+    minAttributeValueUnitCode?: string;
+    maxAttributeValue?: string;
+    maxAttributeValueUnitCode?: string;
+    exposureOrder?: number;
+  }>;
+  units: Array<{ id: string; unitCodeName: string }>;
+};
+
 type RuntimeStatus = {
   mockMode: boolean;
   searchAdConfigured: boolean;
@@ -35,6 +67,7 @@ type StoreOption = {
 type ApiEnvelope<T> = {
   success: boolean;
   data?: T;
+  requirements?: T;
   items?: ManagedProductSummary[];
   runtime?: RuntimeStatus;
   error?: { message?: string };
@@ -428,6 +461,36 @@ function KeywordProductDetail({
   const [optimizationTags, setOptimizationTags] = useState(
     (detail.product.productInput.searchTags ?? []).join(", "),
   );
+  const [salePrice, setSalePrice] = useState(
+    String(detail.product.productInput.salePrice ?? ""),
+  );
+  const [stockQuantity, setStockQuantity] = useState(
+    String(detail.product.productInput.stockQuantity ?? ""),
+  );
+  const [statusType, setStatusType] = useState<
+    "SALE" | "OUTOFSTOCK" | "SUSPENSION"
+  >(
+    detail.product.productInput.statusType === "OUTOFSTOCK" ||
+      detail.product.productInput.statusType === "SUSPENSION"
+      ? detail.product.productInput.statusType
+      : "SALE",
+  );
+  const [naverAttributes, setNaverAttributes] = useState<
+    NaverProductAttribute[]
+  >(() =>
+    (detail.product.productInput.naverAttributes ?? []).map((attribute) => ({
+      attributeSeq: attribute.attributeSeq,
+      attributeValueSeq: attribute.attributeValueSeq,
+      minValue: attribute.minValue ?? "",
+      maxValue: attribute.maxValue ?? "",
+      unitCode: attribute.unitCode ?? null,
+    })),
+  );
+  const [requirements, setRequirements] =
+    useState<CategoryRequirements | null>(null);
+  const [requirementsError, setRequirementsError] = useState<string | null>(
+    null,
+  );
   const optimizationSearchTags = useMemo(
     () => splitList(optimizationTags),
     [optimizationTags],
@@ -461,6 +524,27 @@ function KeywordProductDetail({
     () => assessProductTitle(draftTitle, detail.analysis?.analysis.productType ?? ""),
     [draftTitle, detail.analysis?.analysis.productType],
   );
+
+  useEffect(() => {
+    const categoryId = detail.product.productInput.naverCategoryId;
+    if (!categoryId) return;
+    const controller = new AbortController();
+    void api<CategoryRequirements>(
+      `/api/integrations/naver/category-requirements?categoryId=${encodeURIComponent(categoryId)}`,
+      { signal: controller.signal },
+    )
+      .then((response) => {
+        setRequirementsError(null);
+        setRequirements(response.requirements ?? null);
+      })
+      .catch((caught) => {
+        if (caught instanceof DOMException && caught.name === "AbortError") {
+          return;
+        }
+        setRequirementsError(errorMessage(caught));
+      });
+    return () => controller.abort();
+  }, [detail.product.productInput.naverCategoryId]);
 
   async function saveSelection() {
     onBusy("selection");
@@ -558,9 +642,11 @@ function KeywordProductDetail({
 
   async function applyOptimizationToNaver() {
     const searchTags = optimizationSearchTags.slice(0, 10);
+    const parsedPrice = Number(salePrice);
+    const parsedStock = Number(stockQuantity);
     if (
       !window.confirm(
-        `스마트스토어 상품을 실제로 수정할까요?\n\n상품명: ${optimizationTitle}\n검색 태그: ${searchTags.join(", ") || "없음"}`,
+        `스마트스토어 상품을 실제로 수정할까요?\n\n상품명: ${optimizationTitle}\n판매가: ${parsedPrice.toLocaleString("ko-KR")}원\n재고: ${parsedStock.toLocaleString("ko-KR")}개\n상태: ${statusLabel(statusType)}\n검색 태그: ${searchTags.join(", ") || "없음"}`,
       )
     ) {
       return;
@@ -577,6 +663,14 @@ function KeywordProductDetail({
             confirmed: true,
             title: optimizationTitle,
             searchTags,
+            salePrice: parsedPrice,
+            stockQuantity: parsedStock,
+            statusType,
+            naverAttributes: serializeNaverAttributes(
+              naverAttributes,
+              requirements,
+              detail.product.productInput.naverAttributes ?? [],
+            ),
           }),
         },
       );
@@ -621,45 +715,116 @@ function KeywordProductDetail({
 
       <NaverImportedProductInfo input={detail.product.productInput} />
 
+      <SalesSummaryPanel
+        detail={detail}
+        busy={busy}
+        onBusy={onBusy}
+        onChange={onDetailChange}
+        onFeedback={onFeedback}
+      />
+
       <section className="keyword-card keyword-growth-optimizer">
         <div className="keyword-card-head">
           <div>
             <span className="inventory-eyebrow">스마트스토어 변경 반영</span>
-            <h2>상품명·검색 태그 최적화</h2>
+            <h2>판매 정보·상품명·태그·속성 편집</h2>
             <p>
-              현재 등록 정보를 기준으로 수정한 뒤 최종 확인을 거쳐 네이버 상품에
-              실제 반영합니다.
+              현재 네이버 등록값을 기준으로 판매가, 재고, 판매 상태와 검색 적합도
+              필드를 함께 수정합니다.
             </p>
           </div>
         </div>
-        <label className="keyword-title-editor">
-          <span>스마트스토어 상품명</span>
-          <textarea
-            rows={2}
-            value={optimizationTitle}
-            onChange={(event) => setOptimizationTitle(event.target.value)}
-          />
-          <small>{optimizationTitle.length}자</small>
-        </label>
-        <label>
-          <span>검색 태그 · 최대 10개</span>
-          <input
-            value={optimizationTags}
-            onChange={(event) => setOptimizationTags(event.target.value)}
-            placeholder="쉼표로 구분"
-          />
-          <small>
-            현재 {optimizationSearchTags.slice(0, 10).length}개 선택
-          </small>
-          {optimizationTagIssues.map((issue) => (
-            <small
-              className="field-error"
-              key={`${issue.tag}-${issue.code}`}
+        <div className="keyword-commerce-fields">
+          <label className="keyword-title-editor wide">
+            <span>스마트스토어 상품명</span>
+            <textarea
+              rows={2}
+              value={optimizationTitle}
+              onChange={(event) => setOptimizationTitle(event.target.value)}
+            />
+            <small>{optimizationTitle.length}자</small>
+          </label>
+          <label>
+            <span>판매가</span>
+            <input
+              type="number"
+              min={1}
+              value={salePrice}
+              onChange={(event) => setSalePrice(event.target.value)}
+            />
+          </label>
+          <label>
+            <span>재고</span>
+            <input
+              type="number"
+              min={0}
+              value={stockQuantity}
+              onChange={(event) => setStockQuantity(event.target.value)}
+            />
+          </label>
+          <label>
+            <span>판매 상태</span>
+            <select
+              value={statusType}
+              onChange={(event) =>
+                {
+                  const next = event.target.value as
+                    | "SALE"
+                    | "OUTOFSTOCK"
+                    | "SUSPENSION";
+                  setStatusType(next);
+                  if (next === "OUTOFSTOCK") setStockQuantity("0");
+                }
+              }
             >
-              {issue.tag}: {issue.message}
+              <option value="SALE">판매 중</option>
+              <option value="OUTOFSTOCK">품절</option>
+              <option value="SUSPENSION">판매 중지</option>
+            </select>
+          </label>
+          <label className="wide">
+            <span>검색 태그 · 최대 10개</span>
+            <input
+              value={optimizationTags}
+              onChange={(event) => setOptimizationTags(event.target.value)}
+              placeholder="쉼표로 구분"
+            />
+            <small>
+              현재 {optimizationSearchTags.slice(0, 10).length}개 선택
             </small>
-          ))}
-        </label>
+            {optimizationTagIssues.map((issue) => (
+              <small
+                className="field-error"
+                key={`${issue.tag}-${issue.code}`}
+              >
+                {issue.tag}: {issue.message}
+              </small>
+            ))}
+          </label>
+        </div>
+        <div className="keyword-attribute-editor">
+          <div>
+            <strong>네이버 카테고리 공식 속성</strong>
+            <span>
+              상품명에 반복하지 않고 속성 필드에 정확한 값을 입력합니다.
+            </span>
+          </div>
+          {requirements ? (
+            <NaverAttributeEditor
+              attributes={requirements.attributes}
+              candidates={requirements.attributeValues}
+              units={requirements.units}
+              value={naverAttributes}
+              onChange={setNaverAttributes}
+            />
+          ) : requirementsError ? (
+            <p className="field-error">{requirementsError}</p>
+          ) : detail.product.productInput.naverCategoryId ? (
+            <p role="status">카테고리 속성을 불러오는 중…</p>
+          ) : (
+            <p>네이버 카테고리 ID가 없어 속성 편집기를 열 수 없습니다.</p>
+          )}
+        </div>
         <div className="keyword-title-save-row">
           <button
             type="button"
@@ -667,6 +832,13 @@ function KeywordProductDetail({
             disabled={
               Boolean(busy) ||
               !optimizationTitle.trim() ||
+              !Number.isInteger(Number(salePrice)) ||
+              Number(salePrice) < 1 ||
+              !Number.isInteger(Number(stockQuantity)) ||
+              Number(stockQuantity) < 0 ||
+              (statusType === "SALE" && Number(stockQuantity) < 1) ||
+              (statusType === "OUTOFSTOCK" &&
+                Number(stockQuantity) !== 0) ||
               optimizationSearchTags.length > 10 ||
               optimizationTagIssues.length > 0
             }
@@ -879,6 +1051,83 @@ function KeywordProductDetail({
         </section>
       )}
     </div>
+  );
+}
+
+function SalesSummaryPanel({
+  detail,
+  busy,
+  onBusy,
+  onChange,
+  onFeedback,
+}: {
+  detail: ManagedProductDetail;
+  busy: string | null;
+  onBusy: (value: string | null) => void;
+  onChange: (value: ManagedProductDetail) => void;
+  onFeedback: (message: string | null, error: string | null) => void;
+}) {
+  const summary = detail.product.productInput.salesSummary;
+
+  async function refresh() {
+    onBusy("sales-summary");
+    onFeedback(null, null);
+    try {
+      const response = await api<ManagedProductDetail>(
+        `/api/keyword-products/${detail.product.id}/sales-summary`,
+        { method: "POST" },
+      );
+      onChange(response.data!);
+      onFeedback("네이버 주문 기준 최근 판매 수량을 갱신했습니다.", null);
+    } catch (caught) {
+      onFeedback(null, errorMessage(caught));
+    } finally {
+      onBusy(null);
+    }
+  }
+
+  return (
+    <section className="keyword-card keyword-sales-summary">
+      <div className="keyword-sales-heading">
+        <div>
+          <span className="inventory-eyebrow">실제 판매 반응</span>
+          <h2>최근 판매 수량</h2>
+          <p>취소·반품·미결제 수량을 제외한 네이버 주문의 잔여수량입니다.</p>
+        </div>
+        <button
+          type="button"
+          className="secondary"
+          onClick={() => void refresh()}
+          disabled={Boolean(busy)}
+        >
+          {busy === "sales-summary" ? "주문 조회 중…" : "판매 수량 새로고침"}
+        </button>
+      </div>
+      <div className="keyword-sales-cards">
+        <article>
+          <span>최근 7일</span>
+          <strong>
+            {summary ? summary.sevenDays.toLocaleString("ko-KR") : "—"}
+            <small>개</small>
+          </strong>
+        </article>
+        <article>
+          <span>최근 30일</span>
+          <strong>
+            {summary ? summary.thirtyDays.toLocaleString("ko-KR") : "—"}
+            <small>개</small>
+          </strong>
+        </article>
+        <article className="keyword-sales-meta">
+          <span>마지막 확인</span>
+          <strong>
+            {summary
+              ? new Date(summary.fetchedAt).toLocaleString("ko-KR")
+              : "아직 조회하지 않음"}
+          </strong>
+        </article>
+      </div>
+    </section>
   );
 }
 
@@ -1620,6 +1869,55 @@ function formatRawVolume(raw: string | null, normalized: number | null) {
 
 function competitionLabel(value: KeywordCandidateRecord["competition"]) {
   return { low: "낮음", medium: "중간", high: "높음", unknown: "알 수 없음" }[value];
+}
+
+function statusLabel(value: "SALE" | "OUTOFSTOCK" | "SUSPENSION") {
+  return {
+    SALE: "판매 중",
+    OUTOFSTOCK: "품절",
+    SUSPENSION: "판매 중지",
+  }[value];
+}
+
+function serializeNaverAttributes(
+  values: NaverProductAttribute[],
+  requirements: CategoryRequirements | null,
+  existing: NonNullable<
+    ManagedProductDetail["product"]["productInput"]["naverAttributes"]
+  >,
+) {
+  return values.map((value) => {
+    const definition = requirements?.attributes.find(
+      (item) => item.attributeSeq === value.attributeSeq,
+    );
+    const candidate = requirements?.attributeValues.find(
+      (item) =>
+        item.attributeSeq === value.attributeSeq &&
+        item.attributeValueSeq === value.attributeValueSeq,
+    );
+    const previous = existing.find(
+      (item) =>
+        item.attributeSeq === value.attributeSeq &&
+        item.attributeValueSeq === value.attributeValueSeq,
+    );
+    const displayValue =
+      candidate?.attributeValueName ||
+      [value.minValue, value.maxValue].filter(Boolean).join(" ~ ") ||
+      previous?.value ||
+      "직접 입력";
+    return {
+      attributeSeq: value.attributeSeq,
+      attributeName:
+        definition?.attributeName ??
+        previous?.attributeName ??
+        `속성 ${value.attributeSeq}`,
+      attributeValueSeq: value.attributeValueSeq,
+      value: displayValue,
+      minValue: value.minValue,
+      maxValue: value.maxValue,
+      unitCode: value.unitCode,
+    };
+  });
 }
 
 async function api<T = unknown>(url: string, init?: RequestInit): Promise<ApiEnvelope<T>> {

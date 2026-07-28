@@ -295,6 +295,10 @@ describe("키워드 관리 서비스", () => {
       confirmed: true,
       title: "여름 린넨 원피스",
       searchTags: ["휴양지룩", "하객룩"],
+      salePrice: 29000,
+      stockQuantity: 20,
+      statusType: "SALE",
+      naverAttributes: [],
     });
 
     expect(updater.apply).toHaveBeenCalledWith(
@@ -302,6 +306,10 @@ describe("키워드 관리 서비스", () => {
       {
         title: "여름 린넨 원피스",
         searchTags: ["휴양지룩", "하객룩"],
+        salePrice: 29000,
+        stockQuantity: 20,
+        statusType: "SALE",
+        naverAttributes: [],
       },
       undefined,
     );
@@ -311,6 +319,10 @@ describe("키워드 관리 서비스", () => {
       {
         title: "여름 린넨 원피스",
         searchTags: ["휴양지룩", "하객룩"],
+        salePrice: 29000,
+        stockQuantity: 20,
+        statusType: "SALE",
+        naverAttributes: [],
       },
     );
   });

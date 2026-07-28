@@ -276,6 +276,16 @@ export interface ManagedProductInput {
     fetchedAt: string | null;
     message: string | null;
   };
+  salePrice?: number | null;
+  stockQuantity?: number | null;
+  statusType?: string;
+  representativeImageUrl?: string;
+  salesSummary?: {
+    sevenDays: number;
+    thirtyDays: number;
+    fetchedAt: string;
+    source: "naver_orders";
+  };
 }
 
 export interface ProductAnalysisData {

@@ -39,6 +39,79 @@ function json(value: unknown, status = 200) {
 }
 
 describe("네이버 커머스API 클라이언트", () => {
+  it("변경 주문 번호와 상품 주문 상세를 개인정보 없이 조회한다", async () => {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        json({ access_token: "token", expires_in: 10800, token_type: "Bearer" }),
+      )
+      .mockResolvedValueOnce(
+        json({
+          data: {
+            lastChangeStatuses: [{ productOrderId: "order-1" }],
+            more: {
+              moreFrom: "2026-07-28T12:00:00+09:00",
+              moreSequence: 12,
+            },
+          },
+        }),
+      )
+      .mockResolvedValueOnce(
+        json({
+          data: [
+            {
+              order: {
+                paymentDate: "2026-07-28T10:00:00+09:00",
+                ordererName: "응답에서 제거되어야 함",
+              },
+              productOrder: {
+                productId: "200000001",
+                productOrderStatus: "PAYED",
+                quantity: 2,
+                remainQuantity: 2,
+                shippingAddress: { baseAddress: "응답에서 제거되어야 함" },
+              },
+            },
+          ],
+        }),
+      );
+    const client = new NaverCommerceClient(config, fetcher, () => now);
+
+    await expect(
+      client.fetchLastChangedProductOrders({
+        lastChangedFrom: "2026-07-28T00:00:00.000Z",
+        lastChangedTo: "2026-07-29T00:00:00.000Z",
+      }),
+    ).resolves.toEqual({
+      productOrderIds: ["order-1"],
+      more: {
+        moreFrom: "2026-07-28T12:00:00+09:00",
+        moreSequence: "12",
+      },
+    });
+    await expect(client.fetchProductOrders(["order-1"])).resolves.toEqual([
+      {
+        order: { paymentDate: "2026-07-28T10:00:00+09:00" },
+        productOrder: {
+          productId: "200000001",
+          productOrderStatus: "PAYED",
+          quantity: 2,
+          remainQuantity: 2,
+        },
+      },
+    ]);
+    expect(String(fetcher.mock.calls[1]?.[0])).toContain(
+      "/v1/pay-order/seller/product-orders/last-changed-statuses",
+    );
+    expect(fetcher.mock.calls[2]?.[1]).toMatchObject({
+      method: "POST",
+      body: JSON.stringify({
+        productOrderIds: ["order-1"],
+        quantityClaimCompatibility: true,
+      }),
+    });
+  });
+
   it("v2 상품 등록 응답의 원상품번호와 채널상품번호를 저장 형식으로 변환한다", async () => {
     const fetcher = vi
       .fn<typeof fetch>()

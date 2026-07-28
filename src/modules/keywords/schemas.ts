@@ -9,11 +9,20 @@ const naverRegisteredAttributeSchema = z.object({
   attributeName: z.string().trim().min(1).max(100),
   attributeValueSeq: z.number().int().nonnegative().nullable(),
   value: z.string().trim().min(1).max(200),
+  minValue: z.string().trim().max(100).optional(),
+  maxValue: z.string().trim().max(100).optional(),
+  unitCode: z.string().trim().max(30).nullable().optional(),
 });
 const naverCommerceImportStateSchema = z.object({
   status: z.enum(["success", "failed", "not_configured"]),
   fetchedAt: z.string().datetime().nullable(),
   message: z.string().trim().max(300).nullable(),
+});
+const managedProductSalesSummarySchema = z.object({
+  sevenDays: z.number().int().nonnegative(),
+  thirtyDays: z.number().int().nonnegative(),
+  fetchedAt: z.string().datetime(),
+  source: z.literal("naver_orders"),
 });
 
 export const managedProductInputSchema = z.object({
@@ -42,6 +51,7 @@ export const managedProductInputSchema = z.object({
   stockQuantity: z.number().int().nonnegative().nullable().optional(),
   statusType: z.string().trim().max(30).optional(),
   representativeImageUrl: z.url().optional(),
+  salesSummary: managedProductSalesSummarySchema.optional(),
 });
 
 export const createManagedProductSchema = z.object({
@@ -62,13 +72,32 @@ export const keywordRankObservationSchema = z.object({
 export const applyManagedProductToNaverSchema = z.object({
   confirmed: z.literal(true),
   title: z.string().trim().min(1).max(keywordLimits.maximumProductTitleLength),
+  salePrice: z.number().int().min(1).max(999_999_990),
+  stockQuantity: z.number().int().min(0).max(99_999_999),
+  statusType: z.enum(["SALE", "OUTOFSTOCK", "SUSPENSION"]),
+  naverAttributes: z.array(naverRegisteredAttributeSchema).max(100),
   searchTags: z
     .array(z.string().trim().min(1).max(40))
     .max(10)
     .transform((values) => [...new Set(values)]),
-}).superRefine((input, context) => {
-  addSearchTagQualityIssues(context, input.searchTags, input.title);
-});
+})
+  .superRefine((input, context) => {
+    addSearchTagQualityIssues(context, input.searchTags, input.title);
+    if (input.statusType === "SALE" && input.stockQuantity < 1) {
+      context.addIssue({
+        code: "custom",
+        path: ["stockQuantity"],
+        message: "판매 중 상태는 재고를 1개 이상 입력해야 합니다.",
+      });
+    }
+    if (input.statusType === "OUTOFSTOCK" && input.stockQuantity !== 0) {
+      context.addIssue({
+        code: "custom",
+        path: ["stockQuantity"],
+        message: "품절 상태는 재고를 0개로 입력해야 합니다.",
+      });
+    }
+  });
 
 export const productAnalysisSchema = z.object({
   productType: z.string().trim().max(200).default(""),

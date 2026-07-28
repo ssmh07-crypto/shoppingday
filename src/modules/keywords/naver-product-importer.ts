@@ -3,7 +3,10 @@ import { NaverCommerceError } from "@/modules/channels/naver/naver-commerce-clie
 import type { NaverCategoryRepository } from "@/modules/channels/naver/naver-category-repository";
 import type { NaverCategoriesClient } from "@/modules/channels/naver/naver-commerce-relay";
 import type { NaverProductPayload } from "@/modules/channels/naver/naver-product-payload";
-import type { NaverRegisteredAttribute } from "./types";
+import type {
+  ManagedProductSalesSummary,
+  NaverRegisteredAttribute,
+} from "./types";
 
 export interface ImportedNaverProductData {
   currentTitle: string;
@@ -32,9 +35,23 @@ export interface NaverManagedProductImporter {
 export interface NaverManagedProductUpdater {
   apply(
     channelProductNo: string,
-    input: { title: string; searchTags: string[] },
+    input: {
+      title: string;
+      searchTags: string[];
+      salePrice: number;
+      stockQuantity: number;
+      statusType: "SALE" | "OUTOFSTOCK" | "SUSPENSION";
+      naverAttributes: NaverRegisteredAttribute[];
+    },
     storeConnectionId?: string,
   ): Promise<void>;
+}
+
+export interface NaverManagedProductSalesReader {
+  summarize(
+    channelProductNo: string,
+    storeConnectionId?: string,
+  ): Promise<ManagedProductSalesSummary>;
 }
 
 export class CommerceApiManagedProductImporter
@@ -81,6 +98,16 @@ export class CommerceApiManagedProductImporter
               definition?.attributeName || `속성 ${selected.attributeSeq}`,
             attributeValueSeq: selected.attributeValueSeq ?? null,
             value,
+            minValue:
+              selected.attributeRealValue === undefined
+                ? metadataValue?.minAttributeValue ?? ""
+                : String(selected.attributeRealValue),
+            maxValue: metadataValue?.maxAttributeValue ?? "",
+            unitCode:
+              selected.attributeRealValueUnitCode ??
+              metadataValue?.minAttributeValueUnitCode ??
+              metadataValue?.maxAttributeValueUnitCode ??
+              null,
           },
         ];
       },
@@ -117,7 +144,14 @@ export class CommerceApiManagedProductUpdater
 
   async apply(
     channelProductNo: string,
-    input: { title: string; searchTags: string[] },
+    input: {
+      title: string;
+      searchTags: string[];
+      salePrice: number;
+      stockQuantity: number;
+      statusType: "SALE" | "OUTOFSTOCK" | "SUSPENSION";
+      naverAttributes: NaverRegisteredAttribute[];
+    },
   ) {
     const product = await this.client.fetchChannelProduct(channelProductNo);
     if (
@@ -139,8 +173,34 @@ export class CommerceApiManagedProductUpdater
       originProduct: {
         ...originProduct,
         name: input.title,
+        salePrice: input.salePrice,
+        stockQuantity: input.stockQuantity,
+        statusType:
+          input.statusType === "OUTOFSTOCK" ? "SALE" : input.statusType,
         detailAttribute: {
           ...originProduct.detailAttribute,
+          productAttributes: input.naverAttributes.flatMap((attribute) => {
+            const realValue =
+              attribute.minValue?.trim() || attribute.maxValue?.trim();
+            if (attribute.attributeValueSeq == null && !realValue) return [];
+            return [
+              {
+                attributeSeq: attribute.attributeSeq,
+                attributeValueSeq: attribute.attributeValueSeq,
+                ...(realValue
+                  ? {
+                      attributeRealValue: realValue,
+                      ...(attribute.unitCode
+                        ? {
+                            attributeRealValueUnitCode:
+                              attribute.unitCode,
+                          }
+                        : {}),
+                    }
+                  : {}),
+              },
+            ];
+          }),
           seoInfo: {
             ...(originProduct.detailAttribute.seoInfo ?? {}),
             sellerTags: input.searchTags.map((text) => ({ text })),
@@ -150,6 +210,106 @@ export class CommerceApiManagedProductUpdater
       smartstoreChannelProduct: product.smartstoreChannelProduct,
     } as unknown as NaverProductPayload;
     await this.client.updateProduct(product.originProductNo, payload);
+  }
+}
+
+export class CommerceApiManagedProductSalesReader
+  implements NaverManagedProductSalesReader
+{
+  constructor(
+    private readonly client: NaverCategoriesClient,
+    private readonly now: () => Date = () => new Date(),
+  ) {}
+
+  async summarize(
+    channelProductNo: string,
+  ): Promise<ManagedProductSalesSummary> {
+    if (
+      !this.client.fetchLastChangedProductOrders ||
+      !this.client.fetchProductOrders
+    ) {
+      throw new NaverCommerceError(
+        "not_configured",
+        "네이버 주문 조회 기능이 설정되지 않았습니다.",
+      );
+    }
+    const now = this.now();
+    const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60_000);
+    const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60_000);
+    const productOrderIds = new Set<string>();
+    const windows = Array.from({ length: 30 }, (_, index) => {
+      const start = new Date(
+        thirtyDaysAgo.getTime() + index * 24 * 60 * 60_000,
+      );
+      return {
+        start,
+        end: new Date(
+          Math.min(start.getTime() + 24 * 60 * 60_000, now.getTime()),
+        ),
+      };
+    });
+    await Promise.all(
+      Array.from({ length: 3 }, async (_, worker) => {
+        for (
+          let windowIndex = worker;
+          windowIndex < windows.length;
+          windowIndex += 3
+        ) {
+          const window = windows[windowIndex]!;
+          let cursorFrom = window.start.toISOString();
+          let moreSequence: string | undefined;
+          for (let page = 0; page < 100; page += 1) {
+            const result = await this.client.fetchLastChangedProductOrders!({
+              lastChangedFrom: cursorFrom,
+              lastChangedTo: window.end.toISOString(),
+              ...(moreSequence ? { moreSequence } : {}),
+            });
+            result.productOrderIds.forEach((id) => productOrderIds.add(id));
+            if (!result.more) break;
+            cursorFrom = result.more.moreFrom;
+            moreSequence = result.more.moreSequence;
+          }
+        }
+      }),
+    );
+
+    let sevenDays = 0;
+    let thirtyDays = 0;
+    const ids = [...productOrderIds];
+    for (let index = 0; index < ids.length; index += 300) {
+      const rows = await this.client.fetchProductOrders(
+        ids.slice(index, index + 300),
+      );
+      for (const row of rows) {
+        const order = row.productOrder;
+        const paidAt = row.order.paymentDate
+          ? new Date(row.order.paymentDate)
+          : null;
+        if (
+          order.productId !== channelProductNo ||
+          !paidAt ||
+          Number.isNaN(paidAt.getTime()) ||
+          [
+            "PAYMENT_WAITING",
+            "CANCELED",
+            "RETURNED",
+            "CANCELED_BY_NOPAYMENT",
+          ].includes(order.productOrderStatus)
+        ) {
+          continue;
+        }
+        const quantity = order.remainQuantity ?? order.quantity;
+        if (paidAt >= thirtyDaysAgo) thirtyDays += quantity;
+        if (paidAt >= sevenDaysAgo) sevenDays += quantity;
+      }
+    }
+
+    return {
+      sevenDays,
+      thirtyDays,
+      fetchedAt: now.toISOString(),
+      source: "naver_orders",
+    };
   }
 }
 

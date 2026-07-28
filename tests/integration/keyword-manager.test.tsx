@@ -211,6 +211,10 @@ describe("성장 상품 키워드 관리 화면", () => {
             confirmed: true,
             title: "성장형 여름 원피스",
             searchTags: ["휴양지룩", "하객룩"],
+            salePrice: 29000,
+            stockQuantity: 20,
+            statusType: "SALE",
+            naverAttributes: [],
           }),
         }),
       ),
@@ -249,6 +253,10 @@ const productInput = {
   supplierUrl: "",
   imageUrls: [],
   memo: "",
+  salePrice: 29000,
+  stockQuantity: 20,
+  statusType: "SALE",
+  naverAttributes: [],
 };
 
 const summary: ManagedProductSummary = {

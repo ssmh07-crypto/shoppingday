@@ -107,7 +107,14 @@ export interface KeywordManagementRepository {
   markNaverApplied(
     ownerId: string,
     productId: string,
-    value: { title: string; searchTags: string[] },
+    value: {
+      title: string;
+      searchTags: string[];
+      salePrice: number;
+      stockQuantity: number;
+      statusType: "SALE" | "OUTOFSTOCK" | "SUSPENSION";
+      naverAttributes: ManagedProductInput["naverAttributes"];
+    },
   ): Promise<boolean>;
 }
 
@@ -771,7 +778,14 @@ export class DrizzleKeywordManagementRepository
   async markNaverApplied(
     ownerId: string,
     productId: string,
-    value: { title: string; searchTags: string[] },
+    value: {
+      title: string;
+      searchTags: string[];
+      salePrice: number;
+      stockQuantity: number;
+      statusType: "SALE" | "OUTOFSTOCK" | "SUSPENSION";
+      naverAttributes: ManagedProductInput["naverAttributes"];
+    },
   ) {
     return this.database.transaction(async (tx) => {
       const [current] = await tx
@@ -795,6 +809,10 @@ export class DrizzleKeywordManagementRepository
             ...current.productInput,
             currentTitle: value.title,
             searchTags: value.searchTags,
+            salePrice: value.salePrice,
+            stockQuantity: value.stockQuantity,
+            statusType: value.statusType,
+            naverAttributes: value.naverAttributes,
             commerceImport: {
               status: "success",
               fetchedAt: new Date().toISOString(),

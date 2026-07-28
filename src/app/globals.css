@@ -1967,6 +1967,119 @@ td small {
 .keyword-rank-tracker {
   display: grid;
   gap: 16px;
+  padding: 24px;
+}
+
+.keyword-import-panel {
+  padding: 24px;
+}
+
+.keyword-commerce-fields {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.keyword-commerce-fields label {
+  display: grid;
+  gap: 7px;
+  color: #344054;
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.keyword-commerce-fields .wide {
+  grid-column: 1 / -1;
+}
+
+.keyword-attribute-editor {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+  border: 1px solid #dce3ed;
+  border-radius: 10px;
+  background: #f8fafc;
+}
+
+.keyword-attribute-editor > div:first-child {
+  display: grid;
+  gap: 4px;
+}
+
+.keyword-attribute-editor > div:first-child strong {
+  color: #253047;
+  font-size: 15px;
+}
+
+.keyword-attribute-editor > div:first-child span,
+.keyword-attribute-editor > p {
+  margin: 0;
+  color: #697386;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.keyword-sales-summary {
+  display: grid;
+  gap: 18px;
+  padding: 24px;
+}
+
+.keyword-sales-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.keyword-sales-heading h2 {
+  margin: 5px 0 4px;
+  font-size: 20px;
+}
+
+.keyword-sales-heading p {
+  margin: 0;
+  color: #697386;
+  font-size: 13px;
+}
+
+.keyword-sales-cards {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(150px, 0.55fr)) minmax(220px, 1fr);
+  gap: 12px;
+}
+
+.keyword-sales-cards article {
+  display: grid;
+  gap: 9px;
+  padding: 18px;
+  border: 1px solid #dce4ef;
+  border-radius: 10px;
+  background: #f8fafc;
+}
+
+.keyword-sales-cards article > span {
+  color: #697386;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.keyword-sales-cards article > strong {
+  color: #172554;
+  font-size: 28px;
+  letter-spacing: -0.035em;
+}
+
+.keyword-sales-cards article > strong small {
+  margin-left: 4px;
+  color: #667085;
+  font-size: 13px;
+}
+
+.keyword-sales-cards .keyword-sales-meta > strong {
+  color: #344054;
+  font-size: 15px;
+  letter-spacing: 0;
 }
 
 .keyword-rank-entry {
@@ -3740,7 +3853,14 @@ td small {
 .keyword-page {
   --keyword-line: #e1e6ee;
   --keyword-muted: #697386;
+  width: min(1480px, calc(100% - 40px));
+  padding-right: clamp(24px, 3vw, 44px);
+  padding-left: clamp(24px, 3vw, 44px);
   font-size: 16px;
+}
+.keyword-page,
+.keyword-page * {
+  font-family: var(--app-font-family);
 }
 .keyword-page button,
 .keyword-page input,
@@ -4589,7 +4709,25 @@ td small {
     display: none;
   }
   .keyword-page {
+    width: 100%;
     padding: 22px 14px;
+  }
+  .keyword-growth-optimizer,
+  .keyword-rank-tracker,
+  .keyword-import-panel,
+  .keyword-sales-summary {
+    padding: 18px;
+  }
+  .keyword-commerce-fields,
+  .keyword-sales-cards {
+    grid-template-columns: 1fr;
+  }
+  .keyword-commerce-fields .wide {
+    grid-column: auto;
+  }
+  .keyword-sales-heading {
+    align-items: stretch;
+    flex-direction: column;
   }
   .keyword-heading,
   .keyword-card-head,

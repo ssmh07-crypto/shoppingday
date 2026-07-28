@@ -4,6 +4,7 @@ vi.mock("server-only", () => ({}));
 
 import {
   CommerceApiManagedProductImporter,
+  CommerceApiManagedProductSalesReader,
   CommerceApiManagedProductUpdater,
 } from "@/modules/keywords/naver-product-importer";
 
@@ -65,7 +66,7 @@ describe("네이버 관리 상품 정보 가져오기", () => {
     });
   });
 
-  it("현재 전체 상품정보를 유지하면서 상품명과 검색 태그만 교체한다", async () => {
+  it("현재 전체 상품정보를 유지하면서 성장 관리 편집값을 교체한다", async () => {
     const client = {
       fetchChannelProduct: vi.fn().mockResolvedValue({
         originProductNo: "100000001",
@@ -95,6 +96,10 @@ describe("네이버 관리 상품 정보 가져오기", () => {
     await updater.apply("200000001", {
       title: "변경 상품명",
       searchTags: ["새태그", "성장키워드"],
+      salePrice: 15000,
+      stockQuantity: 25,
+      statusType: "SALE",
+      naverAttributes: [],
     });
 
     expect(client.updateProduct).toHaveBeenCalledWith(
@@ -102,7 +107,9 @@ describe("네이버 관리 상품 정보 가져오기", () => {
       expect.objectContaining({
         originProduct: expect.objectContaining({
           name: "변경 상품명",
-          salePrice: 12000,
+          salePrice: 15000,
+          stockQuantity: 25,
+          statusType: "SALE",
           detailAttribute: expect.objectContaining({
             seoInfo: { sellerTags: [{ text: "새태그" }, { text: "성장키워드" }] },
           }),
@@ -112,5 +119,64 @@ describe("네이버 관리 상품 정보 가져오기", () => {
         }),
       }),
     );
+  });
+
+  it("네이버 주문의 결제일과 잔여수량으로 7일·30일 판매량을 계산한다", async () => {
+    const client = {
+      fetchLastChangedProductOrders: vi.fn().mockResolvedValue({
+        productOrderIds: ["order-1", "order-2", "order-3", "order-4"],
+      }),
+      fetchProductOrders: vi.fn().mockResolvedValue([
+        {
+          order: { paymentDate: "2026-07-27T12:00:00+09:00" },
+          productOrder: {
+            productId: "200000001",
+            productOrderStatus: "DELIVERED",
+            quantity: 2,
+            remainQuantity: 2,
+          },
+        },
+        {
+          order: { paymentDate: "2026-07-10T12:00:00+09:00" },
+          productOrder: {
+            productId: "200000001",
+            productOrderStatus: "PURCHASE_DECIDED",
+            quantity: 3,
+            remainQuantity: 3,
+          },
+        },
+        {
+          order: { paymentDate: "2026-07-26T12:00:00+09:00" },
+          productOrder: {
+            productId: "200000001",
+            productOrderStatus: "CANCELED",
+            quantity: 4,
+            remainQuantity: 0,
+          },
+        },
+        {
+          order: { paymentDate: "2026-07-26T12:00:00+09:00" },
+          productOrder: {
+            productId: "999999999",
+            productOrderStatus: "DELIVERED",
+            quantity: 9,
+            remainQuantity: 9,
+          },
+        },
+      ]),
+    };
+    const reader = new CommerceApiManagedProductSalesReader(
+      client as never,
+      () => new Date("2026-07-29T00:00:00.000Z"),
+    );
+
+    await expect(reader.summarize("200000001")).resolves.toEqual({
+      sevenDays: 2,
+      thirtyDays: 5,
+      fetchedAt: "2026-07-29T00:00:00.000Z",
+      source: "naver_orders",
+    });
+    expect(client.fetchLastChangedProductOrders).toHaveBeenCalledTimes(30);
+    expect(client.fetchProductOrders).toHaveBeenCalledTimes(1);
   });
 });
