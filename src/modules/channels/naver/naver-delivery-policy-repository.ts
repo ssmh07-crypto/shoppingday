@@ -9,7 +9,10 @@ import {
   products,
 } from "@/lib/db/schema";
 import { ProductNotFoundError } from "@/modules/products/product-errors";
-import type { NaverDeliveryPolicyTemplateInput } from "./naver-delivery-policy";
+import {
+  resolveDeliveryPolicyStoreTarget,
+  type NaverDeliveryPolicyTemplateInput,
+} from "./naver-delivery-policy";
 
 export class NaverDeliveryPolicyRepository {
   constructor(private readonly database: Database) {}
@@ -197,7 +200,7 @@ export class NaverDeliveryPolicyRepository {
     deliveryPolicyId: string,
   ) {
     return this.database.transaction(async (tx) => {
-      const [owned, target, policy] = await Promise.all([
+      const [owned, target, policy, defaultStore] = await Promise.all([
         tx
           .select({ id: products.id })
           .from(products)
@@ -226,14 +229,34 @@ export class NaverDeliveryPolicyRepository {
           )
           .limit(1)
           .then((rows) => rows[0]),
+        tx
+          .select({ id: naverStoreConnections.id })
+          .from(naverStoreConnections)
+          .where(eq(naverStoreConnections.userId, userId))
+          .orderBy(
+            desc(naverStoreConnections.isDefault),
+            asc(naverStoreConnections.createdAt),
+          )
+          .limit(1)
+          .then((rows) => rows[0]),
       ]);
       if (!owned) throw new ProductNotFoundError();
-      if (
-        !target ||
-        !policy ||
-        policy.storeConnectionId !== target.storeConnectionId
-      ) {
+      if (!policy) {
         throw new NaverDeliveryPolicyNotFoundError();
+      }
+      const targetStoreId = resolveDeliveryPolicyStoreTarget(
+        target?.storeConnectionId ?? null,
+        defaultStore?.id ?? null,
+        policy.storeConnectionId,
+      );
+      if (!targetStoreId) throw new NaverDeliveryPolicyNotFoundError();
+      if (!target) {
+        await tx
+          .insert(productNaverStoreTargets)
+          .values({ productId, storeConnectionId: targetStoreId })
+          .onConflictDoNothing({
+            target: productNaverStoreTargets.productId,
+          });
       }
       await tx
         .insert(productNaverDeliveryPolicySelections)

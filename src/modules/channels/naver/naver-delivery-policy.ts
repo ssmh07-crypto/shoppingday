@@ -13,3 +13,12 @@ export const naverDeliveryPolicyTemplateInputSchema = z.object({
 export type NaverDeliveryPolicyTemplateInput = z.infer<
   typeof naverDeliveryPolicyTemplateInputSchema
 >;
+
+export function resolveDeliveryPolicyStoreTarget(
+  explicitStoreId: string | null,
+  defaultStoreId: string | null,
+  policyStoreId: string,
+) {
+  const targetStoreId = explicitStoreId ?? defaultStoreId;
+  return targetStoreId === policyStoreId ? targetStoreId : null;
+}

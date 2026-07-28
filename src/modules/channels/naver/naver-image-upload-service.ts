@@ -1,7 +1,4 @@
-import type {
-  NaverCommerceUploadedImage,
-  NaverImageUploadFile,
-} from "./naver-commerce-client";
+import type { NaverImageUploadFile } from "./naver-commerce-client";
 import type { NaverCategoriesClient } from "./naver-commerce-relay";
 import type { ProductEditRepository } from "@/modules/products/product-edit-repository";
 import {
@@ -40,12 +37,10 @@ export class NaverImageUploadService {
       return { kind: "ok" as const, product: current.product, uploadedCount: 0 };
     }
 
-    const downloaded: Array<{
-      imageId: string;
-      sourceUrl: string;
-      file: NaverImageUploadFile;
-    }> = [];
     let totalBytes = 0;
+    let product = current.product;
+    let version = draftVersion;
+    let uploadedCount = 0;
     for (const [index, image] of pending.entries()) {
       const file = await downloadNaverImage(image.sourceUrl, index, this.fetcher);
       totalBytes += file.bytes.byteLength;
@@ -54,30 +49,29 @@ export class NaverImageUploadService {
           selectedImages: "업로드할 이미지의 전체 크기는 50 MiB 이하여야 합니다.",
         });
       }
-      downloaded.push({ imageId: image.id, sourceUrl: image.sourceUrl, file });
-    }
-
-    const uploaded: NaverCommerceUploadedImage[] = [];
-    for (const item of downloaded) {
-      const result = await this.client.uploadProductImages([item.file]);
-      if (result.length !== 1) {
+      const uploaded = await this.client.uploadProductImages([file]);
+      if (uploaded.length !== 1) {
         throw new Error("naver_image_upload_count_mismatch");
       }
-      uploaded.push(result[0]!);
+      const saved = await this.repo.saveNaverImageUrls(
+        productId,
+        ownerId,
+        version,
+        [
+          {
+            imageId: image.id,
+            sourceUrl: image.sourceUrl,
+            storedUrl: uploaded[0]!.url,
+          },
+        ],
+      );
+      if (saved.kind === "not_found") throw new ProductNotFoundError();
+      if (saved.kind === "conflict") throw new ProductConflictError();
+      product = saved.product;
+      version = saved.product.draftVersion;
+      uploadedCount += 1;
     }
-    const result = await this.repo.saveNaverImageUrls(
-      productId,
-      ownerId,
-      draftVersion,
-      downloaded.map((item, index) => ({
-        imageId: item.imageId,
-        sourceUrl: item.sourceUrl,
-        storedUrl: uploaded[index]!.url,
-      })),
-    );
-    if (result.kind === "not_found") throw new ProductNotFoundError();
-    if (result.kind === "conflict") throw new ProductConflictError();
-    return { ...result, uploadedCount: uploaded.length };
+    return { kind: "ok" as const, product, uploadedCount };
   }
 }
 
