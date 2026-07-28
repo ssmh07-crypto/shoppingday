@@ -379,7 +379,7 @@ export function NaverDeliveryPolicyInput({
             ["", "선택"],
             ...(options?.bundleGroups.map((group) => [
               String(group.id),
-              `${group.name}${group.baseGroup ? " (기본)" : ""}`,
+              `${group.name}${group.baseGroup ? " (기본)" : ""} · ${group.id}`,
             ] as const) ?? []),
           ]}
         />
@@ -460,5 +460,5 @@ function addressLabel(address: Address) {
   const location =
     address.address ||
     [address.baseAddress, address.detailAddress].filter(Boolean).join(" ");
-  return `${address.name}${location ? ` · ${location}` : ""}`;
+  return `${address.name}${location ? ` · ${location}` : ""} · ${address.addressBookNo}`;
 }

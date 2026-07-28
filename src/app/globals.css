@@ -2994,6 +2994,9 @@ td small {
   .naver-store-form-grid {
     grid-template-columns: 1fr;
   }
+  .naver-delivery-address-groups {
+    grid-template-columns: 1fr;
+  }
   .drawer-url-import > div {
     flex-direction: column;
   }
@@ -3421,7 +3424,8 @@ td small {
   background: #fff;
   box-shadow: 0 5px 16px #1f293708;
 }
-.naver-delivery-policy-manager {
+.naver-delivery-policy-manager,
+.naver-delivery-address-book {
   display: grid;
   gap: 18px;
   margin-bottom: 18px;
@@ -3430,6 +3434,50 @@ td small {
   border-radius: 10px;
   background: #fff;
   box-shadow: 0 5px 16px #1f293708;
+}
+.naver-delivery-address-groups {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+.naver-delivery-address-groups > section {
+  padding: 18px;
+  border: 1px solid #e1e5ec;
+  border-radius: 8px;
+  background: #f9fafc;
+}
+.naver-delivery-address-groups h3 {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0 0 10px;
+  font-size: 15px;
+}
+.naver-delivery-address-groups h3 span {
+  color: #697386;
+  font-size: 12px;
+}
+.naver-delivery-address-groups article {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 11px 0;
+  border-top: 1px solid #e1e5ec;
+}
+.naver-delivery-address-groups article p,
+.naver-delivery-address-groups > section > p {
+  margin: 4px 0 0;
+  color: #697386;
+  font-size: 13px;
+}
+.naver-delivery-address-groups code {
+  flex: 0 0 auto;
+  padding: 4px 7px;
+  border-radius: 5px;
+  background: #eef2ff;
+  color: #4338ca;
+  font-weight: 800;
 }
 .naver-delivery-policy-store,
 .naver-delivery-template-editor-heading label {

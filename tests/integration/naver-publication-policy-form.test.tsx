@@ -3,6 +3,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { NaverDeliveryAddressBookManager } from "@/app/admin/channels/naver/naver-delivery-address-book-manager";
 import { NaverDeliveryPolicyManager } from "@/app/admin/channels/naver/naver-delivery-policy-manager";
 import { NaverPublicationPolicyForm } from "@/app/admin/components/naver-publication-policy-form";
 import { emptyNaverPublicationPolicy } from "@/modules/channels/naver/naver-publication-policy";
@@ -13,6 +14,73 @@ afterEach(() => {
 });
 
 describe("네이버 판매 정책 설정", () => {
+  it("네이버가 발급한 배송 주소록 번호와 계약 정보를 표시한다", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() =>
+        Promise.resolve(
+          Response.json({
+            success: true,
+            data: {
+              releaseAddresses: [
+                {
+                  addressBookNo: 106005339,
+                  name: "기본 출고지",
+                  addressType: "RELEASE",
+                  address: "서울시 테스트구",
+                  baseAddress: "",
+                  detailAddress: "",
+                },
+              ],
+              returnAddresses: [
+                {
+                  addressBookNo: 106005342,
+                  name: "기본 반품지",
+                  addressType: "REFUND_OR_EXCHANGE",
+                  address: "서울시 반품구",
+                  baseAddress: "",
+                  detailAddress: "",
+                },
+              ],
+              bundleGroups: [
+                {
+                  id: 53968255,
+                  name: "기본 배송비 묶음그룹",
+                  baseGroup: true,
+                },
+              ],
+              returnDeliveryCompanies: [
+                {
+                  id: 1,
+                  name: "한진택배",
+                  returnDeliveryCompanyPriorityType: "PRIMARY",
+                },
+              ],
+            },
+          }),
+        ),
+      ),
+    );
+
+    render(
+      <NaverDeliveryAddressBookManager
+        stores={[
+          {
+            id: "11111111-1111-4111-8111-111111111111",
+            storeName: "테스트 스토어",
+            isDefault: true,
+          },
+        ]}
+      />,
+    );
+
+    await screen.findByText("네이버 배송 주소록을 불러왔습니다.");
+    expect(screen.getByText("106005339")).toBeVisible();
+    expect(screen.getByText("106005342")).toBeVisible();
+    expect(screen.getByText("53968255")).toBeVisible();
+    expect(screen.getByText("PRIMARY")).toBeVisible();
+  });
+
   it("빈 필드는 유지하고 관리자가 선택한 기본 정책만 저장한다", async () => {
     const saved = { ...emptyNaverPublicationPolicy, taxType: "TAX" as const };
     const fetchMock = vi.fn((input: RequestInfo | URL) => {

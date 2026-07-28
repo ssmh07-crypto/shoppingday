@@ -7,6 +7,7 @@ import { NaverStoreSettingsRepository } from "@/modules/channels/naver/naver-sto
 import { NaverCategorySyncButton } from "./naver-category-sync-button";
 import { NaverStoreSettingsForm } from "./naver-store-settings-form";
 import { NaverDeliveryPolicyManager } from "./naver-delivery-policy-manager";
+import { NaverDeliveryAddressBookManager } from "./naver-delivery-address-book-manager";
 
 export const dynamic = "force-dynamic";
 
@@ -57,6 +58,7 @@ async function renderPage(
         </header>
 
         <NaverStoreSettingsForm initial={storeSettings} />
+        <NaverDeliveryAddressBookManager stores={storeSettings} />
         <NaverDeliveryPolicyManager stores={storeSettings} />
 
         {!configured ? (
