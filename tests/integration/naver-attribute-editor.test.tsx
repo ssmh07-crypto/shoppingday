@@ -13,6 +13,11 @@ describe("네이버 필수 속성 입력", () => {
   it("선택형 후보와 범위형 값·단위를 편집한다", () => {
     render(<Harness />);
 
+    expect(screen.getByRole("option", { name: "빨강" })).toBeVisible();
+    expect(screen.queryByRole("option", { name: "빨강 이상" })).not.toBeInTheDocument();
+    expect(screen.getByText("EVA")).toBeVisible();
+    expect(screen.queryByText("EVA 이상")).not.toBeInTheDocument();
+
     fireEvent.change(screen.getByRole("combobox", { name: "색상" }), {
       target: { value: "101" },
     });
@@ -53,12 +58,22 @@ function Harness() {
             unitUsable: true,
             representativeUnitCode: "A02036",
           },
+          {
+            attributeSeq: 3,
+            attributeName: "주요소재",
+            attributeClassificationType: "MULTI_SELECT",
+          },
         ]}
         candidates={[
           {
             attributeSeq: 1,
             attributeValueSeq: 101,
             minAttributeValue: "빨강",
+          },
+          {
+            attributeSeq: 3,
+            attributeValueSeq: 10388535,
+            minAttributeValue: "EVA",
           },
         ]}
         units={[{ id: "A02036", unitCodeName: "cm" }]}

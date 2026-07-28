@@ -14,6 +14,7 @@ export type NaverAttributeDefinition = {
 export type NaverAttributeCandidate = {
   attributeSeq: number;
   attributeValueSeq: number;
+  attributeValueName?: string;
   minAttributeValue?: string;
   minAttributeValueUnitCode?: string;
   maxAttributeValue?: string;
@@ -83,7 +84,7 @@ export function NaverAttributeEditor({
                   return (
                     <label
                       key={option.attributeValueSeq}
-                      title={candidateLabel(option, units)}
+                      title={candidateLabel(option, units, type)}
                     >
                       <input
                         type="checkbox"
@@ -100,7 +101,7 @@ export function NaverAttributeEditor({
                           replaceAttribute(attribute.attributeSeq, next);
                         }}
                       />
-                      <span>{candidateLabel(option, units)}</span>
+                      <span>{candidateLabel(option, units, type)}</span>
                     </label>
                   );
                 })}
@@ -126,7 +127,7 @@ export function NaverAttributeEditor({
                     key={option.attributeValueSeq}
                     value={option.attributeValueSeq}
                   >
-                    {candidateLabel(option, units)}
+                    {candidateLabel(option, units, type)}
                   </option>
                 ))}
               </select>
@@ -241,21 +242,24 @@ function fromCandidate(
 function candidateLabel(
   candidate: NaverAttributeCandidate,
   units: Array<{ id: string; unitCodeName: string }>,
+  type: NaverAttributeDefinition["attributeClassificationType"],
 ) {
   const min = candidate.minAttributeValue ?? "";
   const max = candidate.maxAttributeValue ?? "";
-  const range =
-    min && max && min !== max
-      ? `${min} ~ ${max}`
-      : min
-        ? `${min} 이상`
-        : max
-          ? `${max} 이하`
-          : "";
+  const label =
+    type === "RANGE"
+      ? min && max && min !== max
+        ? `${min} ~ ${max}`
+        : min
+          ? `${min} 이상`
+          : max
+            ? `${max} 이하`
+            : ""
+      : candidate.attributeValueName || min || max;
   const unitCode =
     candidate.minAttributeValueUnitCode ?? candidate.maxAttributeValueUnitCode;
   const unit = units.find((item) => item.id === unitCode)?.unitCodeName ?? "";
-  return `${range || `값 ${candidate.attributeValueSeq}`}${unit ? ` ${unit}` : ""}`;
+  return `${label || `값 ${candidate.attributeValueSeq}`}${unit ? ` ${unit}` : ""}`;
 }
 
 function attributeTypeLabel(type: string) {
