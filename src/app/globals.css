@@ -3055,14 +3055,29 @@ td small {
   margin-top: 13px;
 }
 .drawer-margin-fields label {
+  display: grid;
   gap: 5px;
   color: #667085;
-  font-size: 10px;
+  font-size: 11px;
+  font-weight: 700;
 }
-.drawer-margin-fields input {
+.drawer-margin-fields input,
+.drawer-margin-fields select {
   min-width: 0;
   height: 36px;
   background: white;
+}
+.drawer-margin-fee-summary {
+  margin-top: 10px;
+  padding: 9px 11px;
+  border-radius: 7px;
+  background: #eef4ff;
+  color: #344054;
+  font-size: 11px;
+  line-height: 1.5;
+}
+.drawer-margin-fee-summary strong {
+  color: #1d4ed8;
 }
 .drawer-margin-result {
   display: grid;
@@ -4791,6 +4806,28 @@ td small {
   display: grid;
   gap: 7px;
 }
+.keyword-price-calculator .drawer-margin-calculator {
+  margin-top: 0;
+  border-color: #b9c9e7;
+  background: #f7f9fd;
+}
+.keyword-price-calculator .drawer-margin-calculator summary {
+  font-size: 13px;
+}
+.keyword-price-calculator .drawer-margin-fields {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+.keyword-price-calculator .drawer-margin-result {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+}
+.keyword-price-calculator .drawer-margin-result small {
+  grid-column: 1;
+}
+.keyword-price-calculator .drawer-margin-result button {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+}
 .keyword-tag-field-heading {
   display: flex;
   justify-content: space-between;
@@ -4994,6 +5031,9 @@ td small {
   .keyword-sticky-actions button:not(.secondary) {
     grid-column: 2;
   }
+  .keyword-price-calculator .drawer-margin-fields {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
   .keyword-product-list {
     position: static;
     max-height: 245px;
@@ -5076,6 +5116,14 @@ td small {
   .keyword-title-history-list article {
     grid-template-columns: 1fr;
     gap: 6px;
+  }
+  .keyword-price-calculator .drawer-margin-fields,
+  .keyword-price-calculator .drawer-margin-result {
+    grid-template-columns: 1fr;
+  }
+  .keyword-price-calculator .drawer-margin-result button {
+    grid-column: auto;
+    grid-row: auto;
   }
   .keyword-growth-optimizer,
   .keyword-rank-tracker {

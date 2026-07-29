@@ -260,6 +260,22 @@ describe("성장 상품 키워드 관리 화면", () => {
     openTab("키워드 분석");
     expect(screen.getByText("키워드 후보")).toBeVisible();
   });
+
+  it("상품 원가와 네이버 수수료로 계산한 권장가를 판매가에 적용한다", async () => {
+    renderManager();
+
+    fireEvent.change(await screen.findByLabelText("상품 원가"), {
+      target: { value: "5600" },
+    });
+
+    expect(await screen.findByText("8,900원")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "판매가에 적용" }));
+
+    expect(screen.getByRole("spinbutton", { name: "판매가" })).toHaveValue(
+      8900,
+    );
+    expect(screen.getByText("변경 1건")).toBeVisible();
+  });
 });
 
 function renderManager(runtime: {

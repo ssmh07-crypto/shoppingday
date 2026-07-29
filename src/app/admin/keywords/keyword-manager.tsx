@@ -34,6 +34,13 @@ const NaverAttributeEditor = dynamic(
     ),
   { loading: () => <p role="status">네이버 공식 속성 편집기를 불러오는 중…</p> },
 );
+const NaverMarginCalculator = dynamic(
+  () =>
+    import("@/app/admin/components/naver-margin-calculator").then(
+      (module) => module.NaverMarginCalculator,
+    ),
+  { loading: () => <p role="status">판매가 계산기를 불러오는 중…</p> },
+);
 
 type CategoryRequirements = {
   attributes: Array<{
@@ -927,6 +934,13 @@ function KeywordProductDetail({
                 <option value="SUSPENSION">판매 중지</option>
               </select>
             </label>
+            <div className="keyword-price-calculator wide">
+              <NaverMarginCalculator
+                editableSupplierCost
+                defaultOpen
+                onApply={(sellingPrice) => setSalePrice(String(sellingPrice))}
+              />
+            </div>
             <div className="keyword-tag-field wide">
               <div className="keyword-tag-field-heading">
                 <span>판매자 태그</span>
