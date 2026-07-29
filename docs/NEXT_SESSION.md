@@ -1,12 +1,129 @@
 # 다음 Codex 세션 인수인계
 
-마지막 갱신: 2026-07-29 (KST)
+마지막 갱신: 2026-07-30 (KST)
 
 이 문서는 대화 세션이 종료되거나 Codespace가 재시작된 뒤 작업을 이어가기 위한 기준 문서다. 인증정보와 Secret 값은 절대 이 문서에 기록하지 않는다.
 
+## 2026-07-30 종료 시점 인수인계
+
+이 절이 현재 상태의 기준이다. 아래 2026-07-29 이전 절은 구현 이력으로만 참고한다.
+
+### 현재 Git·배포 상태
+
+- 작업 브랜치: `main`
+- 로컬과 `origin/main`의 최신 기능 커밋:
+  `bef3187` `add on-demand shopping rank tracking`
+- 직전 주요 커밋:
+  - `c51164b` `sync growth changes to registration products`
+  - `bb5838e` `fix sales refresh and surface title keywords`
+- `bef3187`까지 GitHub `main`에 푸시했다.
+- GitHub Actions 실행은 감지되지 않았다. GitHub 푸시와 연결된 외부 자동 배포의 완료
+  여부는 별도로 확인해야 한다.
+- migration `0026_faulty_marvex.sql`은 `.env.local`이 가리키는 PostgreSQL DB에 적용했다.
+
+### 성장상품관리 최신 기능
+
+- 성장관리 상품을 `성장관리에서 제외`할 수 있다. 이 동작은 성장관리 연결과 분석·순위
+  이력만 제거하며 상품 등록관리의 상품과 스마트스토어 상품은 유지한다.
+- 성장상품관리에서 상품명·판매가·재고·판매 상태·검색 태그·네이버 속성을 변경해
+  스마트스토어에 반영하면, 연결된 상품 등록관리 편집 데이터도 같은 값으로 동기화한다.
+- 최근 7일·30일 판매 수량은 사용자가 새로고침할 때만 네이버 주문 API로 조회한다.
+  중계 호출은 구간별로 속도를 조절하며 자동 주기 조회나 추정값은 만들지 않는다.
+- 순위 이력 화면에 현재 상품명에 실제 포함된 키워드와 소싱 상품명 생성에 사용한
+  키워드를 함께 표시한다. 키워드 칩을 누르면 바로 조회 키워드로 선택된다.
+- 앞으로 소싱 상품명 초안을 만들 때 실제 사용된 `usedTitleKeywords`를
+  `products.source_title_keywords`에 저장한다.
+- 기존 상품에 저장값이 없으면 연결된 `sourcing_researches`의 소싱 키워드와 관련
+  키워드로 동일한 기본 초안 규칙을 다시 실행해 복원 가능한 키워드를 표시한다.
+  연결된 등록상품이나 소싱조사 기록이 없으면 복원할 수 없으며 빈 상태로 안내한다.
+
+### 요청형 PC·모바일 순위 조회
+
+- 사용자가 `PC·모바일 100위 조회` 버튼을 눌렀을 때만 로컬 네이버 API 중계 서버가
+  Playwright와 시스템 Microsoft Edge를 실행한다. 예약·백그라운드 자동 조회는 없다.
+- PC와 모바일 네이버쇼핑 공개 검색 화면을 각각 최대 100위까지만 확인한다.
+- 결과는 `PC`와 `모바일`을 분리하고 `발견`, `100위 내 미노출`, `조회 차단`,
+  `조회 실패` 상태로 저장한다.
+- 이 값은 네이버 공식 순위 API 응답이 아니라 조회 시점의 공개 검색 화면 관측값이다.
+  개인화·광고·검색 결과 변경에 따라 실제 사용자 노출과 다를 수 있다.
+- CAPTCHA나 접근 제한 문구가 보이거나 상품 카드를 식별하지 못하면 잘못된 순위를
+  만들지 않고 차단 또는 실패로 기록한다.
+- 네이버 검색 화면 DOM은 연결 가능한 인앱 브라우저가 없어 실제 시각 검수하지 못했다.
+  화면 구조가 바뀌면 `scripts/naver-shopping-rank-reader.ts`의 상품 카드 식별 규칙을
+  실제 검색 화면에서 다시 확인해야 한다.
+- 기본 브라우저 경로는
+  `C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe`이며 다른 환경에서는
+  `NAVER_RANK_BROWSER_EXECUTABLE`로 덮어쓸 수 있다.
+
+### DB migration 0026
+
+- `products.source_title_keywords` JSONB 배열을 추가했다.
+- `keyword_rank_observations`에 다음 필드를 추가했다.
+  - `device`: `unknown | pc | mobile`
+  - `result_status`: `found | not_found | blocked | failed`
+  - `checked_range`: 확인한 최대 순위
+  - `source`: 기존 `manual` 외에 `browser_observed`
+- 기존 `rank IS NULL` 수동 기록은 migration에서 `not_found`로 보정하고 확인 범위는
+  기존 의미에 맞춰 1,000으로 유지한다.
+
+### 로컬 릴레이·Quick Tunnel 상태
+
+- Windows 예약 작업 `Shoppingday Naver Quick Tunnel`을 재시작했다.
+- 이전 예약 실행이 남긴 중계·터널 자식 프로세스 때문에 `EADDRINUSE`가 발생했으나,
+  해당 PID만 정리한 뒤 예약 작업을 한 번 다시 실행해 해결했다.
+- 재시작 후 로컬 릴레이 `http://127.0.0.1:8788/healthz` HTTP 200과
+  `{"status":"ok"}`를 확인했다.
+- 감독 로그에서 `Relay and Quick Tunnel are healthy; Worker relay settings are current.`
+  기록을 확인했다.
+- PC 재로그인 시 예약 작업이 자동 실행된다. Quick Tunnel URL은 실행마다 바뀌며
+  감독 스크립트가 Worker의 릴레이 URL과 공유 Secret을 갱신한다.
+
+### 최신 검증 결과
+
+- `npm run typecheck` 통과
+- `npm run lint` 통과
+- 전체 48개 테스트 파일, 271개 테스트 통과
+- `npm run build` 통과
+- DB migration 적용 성공
+- Next.js 빌드에는 기존 `middleware` 파일 규칙 폐기 예정 경고만 남아 있다.
+
+### 다음 세션 시작 확인
+
+```powershell
+cd C:\Users\ssmh0\shoppingday
+git switch main
+git pull --ff-only origin main
+git status --short --branch
+
+Get-ScheduledTask -TaskName "Shoppingday Naver Quick Tunnel"
+Invoke-RestMethod http://127.0.0.1:8788/healthz
+```
+
+릴레이가 정상이 아니면 중복 프로세스부터 확인한다.
+
+```powershell
+Get-CimInstance Win32_Process |
+  Where-Object {
+    $_.CommandLine -match 'start-local-naver-tunnel|naver-commerce-relay|cloudflared'
+  } |
+  Select-Object ProcessId, ParentProcessId, Name, CreationDate, CommandLine
+```
+
+### 다음 우선 확인 사항
+
+1. 운영 성장상품관리 화면에서 소싱 상품명 키워드가 표시되는지 확인한다. 과거 상품은
+   연결된 등록상품과 소싱조사 기록이 있어야 복원된다.
+2. 본인 테스트 상품과 키워드로 `PC·모바일 100위 조회`를 한 번 실행해 실제 네이버
+   검색 화면에서 상품 카드 식별과 PC·모바일 결과 저장을 확인한다.
+3. 조회 실패 시 중계 서버 로그와 네이버 접근 제한 여부를 먼저 보고, 화면 구조 변경이
+   확인된 경우에만 Playwright 선택자를 수정한다. 차단 우회 기능은 추가하지 않는다.
+4. GitHub 푸시 후 외부 자동 배포가 실제 완료됐는지 운영 URL에서 확인한다.
+5. 성장관리 제외 기능은 등록상품과 스마트스토어 상품을 삭제하지 않는지 테스트
+   상품으로 확인한다.
+
 ## 2026-07-29 종료 시점 인수인계
 
-이 절이 현재 상태의 기준이다. 아래 절은 구현 이력으로 참고한다.
+이 절은 2026-07-29 당시 상태 기록이다. 현재 기준은 위 2026-07-30 절을 따른다.
 
 ### 현재 Git·PR·배포 상태
 
@@ -39,7 +156,7 @@
 
 ## 2026-07-28 종료 시점 인수인계
 
-이 절은 2026-07-28 당시 상태 기록이다. 현재 기준은 위 2026-07-29 절을 따른다.
+이 절은 2026-07-28 당시 상태 기록이다. 현재 기준은 위 2026-07-30 절을 따른다.
 
 ### 현재 Git·PR·배포 상태
 
@@ -192,7 +309,7 @@
 
 ## 2026-07-25 종료 시점 인수인계
 
-이 절은 2026-07-25 당시 상태 기록이다. 현재 기준은 위 2026-07-28 절을 따른다.
+이 절은 2026-07-25 당시 상태 기록이다. 현재 기준은 위 2026-07-30 절을 따른다.
 
 ### 최종 확정한 상품명 추천 규칙
 
@@ -287,7 +404,7 @@
 
 ## 2026-07-24 종료 시점 인수인계
 
-이 절은 2026-07-24 당시 상태 기록이다. 현재 기준은 위 2026-07-28 절을 따른다.
+이 절은 2026-07-24 당시 상태 기록이다. 현재 기준은 위 2026-07-30 절을 따른다.
 
 ### 이번 세션 변경
 
@@ -369,7 +486,7 @@
 
 ## 2026-07-20 종료 시점 인수인계
 
-이 절은 2026-07-20 당시 상태 기록이다. 현재 기준은 위 2026-07-28 절을 따른다.
+이 절은 2026-07-20 당시 상태 기록이다. 현재 기준은 위 2026-07-30 절을 따른다.
 
 ### Git과 PR 상태
 
