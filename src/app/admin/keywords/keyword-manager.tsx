@@ -71,6 +71,7 @@ type RuntimeStatus = {
   mockMode: boolean;
   searchAdConfigured: boolean;
   apiHubConfigured: boolean;
+  rankLookupConfigured?: boolean;
 };
 
 type StoreOption = {
@@ -130,6 +131,44 @@ export function KeywordManager({
     setItems(response.items ?? []);
     if (response.runtime) setRuntime(response.runtime);
     if (preferredId) setActiveId(preferredId);
+  }
+
+  async function removeManagedProduct(id: string, title: string) {
+    if (
+      !window.confirm(
+        `"${title}"을 성장관리에서 제외할까요?\n\n키워드 분석과 순위 기록은 삭제되지만, 등록상품과 스마트스토어 상품은 그대로 유지됩니다.`,
+      )
+    ) {
+      return;
+    }
+    setBusy("remove");
+    clearFeedback();
+    try {
+      await api(`/api/keyword-products/${id}`, { method: "DELETE" });
+      const response = await api<never>("/api/keyword-products");
+      const nextItems = response.items ?? [];
+      setItems(nextItems);
+      if (response.runtime) setRuntime(response.runtime);
+
+      const nextId = nextItems[0]?.id ?? null;
+      setActiveId(nextId);
+      if (nextId) {
+        const next = await api<ManagedProductDetail>(
+          `/api/keyword-products/${nextId}`,
+        );
+        setDetail(next.data!);
+        setShowAdd(false);
+        if (next.runtime) setRuntime(next.runtime);
+      } else {
+        setDetail(null);
+        setShowAdd(true);
+      }
+      setMessage("상품을 성장관리에서 제외했습니다. 등록상품과 스마트스토어 상품은 유지됩니다.");
+    } catch (caught) {
+      setError(errorMessage(caught));
+    } finally {
+      setBusy(null);
+    }
   }
 
   async function runAction(
@@ -284,6 +323,7 @@ export function KeywordManager({
               <KeywordProductDetail
                 key={`${detail.product.id}:${detail.analysis?.id ?? "not-analyzed"}`}
                 detail={detail}
+                rankLookupConfigured={Boolean(runtime.rankLookupConfigured)}
                 busy={busy}
                 onAnalyze={() =>
                   runAction(
@@ -306,6 +346,14 @@ export function KeywordManager({
                 }}
                 onBusy={setBusy}
                 onRefreshList={() => refreshList(detail.product.id)}
+                onRemove={() =>
+                  removeManagedProduct(
+                    detail.product.id,
+                    detail.product.finalTitle ||
+                      detail.product.editableTitle ||
+                      detail.product.supplierTitle,
+                  )
+                }
               />
             ) : (
               <div className="keyword-loading">왼쪽에서 관리할 상품을 선택하세요.</div>
@@ -441,6 +489,7 @@ function AddManagedProduct({
 
 function KeywordProductDetail({
   detail,
+  rankLookupConfigured,
   busy,
   onAnalyze,
   onMetrics,
@@ -448,8 +497,10 @@ function KeywordProductDetail({
   onFeedback,
   onBusy,
   onRefreshList,
+  onRemove,
 }: {
   detail: ManagedProductDetail;
+  rankLookupConfigured: boolean;
   busy: string | null;
   onAnalyze: () => void;
   onMetrics: () => void;
@@ -457,6 +508,7 @@ function KeywordProductDetail({
   onFeedback: (message: string | null, error: string | null) => void;
   onBusy: (name: string | null) => void;
   onRefreshList: () => Promise<void>;
+  onRemove: () => void;
 }) {
   const [activeTab, setActiveTab] = useState<
     "operations" | "keywords" | "history"
@@ -809,9 +861,19 @@ function KeywordProductDetail({
             </div>
             <h2>{detail.product.finalTitle || detail.product.editableTitle}</h2>
             <p title={overviewDescription}>{overviewDescription}</p>
-            <a href={detail.product.smartstoreUrl} target="_blank" rel="noreferrer">
-              스마트스토어 상품 보기 ↗
-            </a>
+            <div className="keyword-overview-links">
+              <a href={detail.product.smartstoreUrl} target="_blank" rel="noreferrer">
+                스마트스토어 상품 보기 ↗
+              </a>
+              <button
+                type="button"
+                className="keyword-remove-managed"
+                onClick={onRemove}
+                disabled={Boolean(busy)}
+              >
+                {busy === "remove" ? "제외 중…" : "성장관리에서 제외"}
+              </button>
+            </div>
           </div>
         </div>
         <div className="keyword-overview-facts">
@@ -1274,6 +1336,7 @@ function KeywordProductDetail({
           <RankTrackingPanel
             detail={detail}
             titleKeywords={titleKeywords}
+            rankLookupConfigured={rankLookupConfigured}
             busy={busy}
             onBusy={onBusy}
             onChange={onDetailChange}
@@ -1458,6 +1521,7 @@ function TitleHistoryPanel({ detail }: { detail: ManagedProductDetail }) {
 function RankTrackingPanel({
   detail,
   titleKeywords,
+  rankLookupConfigured,
   busy,
   onBusy,
   onChange,
@@ -1465,12 +1529,14 @@ function RankTrackingPanel({
 }: {
   detail: ManagedProductDetail;
   titleKeywords: string[];
+  rankLookupConfigured: boolean;
   busy: string | null;
   onBusy: (value: string | null) => void;
   onChange: (value: ManagedProductDetail) => void;
   onFeedback: (message: string | null, error: string | null) => void;
 }) {
   const selectedKeyword =
+    detail.product.sourceTitleKeywords[0] ??
     titleKeywords[0] ??
     detail.keywords.find((keyword) => keyword.isSelected)?.keyword ??
     detail.keywords[0]?.keyword ??
@@ -1510,6 +1576,30 @@ function RankTrackingPanel({
     }
   }
 
+  async function observeRanks() {
+    onBusy("rank-observe");
+    onFeedback(null, null);
+    try {
+      const response = await api<ManagedProductDetail>(
+        `/api/keyword-products/${detail.product.id}/rank-observations/observe`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ keyword }),
+        },
+      );
+      onChange(response.data!);
+      onFeedback(
+        `"${keyword.trim()}"의 네이버쇼핑 PC·모바일 100위 이내 노출을 확인했습니다.`,
+        null,
+      );
+    } catch (caught) {
+      onFeedback(null, errorMessage(caught));
+    } finally {
+      onBusy(null);
+    }
+  }
+
   return (
     <section className="keyword-card keyword-rank-tracker">
       <div className="keyword-card-head">
@@ -1523,6 +1613,26 @@ function RankTrackingPanel({
         </div>
       </div>
       <div className="keyword-rank-entry">
+        <div className="keyword-rank-title-keywords source">
+          <strong>소싱 상품명 생성에 사용한 키워드</strong>
+          <div>
+            {detail.product.sourceTitleKeywords.map((item) => (
+              <button
+                type="button"
+                className="secondary"
+                key={item}
+                onClick={() => setKeyword(item)}
+              >
+                {item}
+              </button>
+            ))}
+            {!detail.product.sourceTitleKeywords.length && (
+              <small>
+                저장되거나 소싱조사 기록에서 복원 가능한 상품명 키워드가 없습니다.
+              </small>
+            )}
+          </div>
+        </div>
         <div className="keyword-rank-title-keywords">
           <strong>상품명 기반 추적 후보</strong>
           <div>
@@ -1551,6 +1661,7 @@ function RankTrackingPanel({
           <datalist id={`rank-keywords-${detail.product.id}`}>
             {Array.from(
               new Set([
+                ...detail.product.sourceTitleKeywords,
                 ...titleKeywords,
                 ...detail.keywords.map((item) => item.keyword),
               ]),
@@ -1559,6 +1670,22 @@ function RankTrackingPanel({
             ))}
           </datalist>
         </label>
+        <div className="keyword-rank-auto-action">
+          <button
+            type="button"
+            onClick={() => void observeRanks()}
+            disabled={Boolean(busy) || !keyword.trim() || !rankLookupConfigured}
+          >
+            {busy === "rank-observe"
+              ? "PC·모바일 조회 중…"
+              : "PC·모바일 100위 조회"}
+          </button>
+          <small>
+            {rankLookupConfigured
+              ? "버튼을 누를 때만 공개 네이버쇼핑 검색 결과를 확인합니다."
+              : "순위 조회 중계 서버가 연결되지 않았습니다."}
+          </small>
+        </div>
         <label>
           <span>확인일</span>
           <input
@@ -1605,13 +1732,24 @@ function RankTrackingPanel({
           {observations.slice(0, 20).map((observation) => (
             <div key={observation.id}>
               <strong>{observation.keyword}</strong>
+              <small className="keyword-rank-device">
+                {observation.device === "pc"
+                  ? "PC"
+                  : observation.device === "mobile"
+                    ? "모바일"
+                    : "직접 기록"}
+              </small>
               <span>
-                {observation.rank
-                  ? `${observation.rank.toLocaleString("ko-KR")}위`
-                  : "1,000위 밖"}
+                {observation.resultStatus === "blocked"
+                  ? "조회 차단"
+                  : observation.resultStatus === "failed"
+                    ? "조회 실패"
+                    : observation.rank
+                      ? `${observation.rank.toLocaleString("ko-KR")}위`
+                      : `${observation.checkedRange.toLocaleString("ko-KR")}위 내 미노출`}
               </span>
               <small>
-                {new Date(observation.checkedAt).toLocaleDateString("ko-KR")}
+                {new Date(observation.checkedAt).toLocaleString("ko-KR")}
               </small>
             </div>
           ))}
@@ -1623,8 +1761,8 @@ function RankTrackingPanel({
         </div>
       )}
       <small className="keyword-field-help">
-        자동 추정값이 아니라 사용자가 같은 검색 조건에서 직접 확인한 값만
-        저장합니다.
+        조회값은 네이버 공식 순위 데이터가 아니라 조회 시점의 공개 검색 화면 관측값입니다.
+        개인화·광고·검색 결과 변경에 따라 실제 노출과 다를 수 있습니다.
       </small>
     </section>
   );

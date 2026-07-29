@@ -44,6 +44,7 @@ export type ProductEditorInitial = {
     id: string;
     status: string;
     title: string;
+    sourceTitleKeywords: string[];
     searchTags: string[];
     sellingPrice: number | null;
     currency: string;

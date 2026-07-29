@@ -146,7 +146,84 @@ async function signedRequest(path = "/v1/categories") {
   });
 }
 
+async function signedJsonRequest(path: string, value: unknown) {
+  const body = new TextEncoder().encode(JSON.stringify(value));
+  const signature = await createNaverRelaySignature(sharedSecret, {
+    timestamp: now,
+    nonce,
+    method: "POST",
+    pathAndQuery: path,
+    body,
+  });
+  return new Request(`https://relay.example.test${path}`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      [NAVER_RELAY_HEADERS.timestamp]: String(now),
+      [NAVER_RELAY_HEADERS.nonce]: nonce,
+      [NAVER_RELAY_HEADERS.signature]: signature,
+    },
+    body,
+  });
+}
+
 describe("네이버 커머스API 중계 인증", () => {
+  it("서명된 요청으로 PC와 모바일의 쇼핑 순위를 관측한다", async () => {
+    const client = {
+      fetchCategories: vi.fn().mockResolvedValue(categories),
+      fetchProductModels: vi.fn().mockResolvedValue(productModels),
+      ...metadataClientMocks(),
+    };
+    const shoppingRankReader = {
+      observe: vi.fn().mockResolvedValue({
+        results: [
+          {
+            device: "pc",
+            status: "found",
+            rank: 12,
+            checkedRange: 12,
+            observedAt: "2026-07-29T12:00:00.000Z",
+            message: null,
+          },
+          {
+            device: "mobile",
+            status: "not_found",
+            rank: null,
+            checkedRange: 100,
+            observedAt: "2026-07-29T12:00:02.000Z",
+            message: null,
+          },
+        ],
+      }),
+    };
+    const handler = createNaverCommerceRelayHandler({
+      sharedSecret,
+      client,
+      shoppingRankReader,
+      now: () => now,
+    });
+    const input = {
+      keyword: "여성 원피스",
+      channelProductNo: "1234567890",
+      smartstoreUrl:
+        "https://smartstore.naver.com/sample/products/1234567890",
+      maximumRank: 100,
+    };
+
+    const response = await handler(
+      await signedJsonRequest("/v1/shopping-rank/observe", input),
+    );
+
+    expect(response.status).toBe(200);
+    expect(shoppingRankReader.observe).toHaveBeenCalledWith(input);
+    await expect(response.json()).resolves.toMatchObject({
+      results: [
+        { device: "pc", rank: 12 },
+        { device: "mobile", status: "not_found", checkedRange: 100 },
+      ],
+    });
+  });
+
   it("네이버 유효성 오류의 필드별 상세 내용을 중계한다", async () => {
     const client = {
       fetchCategories: vi.fn().mockRejectedValue(

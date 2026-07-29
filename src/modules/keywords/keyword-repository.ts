@@ -22,6 +22,7 @@ import {
   productKeywordAnalyses,
   productPublications,
   products,
+  sourcingResearches,
   type CachedKeywordMetrics,
   type ManagedProductInput as DbManagedProductInput,
   type ProductAnalysisData,
@@ -36,6 +37,7 @@ import type {
 } from "./types";
 import { classifyKeywordSize, normalizeKeyword } from "./keyword-utils";
 import { productAnalysisSchema } from "./schemas";
+import { buildSourcingRegistrationDraft } from "@/modules/sourcing/registration-draft";
 
 export interface LocalPublishedProduct {
   id: string;
@@ -55,6 +57,7 @@ export interface LocalPublishedProduct {
 export interface KeywordManagementRepository {
   list(ownerId: string): Promise<ManagedProductSummary[]>;
   find(ownerId: string, id: string): Promise<ManagedProductDetail | null>;
+  remove(ownerId: string, id: string): Promise<boolean>;
   findLocalPublication(ownerId: string, channelProductNo: string): Promise<LocalPublishedProduct | null>;
   create(
     ownerId: string,
@@ -104,7 +107,16 @@ export interface KeywordManagementRepository {
   addRankObservation(
     ownerId: string,
     productId: string,
-    value: { keyword: string; rank: number | null; checkedAt: Date; note: string },
+    value: {
+      keyword: string;
+      rank: number | null;
+      checkedAt: Date;
+      note: string;
+      device?: "unknown" | "pc" | "mobile";
+      resultStatus?: "found" | "not_found" | "blocked" | "failed";
+      checkedRange?: number;
+      source?: "manual" | "browser_observed";
+    },
   ): Promise<void>;
   markNaverApplied(
     ownerId: string,
@@ -124,6 +136,19 @@ export class DrizzleKeywordManagementRepository
   implements KeywordManagementRepository
 {
   constructor(private readonly database: Database = getDb()) {}
+
+  async remove(ownerId: string, id: string) {
+    const [removed] = await this.database
+      .delete(keywordManagedProducts)
+      .where(
+        and(
+          eq(keywordManagedProducts.id, id),
+          eq(keywordManagedProducts.ownerId, ownerId),
+        ),
+      )
+      .returning({ id: keywordManagedProducts.id });
+    return Boolean(removed);
+  }
 
   async list(ownerId: string) {
     return this.database
@@ -163,7 +188,7 @@ export class DrizzleKeywordManagementRepository
       )
       .limit(1);
     if (!product) return null;
-    const [analysisRows, keywordRows, titleRows, rankRows] = await Promise.all([
+    const [analysisRows, keywordRows, titleRows, rankRows, sourceTitleKeywords] = await Promise.all([
       this.database
         .select()
         .from(productKeywordAnalyses)
@@ -207,6 +232,7 @@ export class DrizzleKeywordManagementRepository
         )
         .orderBy(desc(keywordRankObservations.checkedAt))
         .limit(100),
+      this.findSourceTitleKeywords(ownerId, product.linkedProductId),
     ]);
     const analysis = analysisRows[0];
     return {
@@ -220,6 +246,7 @@ export class DrizzleKeywordManagementRepository
         currentTitle: product.currentTitle,
         editableTitle: product.editableTitle,
         finalTitle: product.finalTitle,
+        sourceTitleKeywords,
         productInput: product.productInput,
         status: product.status,
         createdAt: product.createdAt,
@@ -274,11 +301,53 @@ export class DrizzleKeywordManagementRepository
         id: row.id,
         keyword: row.keyword,
         rank: row.rank,
+        device: row.device,
+        resultStatus: row.resultStatus,
+        checkedRange: row.checkedRange,
         checkedAt: row.checkedAt,
         note: row.note,
-        source: "manual" as const,
+        source: row.source as "manual" | "browser_observed",
       })),
     };
+  }
+
+  private async findSourceTitleKeywords(
+    ownerId: string,
+    linkedProductId: string | null,
+  ) {
+    if (!linkedProductId) return [];
+    const [linkedProduct] = await this.database
+      .select({ sourceTitleKeywords: products.sourceTitleKeywords })
+      .from(products)
+      .where(
+        and(
+          eq(products.id, linkedProductId),
+          or(eq(products.ownerId, ownerId), isNull(products.ownerId)),
+        ),
+      )
+      .limit(1);
+    if (linkedProduct?.sourceTitleKeywords.length) {
+      return linkedProduct.sourceTitleKeywords;
+    }
+    const [research] = await this.database
+      .select({
+        sourcingKeyword: sourcingResearches.sourcingKeyword,
+        relatedKeywords: sourcingResearches.relatedKeywords,
+      })
+      .from(sourcingResearches)
+      .where(
+        and(
+          eq(sourcingResearches.ownerId, ownerId),
+          eq(sourcingResearches.registrationProductId, linkedProductId),
+        ),
+      )
+      .limit(1);
+    return research
+      ? buildSourcingRegistrationDraft(
+          research.sourcingKeyword,
+          research.relatedKeywords,
+        ).usedTitleKeywords
+      : [];
   }
 
   async findLocalPublication(ownerId: string, channelProductNo: string) {
@@ -764,6 +833,10 @@ export class DrizzleKeywordManagementRepository
       rank: number | null;
       checkedAt: Date;
       note: string;
+      device?: "unknown" | "pc" | "mobile";
+      resultStatus?: "found" | "not_found" | "blocked" | "failed";
+      checkedRange?: number;
+      source?: "manual" | "browser_observed";
     },
   ) {
     await this.database.insert(keywordRankObservations).values({
@@ -772,9 +845,13 @@ export class DrizzleKeywordManagementRepository
       keyword: value.keyword,
       normalizedKeyword: normalizeKeyword(value.keyword),
       rank: value.rank,
+      device: value.device ?? "unknown",
+      resultStatus:
+        value.resultStatus ?? (value.rank === null ? "not_found" : "found"),
+      checkedRange: value.checkedRange ?? 1000,
       checkedAt: value.checkedAt,
       note: value.note,
-      source: "manual",
+      source: value.source ?? "manual",
     });
   }
 

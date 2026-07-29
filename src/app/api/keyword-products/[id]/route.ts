@@ -40,3 +40,17 @@ export async function PATCH(
   });
 }
 
+export async function DELETE(
+  _: Request,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  return withAdminKeywordRoute(async (user, database) => {
+    const { id } = await params;
+    await createKeywordManagementService(database).remove(user.id, id);
+    return NextResponse.json(
+      { success: true },
+      { headers: { "Cache-Control": "private, no-store" } },
+    );
+  });
+}
+

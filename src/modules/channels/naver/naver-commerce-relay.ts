@@ -41,6 +41,12 @@ import {
   NAVER_RELAY_HEADERS,
   verifyNaverRelaySignature,
 } from "./naver-relay-auth";
+import {
+  naverShoppingRankRequestSchema,
+  naverShoppingRankResponseSchema,
+  type NaverShoppingRankReader,
+  type NaverShoppingRankRequest,
+} from "./naver-shopping-rank";
 
 export type NaverCommerceRelayConfig = {
   relayUrl: string;
@@ -327,6 +333,20 @@ export class NaverCommerceRelayClient implements NaverCategoriesClient {
     return parseNaverCommerceProductOrders(response);
   }
 
+  async observeShoppingRanks(input: NaverShoppingRankRequest) {
+    const body = new TextEncoder().encode(JSON.stringify(input));
+    const response = await this.request(
+      this.relayUrl("v1/shopping-rank/observe"),
+      {
+        method: "POST",
+        body,
+        contentType: "application/json;charset=UTF-8",
+        timeoutMs: Math.max(this.config.timeoutMs, 55_000),
+      },
+    );
+    return naverShoppingRankResponseSchema.parse(await response.json());
+  }
+
   private relayUrl(path: string) {
     const base = this.config.relayUrl.endsWith("/")
       ? this.config.relayUrl
@@ -370,6 +390,7 @@ export class NaverCommerceRelayClient implements NaverCategoriesClient {
       method?: "GET" | "POST" | "PUT" | "DELETE";
       body?: Uint8Array;
       contentType?: string;
+      timeoutMs?: number;
     } = {},
   ) {
     const timestamp = this.now();
@@ -389,7 +410,10 @@ export class NaverCommerceRelayClient implements NaverCategoriesClient {
       },
     );
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), this.config.timeoutMs);
+    const timeout = setTimeout(
+      () => controller.abort(),
+      options.timeoutMs ?? this.config.timeoutMs,
+    );
     const started = performance.now();
     let responseStatus: number | undefined;
     let errorCode: string | undefined;
@@ -551,6 +575,7 @@ const ORDER_CHANGE_PATH =
   "/v1/pay-order/seller/product-orders/last-changed-statuses";
 const PRODUCT_ORDERS_QUERY_PATH =
   "/v1/pay-order/seller/product-orders/query";
+const SHOPPING_RANK_OBSERVE_PATH = "/v1/shopping-rank/observe";
 const MAX_PRODUCT_BODY_BYTES = 4 * 1024 * 1024;
 const MAX_IMAGE_COUNT = 10;
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
@@ -564,6 +589,7 @@ export type NaverRelayHandlerOptions = {
     tokenType: "SELF" | "SELLER";
     accountId: string | null;
   }) => NaverCategoriesClient;
+  shoppingRankReader?: NaverShoppingRankReader;
   now?: () => number;
   replayGuard?: NaverRelayReplayGuard;
   maxClockSkewMs?: number;
@@ -616,6 +642,9 @@ export function createNaverCommerceRelayHandler(
     const isProductOrdersQuery =
       request.method === "POST" &&
       url.pathname === PRODUCT_ORDERS_QUERY_PATH;
+    const isShoppingRankObserve =
+      request.method === "POST" &&
+      url.pathname === SHOPPING_RANK_OBSERVE_PATH;
     const isProductDelete =
       request.method === "DELETE" &&
       (CHANNEL_PRODUCT_PATH.test(url.pathname) ||
@@ -627,6 +656,7 @@ export function createNaverCommerceRelayHandler(
       !isProductUpdate &&
       !isProductStatusChange &&
       !isProductOrdersQuery &&
+      !isShoppingRankObserve &&
       !isProductDelete
     ) {
       return relayJson(
@@ -671,7 +701,8 @@ export function createNaverCommerceRelayHandler(
       isProductCreate ||
       isProductUpdate ||
       isProductStatusChange ||
-      isProductOrdersQuery
+      isProductOrdersQuery ||
+      isShoppingRankObserve
       ? new Uint8Array(await request.arrayBuffer())
       : undefined;
     if (
@@ -680,7 +711,8 @@ export function createNaverCommerceRelayHandler(
         ((isProductCreate ||
           isProductUpdate ||
           isProductStatusChange ||
-          isProductOrdersQuery) &&
+          isProductOrdersQuery ||
+          isShoppingRankObserve) &&
           body.byteLength > MAX_PRODUCT_BODY_BYTES))
     ) {
       return relayJson(413, "payload_too_large", "중계 요청 본문이 너무 큽니다.");
@@ -712,7 +744,13 @@ export function createNaverCommerceRelayHandler(
         authContext && options.clientFactory
           ? options.clientFactory(authContext)
           : options.client;
-      const result = await handleRelayRequest(url, client, request, body);
+      const result = await handleRelayRequest(
+        url,
+        client,
+        request,
+        body,
+        options.shoppingRankReader,
+      );
       if (result instanceof Response) return result;
       return Response.json(result, {
         headers: { "cache-control": "no-store" },
@@ -748,7 +786,35 @@ async function handleRelayRequest(
   client: NaverCategoriesClient,
   request: Request,
   body?: Uint8Array,
+  shoppingRankReader?: NaverShoppingRankReader,
 ) {
+  if (url.pathname === SHOPPING_RANK_OBSERVE_PATH) {
+    if (url.search) {
+      return relayJson(
+        400,
+        "invalid_request",
+        "순위 조회에는 검색 조건을 URL에 입력할 수 없습니다.",
+      );
+    }
+    if (!shoppingRankReader) {
+      return relayJson(
+        503,
+        "not_configured",
+        "로컬 순위 조회 기능이 설정되지 않았습니다.",
+      );
+    }
+    const input = parseRelayJsonBody(request, body);
+    if (input instanceof Response) return input;
+    const parsed = naverShoppingRankRequestSchema.safeParse(input);
+    if (!parsed.success) {
+      return relayJson(
+        400,
+        "invalid_request",
+        "순위 조회 키워드와 상품 정보를 확인해 주세요.",
+      );
+    }
+    return shoppingRankReader.observe(parsed.data);
+  }
   if (url.pathname === ORDER_CHANGE_PATH) {
     const parsed = orderChangeQuerySchema.safeParse(
       Object.fromEntries(url.searchParams),

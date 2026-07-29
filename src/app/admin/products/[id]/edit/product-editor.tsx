@@ -1505,6 +1505,12 @@ export function ProductEditor({
                           setForm((current) => ({
                             ...current,
                             title: titleRecommendation.title,
+                            sourceTitleKeywords:
+                              titleRecommendation.source === "sourcing_rules"
+                                ? titleRecommendation.keywordEvidence.map(
+                                    (item) => item.keyword,
+                                  )
+                                : current.sourceTitleKeywords,
                           }));
                           setTitleRecommendationStatus(
                             "추천 상품명을 적용했습니다. 저장 전까지 네이버에는 반영되지 않습니다.",
@@ -2502,6 +2508,7 @@ function fromInitial(initial: ProductEditorInitial) {
   return {
     draftVersion: product.draftVersion,
     title: product.title,
+    sourceTitleKeywords: product.sourceTitleKeywords ?? [],
     searchTags: product.searchTags,
     sellingPrice: product.sellingPrice,
     currency: "KRW" as const,

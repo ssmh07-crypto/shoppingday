@@ -23,6 +23,7 @@ export type ProductEditorRecord = {
     | "id"
     | "status"
     | "title"
+    | "sourceTitleKeywords"
     | "searchTags"
     | "sellingPrice"
     | "currency"
@@ -229,6 +230,7 @@ export class ProductEditRepository {
           id: products.id,
           status: products.status,
           title: products.title,
+          sourceTitleKeywords: products.sourceTitleKeywords,
           searchTags: products.searchTags,
           sellingPrice: products.sellingPrice,
           currency: products.currency,
@@ -334,6 +336,7 @@ export class ProductEditRepository {
         .set({
           ownerId,
           title: input.title,
+          sourceTitleKeywords: input.sourceTitleKeywords,
           searchTags: input.searchTags,
           sellingPrice: input.sellingPrice,
           currency: input.currency,

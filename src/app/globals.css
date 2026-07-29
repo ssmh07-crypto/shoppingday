@@ -2095,6 +2095,15 @@ td small {
   background: #f7fcf9;
 }
 
+.keyword-rank-title-keywords.source {
+  border-color: #9ac6ee;
+  background: #f5faff;
+}
+
+.keyword-rank-title-keywords.source > strong {
+  color: #175b95;
+}
+
 .keyword-rank-title-keywords > strong {
   color: #165f48;
   font-size: 13px;
@@ -2120,6 +2129,18 @@ td small {
   gap: 7px;
 }
 
+.keyword-rank-auto-action {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-bottom: 4px;
+}
+
+.keyword-rank-auto-action small {
+  color: var(--keyword-muted);
+}
+
 .keyword-rank-entry .keyword-rank-not-found {
   grid-column: 1 / span 2;
   display: flex;
@@ -2140,7 +2161,7 @@ td small {
 
 .keyword-rank-history > div {
   display: grid;
-  grid-template-columns: minmax(160px, 1fr) 100px 120px;
+  grid-template-columns: minmax(160px, 1fr) 72px 120px minmax(150px, auto);
   gap: 12px;
   align-items: center;
   padding: 11px 14px;
@@ -2156,6 +2177,15 @@ td small {
   color: var(--inventory-brand);
 }
 
+.keyword-rank-device {
+  justify-self: start;
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: #eef4ff;
+  color: #344054;
+  font-weight: 700;
+}
+
 @media (max-width: 760px) {
   .keyword-rank-entry {
     grid-template-columns: 1fr;
@@ -2163,6 +2193,12 @@ td small {
 
   .keyword-rank-entry .keyword-rank-not-found {
     grid-column: auto;
+  }
+
+  .keyword-rank-auto-action {
+    grid-column: auto;
+    align-items: flex-start;
+    flex-direction: column;
   }
 
   .keyword-rank-history > div {
@@ -4675,11 +4711,28 @@ td small {
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
 }
-.keyword-overview-copy a {
-  display: inline-block;
+.keyword-overview-links {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
   margin-top: 8px;
+}
+.keyword-overview-copy a {
   font-size: 12px;
   font-weight: 800;
+}
+.keyword-remove-managed {
+  min-height: 30px;
+  padding: 5px 9px;
+  border: 1px solid #f0b4ae;
+  background: #fff;
+  color: #b42318;
+  font-size: 12px;
+}
+.keyword-remove-managed:hover:not(:disabled) {
+  border-color: #b42318;
+  background: #fff5f4;
 }
 .keyword-overview-badges {
   display: flex;

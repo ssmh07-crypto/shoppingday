@@ -14,6 +14,7 @@ import type { SourcingResearchInput } from "./types";
 
 type RegistrationProductInput = {
   title: string;
+  sourceTitleKeywords: string[];
   searchTags: string[];
   sellingPrice: number | null;
   originalName: string;
@@ -131,6 +132,7 @@ export class SourcingResearchRepository {
       const [current] = await tx
         .select({
           title: products.title,
+          sourceTitleKeywords: products.sourceTitleKeywords,
           searchTags: products.searchTags,
           sellingPrice: products.sellingPrice,
           status: products.status,
@@ -146,7 +148,7 @@ export class SourcingResearchRepository {
         .for("update");
       if (!current) return row;
 
-      const changedFields = (["title", "searchTags", "sellingPrice"] as const)
+      const changedFields = (["title", "sourceTitleKeywords", "searchTags", "sellingPrice"] as const)
         .filter((field) => JSON.stringify(current[field]) !== JSON.stringify(registrationInput[field]));
       // Once registration editing has started, the user's selected title,
       // tags, and price take precedence over later sourcing-note changes.
@@ -155,6 +157,7 @@ export class SourcingResearchRepository {
           .update(products)
           .set({
             title: registrationInput.title,
+            sourceTitleKeywords: registrationInput.sourceTitleKeywords,
             searchTags: registrationInput.searchTags,
             sellingPrice: registrationInput.sellingPrice,
             draftVersion: sql`${products.draftVersion} + 1`,
@@ -163,6 +166,7 @@ export class SourcingResearchRepository {
           .where(eq(products.id, row.registrationProductId))
           .returning({
             title: products.title,
+            sourceTitleKeywords: products.sourceTitleKeywords,
             searchTags: products.searchTags,
             sellingPrice: products.sellingPrice,
           });
@@ -274,6 +278,7 @@ export class SourcingResearchRepository {
           ownerId,
           status: "draft",
           title: input.title,
+          sourceTitleKeywords: input.sourceTitleKeywords,
           searchTags: input.searchTags,
           sellingPrice: input.sellingPrice,
           description: "",

@@ -19,6 +19,7 @@ import {
   CommerceApiManagedProductUpdater,
 } from "./naver-product-importer";
 import type { NaverRegisteredAttribute } from "./types";
+import { NaverCommerceRelayClient } from "@/modules/channels/naver/naver-commerce-relay";
 
 export function createKeywordManagementService(
   database: Database,
@@ -108,6 +109,27 @@ export function createKeywordManagementService(
             ).summarize(channelProductNo),
         }
       : null;
+  const rankReader =
+    !mock &&
+    Boolean(
+      (env.NAVER_COMMERCE_RELAY_URL_OVERRIDE ??
+        env.NAVER_COMMERCE_RELAY_URL) &&
+        env.NAVER_COMMERCE_RELAY_SHARED_SECRET,
+    )
+      ? {
+          observe: async (
+            input: Parameters<
+              NaverCommerceRelayClient["observeShoppingRanks"]
+            >[0],
+          ) => {
+            const client = createConfiguredNaverClient(env);
+            if (!(client instanceof NaverCommerceRelayClient)) {
+              throw new Error("naver_rank_relay_not_configured");
+            }
+            return client.observeShoppingRanks(input);
+          },
+        }
+      : null;
   return new KeywordManagementService(
     new DrizzleKeywordManagementRepository(database),
     generator,
@@ -121,6 +143,7 @@ export function createKeywordManagementService(
     productImporter,
     productUpdater,
     salesReader,
+    rankReader,
   );
 }
 
@@ -135,6 +158,11 @@ export function keywordRuntimeStatus() {
     ),
     apiHubConfigured: Boolean(
       env.NAVER_API_HUB_CLIENT_ID && env.NAVER_API_HUB_CLIENT_SECRET,
+    ),
+    rankLookupConfigured: Boolean(
+      (env.NAVER_COMMERCE_RELAY_URL_OVERRIDE ??
+        env.NAVER_COMMERCE_RELAY_URL) &&
+        env.NAVER_COMMERCE_RELAY_SHARED_SECRET,
     ),
   };
 }

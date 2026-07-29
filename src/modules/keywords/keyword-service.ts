@@ -11,6 +11,7 @@ import {
   keywordSelectionSchema,
   keywordReviewSchema,
   keywordRankObservationSchema,
+  keywordRankLookupSchema,
   managedProductInputSchema,
   productAnalysisSchema,
   updateGeneratedTitleSchema,
@@ -31,6 +32,7 @@ import {
   type NaverManagedProductSalesReader,
   type NaverManagedProductUpdater,
 } from "./naver-product-importer";
+import type { NaverShoppingRankReader } from "@/modules/channels/naver/naver-shopping-rank";
 
 export class KeywordManagementService {
   constructor(
@@ -46,6 +48,7 @@ export class KeywordManagementService {
     private readonly productImporter: NaverManagedProductImporter | null = null,
     private readonly productUpdater: NaverManagedProductUpdater | null = null,
     private readonly salesReader: NaverManagedProductSalesReader | null = null,
+    private readonly rankReader: NaverShoppingRankReader | null = null,
   ) {}
 
   list(ownerId: string) {
@@ -62,6 +65,17 @@ export class KeywordManagementService {
       );
     }
     return detail;
+  }
+
+  async remove(ownerId: string, id: string) {
+    const removed = await this.repository.remove(ownerId, id);
+    if (!removed) {
+      throw new KeywordManagementError(
+        "not_found",
+        "성장관리에서 제외할 상품을 찾지 못했습니다.",
+        404,
+      );
+    }
   }
 
   async create(ownerId: string, raw: unknown) {
@@ -197,6 +211,61 @@ export class KeywordManagementService {
       checkedAt: input.checkedAt ?? new Date(),
       note: input.note,
     });
+    return this.get(ownerId, id);
+  }
+
+  async observeRanks(ownerId: string, id: string, raw: unknown) {
+    const detail = await this.get(ownerId, id);
+    const input = keywordRankLookupSchema.parse(raw);
+    if (!detail.product.channelProductNo) {
+      throw new KeywordManagementError(
+        "naver_product_not_linked",
+        "네이버 채널 상품번호를 확인하지 못했습니다.",
+        409,
+      );
+    }
+    if (!this.rankReader) {
+      throw new KeywordManagementError(
+        "external_api_not_configured",
+        "로컬 네이버 순위 조회 중계 서버가 연결되지 않았습니다.",
+        503,
+      );
+    }
+    try {
+      const observation = await this.rankReader.observe({
+        keyword: input.keyword,
+        channelProductNo: detail.product.channelProductNo,
+        smartstoreUrl: detail.product.smartstoreUrl,
+        maximumRank: 100,
+      });
+      await Promise.all(
+        observation.results.map((result) =>
+          this.repository.addRankObservation(ownerId, id, {
+            keyword: input.keyword,
+            rank: result.rank,
+            checkedAt: new Date(result.observedAt),
+            note:
+              result.message ??
+              (result.status === "not_found"
+                ? `${result.checkedRange}위 이내 미노출`
+                : ""),
+            device: result.device,
+            resultStatus: result.status,
+            checkedRange: result.checkedRange,
+            source: "browser_observed",
+          }),
+        ),
+      );
+    } catch (error) {
+      throw new KeywordManagementError(
+        "external_api_error",
+        safeExternalMessage(
+          error,
+          "네이버쇼핑 PC·모바일 순위를 조회하지 못했습니다.",
+        ),
+        502,
+      );
+    }
     return this.get(ownerId, id);
   }
 

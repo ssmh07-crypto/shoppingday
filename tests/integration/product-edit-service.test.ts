@@ -11,6 +11,7 @@ const product = {
   ownerId: "u1",
   status: "draft" as const,
   title: "원본",
+  sourceTitleKeywords: [],
   searchTags: [],
   sellingPrice: null,
   currency: "KRW",
@@ -48,6 +49,7 @@ const record: ProductEditorRecord = {
 const draft = {
   draftVersion: 1,
   title: "판매명",
+  sourceTitleKeywords: [],
   searchTags: [" 태그 ", "태그"],
   sellingPrice: 1000,
   currency: "KRW",

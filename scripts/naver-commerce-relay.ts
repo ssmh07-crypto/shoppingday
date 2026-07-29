@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { NaverCommerceClient } from "../src/modules/channels/naver/naver-commerce-client";
 import { createNaverCommerceRelayHandler } from "../src/modules/channels/naver/naver-commerce-relay";
+import { PlaywrightNaverShoppingRankReader } from "./naver-shopping-rank-reader";
 
 const optionalString = z.preprocess(
   (value) => (value === "" ? undefined : value),
@@ -69,6 +70,7 @@ const relayHandler = createNaverCommerceRelayHandler({
       timeoutMs: relayEnv.NAVER_COMMERCE_TIMEOUT_MS,
     }),
   maxClockSkewMs: relayEnv.NAVER_RELAY_MAX_CLOCK_SKEW_MS,
+  shoppingRankReader: new PlaywrightNaverShoppingRankReader(),
 });
 
 const server = createServer(async (incoming, outgoing) => {

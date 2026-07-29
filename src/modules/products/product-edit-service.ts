@@ -89,6 +89,7 @@ export class ProductEditService {
     const input: DraftInput = {
       draftVersion,
       title,
+      sourceTitleKeywords: current.product.sourceTitleKeywords,
       searchTags: current.product.searchTags,
       sellingPrice: current.product.sellingPrice,
       currency: current.product.currency as "KRW",
@@ -221,6 +222,7 @@ function changedFields(
   return (
     [
       "title",
+      "sourceTitleKeywords",
       "searchTags",
       "sellingPrice",
       "currency",

@@ -156,6 +156,9 @@ describe("성장 상품 키워드 관리 화면", () => {
           id: "rank-1",
           keyword: "여름 원피스",
           rank: 37,
+          device: "unknown" as const,
+          resultStatus: "found" as const,
+          checkedRange: 1000,
           checkedAt: new Date("2026-07-25T03:00:00.000Z"),
           note: "",
           source: "manual" as const,
@@ -199,6 +202,75 @@ describe("성장 상품 키워드 관리 화면", () => {
     expect(
       screen.queryByRole("button", { name: "여성 린넨 원피스" }),
     ).not.toBeInTheDocument();
+  });
+
+  it("소싱 상품명 생성에 사용한 키워드를 순위 추적 후보로 보여준다", () => {
+    renderManager();
+    openTab("변경·순위 이력");
+
+    expect(screen.getByText("소싱 상품명 생성에 사용한 키워드")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "여성 원피스" }));
+    expect(screen.getByLabelText("확인 키워드")).toHaveValue("여성 원피스");
+  });
+
+  it("버튼을 누를 때만 PC와 모바일 100위 순위를 조회한다", async () => {
+    const nextDetail: ManagedProductDetail = {
+      ...detail,
+      rankObservations: [
+        {
+          id: "rank-pc",
+          keyword: "여성 원피스",
+          rank: 37,
+          device: "pc",
+          resultStatus: "found",
+          checkedRange: 37,
+          checkedAt: new Date("2026-07-29T12:00:00.000Z"),
+          note: "",
+          source: "browser_observed",
+        },
+        {
+          id: "rank-mobile",
+          keyword: "여성 원피스",
+          rank: null,
+          device: "mobile",
+          resultStatus: "not_found",
+          checkedRange: 100,
+          checkedAt: new Date("2026-07-29T12:00:02.000Z"),
+          note: "",
+          source: "browser_observed",
+        },
+      ],
+    };
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        Response.json({ success: true, data: nextDetail }),
+      );
+    vi.stubGlobal("fetch", fetcher);
+    renderManager({
+      mockMode: false,
+      searchAdConfigured: true,
+      apiHubConfigured: false,
+      rankLookupConfigured: true,
+    });
+    openTab("변경·순위 이력");
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "PC·모바일 100위 조회" }),
+    );
+
+    await waitFor(() =>
+      expect(fetcher).toHaveBeenCalledWith(
+        "/api/keyword-products/product-1/rank-observations/observe",
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({ keyword: "여성 원피스" }),
+        }),
+      ),
+    );
+    expect(await screen.findByText("모바일")).toBeVisible();
+    expect(screen.getByText("100위 내 미노출")).toBeVisible();
+    expect(screen.getByText("37위")).toBeVisible();
   });
 
   it("최종 확인 후 상품명과 검색 태그를 스마트스토어에 반영한다", async () => {
@@ -289,12 +361,42 @@ describe("성장 상품 키워드 관리 화면", () => {
     );
     expect(screen.getByText("변경 1건")).toBeVisible();
   });
+
+  it("확인 후 상품을 성장관리에서만 제외한다", async () => {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(Response.json({ success: true }))
+      .mockResolvedValueOnce(Response.json({ success: true, items: [] }));
+    vi.stubGlobal("fetch", fetcher);
+    const confirmation = vi.spyOn(window, "confirm").mockReturnValue(true);
+    renderManager();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "성장관리에서 제외" }),
+    );
+
+    await waitFor(() =>
+      expect(fetcher).toHaveBeenCalledWith(
+        "/api/keyword-products/product-1",
+        expect.objectContaining({ method: "DELETE" }),
+      ),
+    );
+    expect(confirmation).toHaveBeenCalledWith(
+      expect.stringContaining("등록상품과 스마트스토어 상품은 그대로 유지됩니다."),
+    );
+    expect(
+      await screen.findByText(
+        "상품을 성장관리에서 제외했습니다. 등록상품과 스마트스토어 상품은 유지됩니다.",
+      ),
+    ).toBeVisible();
+  });
 });
 
 function renderManager(runtime: {
   mockMode: boolean;
   searchAdConfigured: boolean;
   apiHubConfigured: boolean;
+  rankLookupConfigured?: boolean;
 } = {
   mockMode: true,
   searchAdConfigured: false,
@@ -351,6 +453,7 @@ const detail: ManagedProductDetail = {
     smartstoreUrl: summary.smartstoreUrl,
     channelProductNo: summary.channelProductNo,
     linkedProductId: null,
+    sourceTitleKeywords: ["여성 원피스"],
     supplierTitle: productInput.supplierTitle,
     currentTitle: null,
     editableTitle: productInput.supplierTitle,

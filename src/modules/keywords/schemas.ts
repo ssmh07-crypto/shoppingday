@@ -69,6 +69,10 @@ export const keywordRankObservationSchema = z.object({
   note: z.string().trim().max(300).default(""),
 });
 
+export const keywordRankLookupSchema = z.object({
+  keyword: z.string().trim().min(1).max(100),
+});
+
 export const applyManagedProductToNaverSchema = z.object({
   confirmed: z.literal(true),
   title: z.string().trim().min(1).max(keywordLimits.maximumProductTitleLength),

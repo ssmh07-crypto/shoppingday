@@ -150,6 +150,10 @@ export const naverAttributesSchema = z
 export const draftInputSchema = z.object({
   draftVersion: z.number().int().positive(),
   title: z.string().trim().max(PRODUCT_LIMITS.title),
+  sourceTitleKeywords: z
+    .array(z.string().trim().min(1).max(100))
+    .max(20)
+    .default([]),
   searchTags: z
     .array(z.string())
     .transform(normalizeTags)

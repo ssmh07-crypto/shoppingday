@@ -183,6 +183,13 @@
       "when": 1785246555326,
       "tag": "0025_heavy_wraith",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1785335483525,
+      "tag": "0026_faulty_marvex",
+      "breakpoints": true
     }
   ]
 }

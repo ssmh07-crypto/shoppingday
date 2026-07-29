@@ -342,8 +342,12 @@ export const products = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     ownerId: uuid("owner_id").references(() => userProfiles.userId),
     status: productStatusEnum("status").notNull().default("draft"),
-    title: text("title").notNull().default(""),
-    searchTags: jsonb("search_tags").$type<string[]>().notNull().default([]),
+      title: text("title").notNull().default(""),
+      sourceTitleKeywords: jsonb("source_title_keywords")
+        .$type<string[]>()
+        .notNull()
+        .default([]),
+      searchTags: jsonb("search_tags").$type<string[]>().notNull().default([]),
     sellingPrice: integer("selling_price"),
     currency: text("currency").notNull().default("KRW"),
     description: text("description").notNull().default(""),
@@ -853,6 +857,15 @@ export const keywordRankObservations = pgTable(
     keyword: text("keyword").notNull(),
     normalizedKeyword: text("normalized_keyword").notNull(),
     rank: integer("rank"),
+    device: text("device")
+      .$type<"unknown" | "pc" | "mobile">()
+      .notNull()
+      .default("unknown"),
+    resultStatus: text("result_status")
+      .$type<"found" | "not_found" | "blocked" | "failed">()
+      .notNull()
+      .default("found"),
+    checkedRange: integer("checked_range").notNull().default(1000),
     checkedAt: timestamp("checked_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -877,7 +890,19 @@ export const keywordRankObservations = pgTable(
     ),
     check(
       "keyword_rank_observations_source_check",
-      sql`${table.source} in ('manual')`,
+      sql`${table.source} in ('manual', 'browser_observed')`,
+    ),
+    check(
+      "keyword_rank_observations_device_check",
+      sql`${table.device} in ('unknown', 'pc', 'mobile')`,
+    ),
+    check(
+      "keyword_rank_observations_result_status_check",
+      sql`${table.resultStatus} in ('found', 'not_found', 'blocked', 'failed')`,
+    ),
+    check(
+      "keyword_rank_observations_checked_range_check",
+      sql`${table.checkedRange} between 1 and 1000`,
     ),
   ],
 );

@@ -126,6 +126,7 @@ function buildSourcingRegistrationInput(
     .filter((price): price is number => price !== null);
   return {
     title: draft.title,
+    sourceTitleKeywords: draft.usedTitleKeywords,
     searchTags: draft.searchTags,
     sellingPrice: research.expectedSellingPrice,
     originalName: research.sourcingKeyword,

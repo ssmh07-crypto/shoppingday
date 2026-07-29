@@ -14,6 +14,26 @@ import type {
 } from "@/modules/keywords/types";
 
 describe("키워드 관리 서비스", () => {
+  it("성장관리 상품만 제거한다", async () => {
+    const repository = fakeRepository();
+    const service = new KeywordManagementService(repository, null, null, config);
+
+    await service.remove("owner-1", "product-1");
+
+    expect(repository.remove).toHaveBeenCalledWith("owner-1", "product-1");
+  });
+
+  it("제거할 성장관리 상품이 없으면 404를 반환한다", async () => {
+    const repository = fakeRepository();
+    vi.mocked(repository.remove).mockResolvedValue(false);
+    const service = new KeywordManagementService(repository, null, null, config);
+
+    await expect(service.remove("owner-1", "missing")).rejects.toMatchObject({
+      code: "not_found",
+      status: 404,
+    });
+  });
+
   it("분석 방식이 없으면 가짜 분석을 만들지 않는다", async () => {
     const repository = fakeRepository();
     const service = new KeywordManagementService(repository, null, null, config);
@@ -277,6 +297,77 @@ describe("키워드 관리 서비스", () => {
     );
   });
 
+  it("요청할 때만 PC와 모바일의 100위 이내 순위를 관측해 저장한다", async () => {
+    const repository = fakeRepository();
+    const rankReader = {
+      observe: vi.fn().mockResolvedValue({
+        results: [
+          {
+            device: "pc" as const,
+            status: "found" as const,
+            rank: 37,
+            checkedRange: 37,
+            observedAt: "2026-07-29T12:00:00.000Z",
+            message: null,
+          },
+          {
+            device: "mobile" as const,
+            status: "not_found" as const,
+            rank: null,
+            checkedRange: 100,
+            observedAt: "2026-07-29T12:00:02.000Z",
+            message: null,
+          },
+        ],
+      }),
+    };
+    const service = new KeywordManagementService(
+      repository,
+      null,
+      null,
+      config,
+      null,
+      null,
+      null,
+      rankReader,
+    );
+
+    await service.observeRanks("owner-1", "product-1", {
+      keyword: "여성 원피스",
+    });
+
+    expect(rankReader.observe).toHaveBeenCalledWith({
+      keyword: "여성 원피스",
+      channelProductNo: "1234567890",
+      smartstoreUrl:
+        "https://smartstore.naver.com/sample/products/1234567890",
+      maximumRank: 100,
+    });
+    expect(repository.addRankObservation).toHaveBeenCalledTimes(2);
+    expect(repository.addRankObservation).toHaveBeenCalledWith(
+      "owner-1",
+      "product-1",
+      expect.objectContaining({
+        device: "pc",
+        rank: 37,
+        resultStatus: "found",
+        checkedRange: 37,
+        source: "browser_observed",
+      }),
+    );
+    expect(repository.addRankObservation).toHaveBeenCalledWith(
+      "owner-1",
+      "product-1",
+      expect.objectContaining({
+        device: "mobile",
+        rank: null,
+        resultStatus: "not_found",
+        checkedRange: 100,
+        source: "browser_observed",
+      }),
+    );
+  });
+
   it("최종 확인한 상품명과 태그를 기존 스마트스토어 상품에 반영한다", async () => {
     const repository = fakeRepository();
     vi.mocked(repository.findLocalPublication).mockResolvedValue({
@@ -373,6 +464,7 @@ function fakeRepository(): KeywordManagementRepository {
   return {
     list: vi.fn().mockResolvedValue([]),
     find: vi.fn().mockResolvedValue(detail),
+    remove: vi.fn().mockResolvedValue(true),
     findLocalPublication: vi.fn().mockResolvedValue(null),
     create: vi.fn().mockResolvedValue({ id: "product-1" }),
     updateProductInput: vi.fn().mockResolvedValue(true),
@@ -399,6 +491,7 @@ const detail: ManagedProductDetail = {
     smartstoreUrl: "https://smartstore.naver.com/sample/products/1234567890",
     channelProductNo: "1234567890",
     linkedProductId: null,
+    sourceTitleKeywords: ["여성 원피스"],
     supplierTitle: "여성 원피스",
     currentTitle: null,
     editableTitle: "여성 원피스",

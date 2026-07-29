@@ -166,6 +166,7 @@ export interface ManagedProductDetail {
     currentTitle: string | null;
     editableTitle: string;
     finalTitle: string | null;
+    sourceTitleKeywords: string[];
     productInput: ManagedProductInput;
     status: string;
     createdAt: Date;
@@ -197,9 +198,12 @@ export interface KeywordRankObservation {
   id: string;
   keyword: string;
   rank: number | null;
+  device: "unknown" | "pc" | "mobile";
+  resultStatus: "found" | "not_found" | "blocked" | "failed";
+  checkedRange: number;
   checkedAt: Date;
   note: string;
-  source: "manual";
+  source: "manual" | "browser_observed";
 }
 
 export interface KeywordFilterState {
