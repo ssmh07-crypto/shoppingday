@@ -200,7 +200,7 @@ const changedProductOrdersEnvelopeSchema = z.object({
       lastChangeStatuses: z.array(changedProductOrderSchema).default([]),
       more: changedProductOrderMoreSchema,
     }),
-  ]),
+  ]).optional(),
 });
 const productOrderInfoSchema = z.object({
   order: z.object({
@@ -402,6 +402,9 @@ export async function parseNaverCommerceChangedProductOrders(
     "네이버 변경 상품 주문 응답 형식이 올바르지 않습니다.",
   );
   const data = parsed.data;
+  if (!data) {
+    return { productOrderIds: [] };
+  }
   if (Array.isArray(data)) {
     return { productOrderIds: data.map((item) => item.productOrderId) };
   }

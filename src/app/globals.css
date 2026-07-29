@@ -2085,6 +2085,36 @@ td small {
   align-items: end;
 }
 
+.keyword-rank-title-keywords {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid #b7dfcd;
+  border-radius: 10px;
+  background: #f7fcf9;
+}
+
+.keyword-rank-title-keywords > strong {
+  color: #165f48;
+  font-size: 13px;
+}
+
+.keyword-rank-title-keywords > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.keyword-rank-title-keywords button {
+  min-height: 32px;
+  padding: 5px 9px;
+}
+
+.keyword-rank-title-keywords small {
+  color: var(--keyword-muted);
+}
+
 .keyword-rank-entry label {
   display: grid;
   gap: 7px;
@@ -4772,6 +4802,11 @@ td small {
 .keyword-current-tags small {
   color: var(--keyword-muted);
   font-size: 12px;
+}
+.keyword-title-keywords > div > span {
+  border-color: #b7dfcd;
+  background: #f0fbf6;
+  color: #167052;
 }
 .keyword-detail-tabs {
   position: sticky;

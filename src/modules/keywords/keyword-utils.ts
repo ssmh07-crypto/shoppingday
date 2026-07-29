@@ -16,6 +16,38 @@ export function sanitizeKeyword(value: string) {
   return value.normalize("NFKC").trim().replace(/\s+/g, " ");
 }
 
+export function findKeywordsUsedInTitle(
+  title: string,
+  keywords: string[],
+) {
+  const compactTitle = normalizeKeyword(title).replace(/\s+/g, "");
+  if (!compactTitle) return [];
+  const seen = new Set<string>();
+  return keywords
+    .map((keyword) => {
+      const value = sanitizeKeyword(keyword);
+      const normalized = normalizeKeyword(value);
+      const compact = normalized.replace(/\s+/g, "");
+      return {
+        value,
+        normalized: compact,
+        index: compact ? compactTitle.indexOf(compact) : -1,
+      };
+    })
+    .filter(
+      (item) =>
+        item.value.length > 1 &&
+        item.index >= 0 &&
+        !seen.has(item.normalized) &&
+        Boolean(seen.add(item.normalized)),
+    )
+    .sort(
+      (left, right) =>
+        left.index - right.index || right.value.length - left.value.length,
+    )
+    .map((item) => item.value);
+}
+
 export function deduplicateKeywordCandidates(
   candidates: GeneratedKeywordCandidate[],
   limit: number = keywordLimits.maximumCandidates,

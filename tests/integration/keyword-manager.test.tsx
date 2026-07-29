@@ -188,6 +188,19 @@ describe("성장 상품 키워드 관리 화면", () => {
     expect(await screen.findByText("37위")).toBeVisible();
   });
 
+  it("현재 상품명에 실제 포함된 키워드를 순위 추적 후보로 보여준다", () => {
+    renderManager();
+
+    expect(screen.getByText("상품명 키워드")).toBeVisible();
+    openTab("변경·순위 이력");
+
+    fireEvent.click(screen.getByRole("button", { name: "원피스" }));
+    expect(screen.getByLabelText("확인 키워드")).toHaveValue("원피스");
+    expect(
+      screen.queryByRole("button", { name: "여성 린넨 원피스" }),
+    ).not.toBeInTheDocument();
+  });
+
   it("최종 확인 후 상품명과 검색 태그를 스마트스토어에 반영한다", async () => {
     const fetcher = vi
       .fn<typeof fetch>()

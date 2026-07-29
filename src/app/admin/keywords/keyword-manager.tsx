@@ -14,7 +14,10 @@ import {
   defaultKeywordFilters,
   filterAndSortKeywords,
 } from "@/modules/keywords/keyword-filter";
-import { formatRawTotalSearchVolume } from "@/modules/keywords/keyword-utils";
+import {
+  findKeywordsUsedInTitle,
+  formatRawTotalSearchVolume,
+} from "@/modules/keywords/keyword-utils";
 import { assessProductTitle } from "@/modules/keywords/title-quality";
 import { assessSearchTag } from "@/modules/keywords/search-tag-quality";
 import { keywordThresholds } from "@/modules/keywords/config";
@@ -509,6 +512,14 @@ function KeywordProductDetail({
   );
   const [attributesOpen, setAttributesOpen] = useState(false);
   const optimizationSearchTags = optimizationTags;
+  const titleKeywords = useMemo(
+    () =>
+      findKeywordsUsedInTitle(optimizationTitle, [
+        ...detail.keywords.map((item) => item.keyword),
+        ...detail.titles.flatMap((title) => title.selectedKeywords),
+      ]),
+    [detail.keywords, detail.titles, optimizationTitle],
+  );
   const optimizationTagIssues = useMemo(
     () =>
       optimizationSearchTags.flatMap((tag) =>
@@ -844,6 +855,17 @@ function KeywordProductDetail({
             ))}
             {!detail.product.productInput.searchTags?.length && (
               <small>등록된 태그 없음</small>
+            )}
+          </div>
+        </div>
+        <div className="keyword-current-tags keyword-title-keywords">
+          <span>상품명 키워드</span>
+          <div>
+            {titleKeywords.map((keyword) => (
+              <span key={keyword}>{keyword}</span>
+            ))}
+            {!titleKeywords.length && (
+              <small>현재 상품명과 일치하는 분석 키워드가 없습니다.</small>
             )}
           </div>
         </div>
@@ -1251,6 +1273,7 @@ function KeywordProductDetail({
           <TitleHistoryPanel detail={detail} />
           <RankTrackingPanel
             detail={detail}
+            titleKeywords={titleKeywords}
             busy={busy}
             onBusy={onBusy}
             onChange={onDetailChange}
@@ -1434,18 +1457,21 @@ function TitleHistoryPanel({ detail }: { detail: ManagedProductDetail }) {
 
 function RankTrackingPanel({
   detail,
+  titleKeywords,
   busy,
   onBusy,
   onChange,
   onFeedback,
 }: {
   detail: ManagedProductDetail;
+  titleKeywords: string[];
   busy: string | null;
   onBusy: (value: string | null) => void;
   onChange: (value: ManagedProductDetail) => void;
   onFeedback: (message: string | null, error: string | null) => void;
 }) {
   const selectedKeyword =
+    titleKeywords[0] ??
     detail.keywords.find((keyword) => keyword.isSelected)?.keyword ??
     detail.keywords[0]?.keyword ??
     "";
@@ -1497,6 +1523,24 @@ function RankTrackingPanel({
         </div>
       </div>
       <div className="keyword-rank-entry">
+        <div className="keyword-rank-title-keywords">
+          <strong>상품명 기반 추적 후보</strong>
+          <div>
+            {titleKeywords.map((item) => (
+              <button
+                type="button"
+                className="secondary"
+                key={item}
+                onClick={() => setKeyword(item)}
+              >
+                {item}
+              </button>
+            ))}
+            {!titleKeywords.length && (
+              <small>상품명과 일치하는 키워드 후보가 없습니다.</small>
+            )}
+          </div>
+        </div>
         <label>
           <span>확인 키워드</span>
           <input
@@ -1505,8 +1549,13 @@ function RankTrackingPanel({
             onChange={(event) => setKeyword(event.target.value)}
           />
           <datalist id={`rank-keywords-${detail.product.id}`}>
-            {detail.keywords.map((item) => (
-              <option key={item.id} value={item.keyword} />
+            {Array.from(
+              new Set([
+                ...titleKeywords,
+                ...detail.keywords.map((item) => item.keyword),
+              ]),
+            ).map((item) => (
+              <option key={item} value={item} />
             ))}
           </datalist>
         </label>

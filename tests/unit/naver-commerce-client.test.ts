@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   createNaverCommerceSignature,
   NaverCommerceClient,
+  parseNaverCommerceChangedProductOrders,
   type NaverCommerceConfig,
 } from "@/modules/channels/naver/naver-commerce-client";
 
@@ -16,6 +17,17 @@ const config: NaverCommerceConfig = {
   tokenType: "SELF",
   timeoutMs: 1000,
 };
+
+it("변경 주문이 없는 성공 응답은 빈 목록으로 처리한다", async () => {
+  await expect(
+    parseNaverCommerceChangedProductOrders(
+      Response.json({
+        timestamp: "2026-07-29T13:44:35.000Z",
+        traceId: "trace-id",
+      }),
+    ),
+  ).resolves.toEqual({ productOrderIds: [] });
+});
 const categories = [
   {
     id: "50000000",

@@ -5,6 +5,7 @@ import {
   classifyKeywordSize,
   deduplicateKeywordCandidates,
   extractSmartstoreProductNo,
+  findKeywordsUsedInTitle,
   formatRawTotalSearchVolume,
   normalizeKeyword,
   normalizeSearchVolume,
@@ -14,6 +15,18 @@ import type {
   KeywordCandidateRecord,
   KeywordFilterState,
 } from "@/modules/keywords/types";
+
+it("실제 상품명에 포함된 키워드만 상품명 순서로 찾는다", () => {
+  expect(
+    findKeywordsUsedInTitle("여성 린넨 원피스 여름", [
+      "원피스",
+      "여성 원피스",
+      "여성 린넨 원피스",
+      "겨울 원피스",
+      "여성린넨원피스",
+    ]),
+  ).toEqual(["여성 린넨 원피스", "원피스"]);
+});
 
 describe("키워드 정규화와 검색량", () => {
   it("공백과 유니코드를 정규화하고 같은 키워드를 중복 제거한다", () => {
