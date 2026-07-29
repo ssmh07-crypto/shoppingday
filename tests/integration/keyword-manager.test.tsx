@@ -239,6 +239,10 @@ describe("성장 상품 키워드 관리 화면", () => {
     );
     expect(screen.getByText("29,000원")).toBeVisible();
     expect(screen.getByText("20개")).toBeVisible();
+    expect(screen.getByText("여름용 린넨 혼방 원피스")).toBeVisible();
+    expect(
+      screen.queryByText("<p>여름용 <strong>린넨 혼방</strong> 원피스</p>"),
+    ).not.toBeInTheDocument();
     expect(screen.queryByText("네이버 등록 정보")).not.toBeInTheDocument();
     expect(screen.queryByText("키워드 후보")).not.toBeInTheDocument();
 
@@ -282,7 +286,7 @@ function openTab(name: "상품 운영" | "키워드 분석" | "변경·순위 �
 
 const productInput = {
   supplierTitle: "여성 린넨 루즈핏 원피스",
-  description: "여름용 린넨 혼방 원피스",
+  description: "<p>여름용 <strong>린넨 혼방</strong> 원피스</p>",
   category: "패션의류 > 여성의류 > 원피스",
   features: ["루즈핏"],
   materials: ["린넨 혼방"],

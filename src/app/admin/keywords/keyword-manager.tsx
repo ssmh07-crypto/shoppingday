@@ -531,6 +531,9 @@ function KeywordProductDetail({
     () => assessProductTitle(draftTitle, detail.analysis?.analysis.productType ?? ""),
     [draftTitle, detail.analysis?.analysis.productType],
   );
+  const overviewDescription =
+    htmlToPlainText(detail.product.productInput.description) ||
+    "상세 설명은 스마트스토어 상품 페이지에서 확인할 수 있습니다.";
   const changeCount = useMemo(() => {
     const input = detail.product.productInput;
     const currentTitle =
@@ -787,7 +790,7 @@ function KeywordProductDetail({
               )}
             </div>
             <h2>{detail.product.finalTitle || detail.product.editableTitle}</h2>
-            <p>{detail.product.productInput.description || "상품 설명이 없습니다."}</p>
+            <p title={overviewDescription}>{overviewDescription}</p>
             <a href={detail.product.smartstoreUrl} target="_blank" rel="noreferrer">
               스마트스토어 상품 보기 ↗
             </a>
@@ -2061,6 +2064,28 @@ function splitList(value: string) {
         .filter(Boolean),
     ),
   );
+}
+
+function htmlToPlainText(value: string) {
+  return value
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, " ")
+    .replace(/<(?:br|\/p|\/div|\/li|\/h[1-6])\b[^>]*>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;|&#160;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, "\"")
+    .replace(/&#39;|&apos;/gi, "'")
+    .replace(/&#x([0-9a-f]+);/gi, (_, code: string) =>
+      String.fromCodePoint(Number.parseInt(code, 16)),
+    )
+    .replace(/&#(\d+);/g, (_, code: string) =>
+      String.fromCodePoint(Number.parseInt(code, 10)),
+    )
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function formatRawVolume(raw: string | null, normalized: number | null) {
