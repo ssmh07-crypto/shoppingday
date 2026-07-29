@@ -25,7 +25,7 @@ $userId = [Security.Principal.WindowsIdentity]::GetCurrent().Name
 $escapedRunnerPath = $runnerPath.Replace('"', '""')
 $action = New-ScheduledTaskAction `
   -Execute "powershell.exe" `
-  -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$escapedRunnerPath`"" `
+  -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$escapedRunnerPath`" -KeepRetrying" `
   -WorkingDirectory $projectRoot
 $trigger = New-ScheduledTaskTrigger -AtLogOn -User $userId
 $principal = New-ScheduledTaskPrincipal `
@@ -46,7 +46,7 @@ $task = New-ScheduledTask `
   -Trigger $trigger `
   -Principal $principal `
   -Settings $settings `
-  -Description "Starts Shoppingday's Naver Commerce relay and Cloudflare Quick Tunnel at Windows logon."
+  -Description "Starts and supervises Shoppingday's Naver Commerce relay and Cloudflare Quick Tunnel at Windows logon."
 
 Register-ScheduledTask -TaskName $taskName -InputObject $task -Force | Out-Null
 Write-Host "Registered '$taskName' for $userId."

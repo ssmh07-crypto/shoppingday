@@ -1,6 +1,9 @@
 param(
   [switch]$SkipWorkerUpdate,
-  [switch]$VerifyOnly
+  [switch]$VerifyOnly,
+  [switch]$KeepRetrying,
+  [ValidateRange(5, 3600)]
+  [int]$RetryDelaySeconds = 60
 )
 
 $ErrorActionPreference = "Stop"
@@ -11,6 +14,7 @@ $relayOutLog = Join-Path $env:TEMP "shoppingday-naver-relay.out.log"
 $relayErrorLog = Join-Path $env:TEMP "shoppingday-naver-relay.error.log"
 $tunnelOutLog = Join-Path $env:TEMP "shoppingday-cloudflared.out.log"
 $tunnelErrorLog = Join-Path $env:TEMP "shoppingday-cloudflared.error.log"
+$supervisorLog = Join-Path $env:TEMP "shoppingday-naver-supervisor.log"
 
 Set-Location $projectRoot
 
@@ -139,58 +143,103 @@ function Update-WorkerRelaySettings {
   if ($LASTEXITCODE -ne 0) { throw "Failed to update the Worker relay URL." }
 }
 
+function Write-SupervisorLog {
+  param(
+    [string]$Level,
+    [string]$Message
+  )
+
+  $timestamp = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ssK")
+  Add-Content -LiteralPath $supervisorLog -Encoding utf8 `
+    -Value "$timestamp [$Level] $Message"
+}
+
 Assert-RequiredSetting -Name "NAVER_COMMERCE_CLIENT_ID"
 Assert-RequiredSetting -Name "NAVER_COMMERCE_CLIENT_SECRET"
 $relaySecret = Get-OrCreateRelaySecret
 $cloudflaredPath = Get-CloudflaredPath
 
-foreach ($log in @($relayOutLog, $relayErrorLog, $tunnelOutLog, $tunnelErrorLog)) {
-  Remove-Item -LiteralPath $log -Force -ErrorAction SilentlyContinue
+function Invoke-RelayTunnelSession {
+  foreach (
+    $log in @(
+      $relayOutLog,
+      $relayErrorLog,
+      $tunnelOutLog,
+      $tunnelErrorLog
+    )
+  ) {
+    Remove-Item -LiteralPath $log -Force -ErrorAction SilentlyContinue
+  }
+
+  $relay = $null
+  $tunnel = $null
+  try {
+    $relay = Start-Process -FilePath "node.exe" -ArgumentList @(
+      "--env-file=$envFile",
+      "--env-file=$relayEnvFile",
+      "--import",
+      "tsx",
+      "scripts/naver-commerce-relay.ts"
+    ) -WorkingDirectory $projectRoot -WindowStyle Hidden -PassThru `
+      -RedirectStandardOutput $relayOutLog -RedirectStandardError $relayErrorLog
+    Wait-ForRelay -Process $relay
+    Write-Host "Local Naver relay is healthy."
+
+    $tunnel = Start-Process -FilePath $cloudflaredPath -ArgumentList @(
+      "tunnel",
+      "--url",
+      "http://127.0.0.1:8788",
+      "--no-autoupdate"
+    ) -WindowStyle Hidden -PassThru `
+      -RedirectStandardOutput $tunnelOutLog -RedirectStandardError $tunnelErrorLog
+    $tunnelUrl = Wait-ForTunnelUrl -Process $tunnel
+    Write-Host "Cloudflare Tunnel: $tunnelUrl"
+
+    if ($VerifyOnly) {
+      Write-Host "Local relay and tunnel verification passed."
+      return
+    }
+
+    if (-not $SkipWorkerUpdate) {
+      Write-Host "Updating and deploying the Worker relay settings..."
+      Update-WorkerRelaySettings -TunnelUrl $tunnelUrl -SharedSecret $relaySecret
+      Write-Host "Worker is connected to the local relay."
+    } else {
+      Write-Host "Worker update was skipped."
+    }
+
+    Write-SupervisorLog -Level "INFO" `
+      -Message "Relay and Quick Tunnel are healthy; Worker relay settings are current."
+    Write-Host "Keep this window open. Press Ctrl+C to stop the relay and tunnel."
+    while (-not $relay.HasExited -and -not $tunnel.HasExited) {
+      Start-Sleep -Seconds 2
+    }
+    throw "The relay or tunnel stopped unexpectedly."
+  } finally {
+    if ($tunnel -and -not $tunnel.HasExited) {
+      Stop-Process -Id $tunnel.Id -Force
+    }
+    if ($relay -and -not $relay.HasExited) {
+      Stop-Process -Id $relay.Id -Force
+    }
+  }
 }
 
-$relay = $null
-$tunnel = $null
-try {
-  $relay = Start-Process -FilePath "node.exe" -ArgumentList @(
-    "--env-file=$envFile",
-    "--env-file=$relayEnvFile",
-    "--import",
-    "tsx",
-    "scripts/naver-commerce-relay.ts"
-  ) -WorkingDirectory $projectRoot -WindowStyle Hidden -PassThru `
-    -RedirectStandardOutput $relayOutLog -RedirectStandardError $relayErrorLog
-  Wait-ForRelay -Process $relay
-  Write-Host "Local Naver relay is healthy."
+if (-not $KeepRetrying -or $VerifyOnly) {
+  Invoke-RelayTunnelSession
+  return
+}
 
-  $tunnel = Start-Process -FilePath $cloudflaredPath -ArgumentList @(
-    "tunnel",
-    "--url",
-    "http://127.0.0.1:8788",
-    "--no-autoupdate"
-  ) -WindowStyle Hidden -PassThru `
-    -RedirectStandardOutput $tunnelOutLog -RedirectStandardError $tunnelErrorLog
-  $tunnelUrl = Wait-ForTunnelUrl -Process $tunnel
-  Write-Host "Cloudflare Tunnel: $tunnelUrl"
-
-  if ($VerifyOnly) {
-    Write-Host "Local relay and tunnel verification passed."
-    return
+Write-SupervisorLog -Level "INFO" `
+  -Message "Supervisor started; failed sessions will retry every $RetryDelaySeconds seconds."
+while ($true) {
+  try {
+    Invoke-RelayTunnelSession
+  } catch {
+    $message = $_.Exception.Message
+    Write-SupervisorLog -Level "ERROR" `
+      -Message "$message Retrying in $RetryDelaySeconds seconds."
+    Write-Warning "$message Retrying in $RetryDelaySeconds seconds."
+    Start-Sleep -Seconds $RetryDelaySeconds
   }
-
-  if (-not $SkipWorkerUpdate) {
-    Write-Host "Updating and deploying the Worker relay settings..."
-    Update-WorkerRelaySettings -TunnelUrl $tunnelUrl -SharedSecret $relaySecret
-    Write-Host "Worker is connected to the local relay."
-  } else {
-    Write-Host "Worker update was skipped."
-  }
-
-  Write-Host "Keep this window open. Press Ctrl+C to stop the relay and tunnel."
-  while (-not $relay.HasExited -and -not $tunnel.HasExited) {
-    Start-Sleep -Seconds 2
-  }
-  throw "The relay or tunnel stopped unexpectedly."
-} finally {
-  if ($tunnel -and -not $tunnel.HasExited) { Stop-Process -Id $tunnel.Id -Force }
-  if ($relay -and -not $relay.HasExited) { Stop-Process -Id $relay.Id -Force }
 }
