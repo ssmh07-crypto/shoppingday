@@ -77,6 +77,7 @@ export function createKeywordManagementService(
               stockQuantity: number;
               statusType: "SALE" | "OUTOFSTOCK" | "SUSPENSION";
               naverAttributes: NaverRegisteredAttribute[];
+              originProductNo?: string;
             },
             storeConnectionId?: string,
           ) =>

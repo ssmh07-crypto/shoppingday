@@ -69,7 +69,6 @@ describe("네이버 관리 상품 정보 가져오기", () => {
   it("현재 전체 상품정보를 유지하면서 성장 관리 편집값을 교체한다", async () => {
     const client = {
       fetchChannelProduct: vi.fn().mockResolvedValue({
-        originProductNo: "100000001",
         originProduct: {
           statusType: "SALE",
           saleType: "NEW",
@@ -100,6 +99,7 @@ describe("네이버 관리 상품 정보 가져오기", () => {
       stockQuantity: 25,
       statusType: "SALE",
       naverAttributes: [],
+      originProductNo: "100000001",
     });
 
     expect(client.updateProduct).toHaveBeenCalledWith(

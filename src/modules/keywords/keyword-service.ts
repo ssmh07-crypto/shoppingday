@@ -218,6 +218,10 @@ export class KeywordManagementService {
       );
     }
     try {
+      const localPublication = await this.repository.findLocalPublication(
+        ownerId,
+        detail.product.channelProductNo,
+      );
       await this.productUpdater.apply(
         detail.product.channelProductNo,
         {
@@ -227,6 +231,9 @@ export class KeywordManagementService {
           stockQuantity: input.stockQuantity,
           statusType: input.statusType,
           naverAttributes: input.naverAttributes,
+          ...(localPublication?.originProductNo
+            ? { originProductNo: localPublication.originProductNo }
+            : {}),
         },
         detail.product.storeConnectionId ?? undefined,
       );

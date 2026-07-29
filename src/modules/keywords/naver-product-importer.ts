@@ -42,6 +42,7 @@ export interface NaverManagedProductUpdater {
       stockQuantity: number;
       statusType: "SALE" | "OUTOFSTOCK" | "SUSPENSION";
       naverAttributes: NaverRegisteredAttribute[];
+      originProductNo?: string;
     },
     storeConnectionId?: string,
   ): Promise<void>;
@@ -151,11 +152,14 @@ export class CommerceApiManagedProductUpdater
       stockQuantity: number;
       statusType: "SALE" | "OUTOFSTOCK" | "SUSPENSION";
       naverAttributes: NaverRegisteredAttribute[];
+      originProductNo?: string;
     },
   ) {
     const product = await this.client.fetchChannelProduct(channelProductNo);
+    const originProductNo =
+      input.originProductNo ?? product.originProductNo;
     if (
-      !product.originProductNo ||
+      !originProductNo ||
       !product.smartstoreChannelProduct ||
       typeof product.smartstoreChannelProduct !== "object"
     ) {
@@ -209,7 +213,7 @@ export class CommerceApiManagedProductUpdater
       },
       smartstoreChannelProduct: product.smartstoreChannelProduct,
     } as unknown as NaverProductPayload;
-    await this.client.updateProduct(product.originProductNo, payload);
+    await this.client.updateProduct(originProductNo, payload);
   }
 }
 

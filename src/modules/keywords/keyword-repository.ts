@@ -38,6 +38,7 @@ import { productAnalysisSchema } from "./schemas";
 
 export interface LocalPublishedProduct {
   id: string;
+  originProductNo: string | null;
   title: string;
   description: string;
   searchTags: string[];
@@ -283,6 +284,7 @@ export class DrizzleKeywordManagementRepository
     const [row] = await this.database
       .select({
         id: products.id,
+        originProductNo: productPublications.originProductNo,
         title: products.title,
         description: products.description,
         searchTags: products.searchTags,

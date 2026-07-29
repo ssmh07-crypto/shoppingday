@@ -279,6 +279,16 @@ describe("키워드 관리 서비스", () => {
 
   it("최종 확인한 상품명과 태그를 기존 스마트스토어 상품에 반영한다", async () => {
     const repository = fakeRepository();
+    vi.mocked(repository.findLocalPublication).mockResolvedValue({
+      id: "local-product-1",
+      originProductNo: "100000001",
+      title: "Existing product",
+      description: "",
+      searchTags: [],
+      naverCategoryId: "50000805",
+      selectedImages: [],
+      storeConnectionId: "store-1",
+    });
     const updater = {
       apply: vi.fn().mockResolvedValue(undefined),
     };
@@ -310,6 +320,7 @@ describe("키워드 관리 서비스", () => {
         stockQuantity: 20,
         statusType: "SALE",
         naverAttributes: [],
+        originProductNo: "100000001",
       },
       undefined,
     );
