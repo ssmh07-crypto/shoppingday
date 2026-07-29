@@ -242,6 +242,8 @@ export class CommerceApiManagedProductSalesReader
   constructor(
     private readonly client: NaverCategoriesClient,
     private readonly now: () => Date = () => new Date(),
+    private readonly wait: (delayMs: number) => Promise<void> = (delayMs) =>
+      new Promise((resolve) => setTimeout(resolve, delayMs)),
   ) {}
 
   async summarize(
@@ -271,30 +273,48 @@ export class CommerceApiManagedProductSalesReader
         ),
       };
     });
-    await Promise.all(
-      Array.from({ length: 3 }, async (_, worker) => {
-        for (
-          let windowIndex = worker;
-          windowIndex < windows.length;
-          windowIndex += 3
-        ) {
-          const window = windows[windowIndex]!;
-          let cursorFrom = window.start.toISOString();
-          let moreSequence: string | undefined;
-          for (let page = 0; page < 100; page += 1) {
-            const result = await this.client.fetchLastChangedProductOrders!({
-              lastChangedFrom: cursorFrom,
-              lastChangedTo: window.end.toISOString(),
-              ...(moreSequence ? { moreSequence } : {}),
-            });
-            result.productOrderIds.forEach((id) => productOrderIds.add(id));
-            if (!result.more) break;
-            cursorFrom = result.more.moreFrom;
-            moreSequence = result.more.moreSequence;
+    let hasRequestedChangedOrders = false;
+    const fetchChangedOrders = async (input: {
+      lastChangedFrom: string;
+      lastChangedTo: string;
+      moreSequence?: string;
+    }) => {
+      if (hasRequestedChangedOrders) await this.wait(500);
+      hasRequestedChangedOrders = true;
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        try {
+          return await this.client.fetchLastChangedProductOrders!(input);
+        } catch (error) {
+          if (
+            attempt === 2 ||
+            !(error instanceof NaverCommerceError) ||
+            ![429, 502, 503, 504].includes(error.responseStatus ?? 0)
+          ) {
+            throw error;
           }
+          await this.wait(1_000 * 2 ** attempt);
         }
-      }),
-    );
+      }
+      throw new NaverCommerceError(
+        "request_failed",
+        "네이버 주문 조회 요청을 완료하지 못했습니다.",
+      );
+    };
+    for (const window of windows) {
+      let cursorFrom = window.start.toISOString();
+      let moreSequence: string | undefined;
+      for (let page = 0; page < 100; page += 1) {
+        const result = await fetchChangedOrders({
+          lastChangedFrom: cursorFrom,
+          lastChangedTo: window.end.toISOString(),
+          ...(moreSequence ? { moreSequence } : {}),
+        });
+        result.productOrderIds.forEach((id) => productOrderIds.add(id));
+        if (!result.more) break;
+        cursorFrom = result.more.moreFrom;
+        moreSequence = result.more.moreSequence;
+      }
+    }
 
     let sevenDays = 0;
     let thirtyDays = 0;

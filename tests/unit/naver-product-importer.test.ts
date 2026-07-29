@@ -7,6 +7,7 @@ import {
   CommerceApiManagedProductSalesReader,
   CommerceApiManagedProductUpdater,
 } from "@/modules/keywords/naver-product-importer";
+import { NaverCommerceError } from "@/modules/channels/naver/naver-commerce-client";
 
 describe("네이버 관리 상품 정보 가져오기", () => {
   it("등록 카테고리·속성·판매자 태그를 사람이 확인할 수 있는 값으로 변환한다", async () => {
@@ -193,6 +194,7 @@ describe("네이버 관리 상품 정보 가져오기", () => {
     const reader = new CommerceApiManagedProductSalesReader(
       client as never,
       () => new Date("2026-07-29T00:00:00.000Z"),
+      vi.fn().mockResolvedValue(undefined),
     );
 
     await expect(reader.summarize("200000001")).resolves.toEqual({
@@ -203,5 +205,35 @@ describe("네이버 관리 상품 정보 가져오기", () => {
     });
     expect(client.fetchLastChangedProductOrders).toHaveBeenCalledTimes(30);
     expect(client.fetchProductOrders).toHaveBeenCalledTimes(1);
+  });
+
+  it("호출 제한 응답은 순차 백오프 후 다시 조회한다", async () => {
+    const wait = vi.fn().mockResolvedValue(undefined);
+    const client = {
+      fetchLastChangedProductOrders: vi
+        .fn()
+        .mockRejectedValueOnce(
+          new NaverCommerceError(
+            "request_failed",
+            "Too many requests",
+            429,
+          ),
+        )
+        .mockResolvedValue({ productOrderIds: [] }),
+      fetchProductOrders: vi.fn().mockResolvedValue([]),
+    };
+    const reader = new CommerceApiManagedProductSalesReader(
+      client as never,
+      () => new Date("2026-07-29T00:00:00.000Z"),
+      wait,
+    );
+
+    await expect(reader.summarize("200000001")).resolves.toMatchObject({
+      sevenDays: 0,
+      thirtyDays: 0,
+    });
+    expect(client.fetchLastChangedProductOrders).toHaveBeenCalledTimes(31);
+    expect(wait).toHaveBeenCalledWith(1_000);
+    expect(wait).toHaveBeenCalledWith(500);
   });
 });
