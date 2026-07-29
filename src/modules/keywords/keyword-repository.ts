@@ -1,5 +1,5 @@
 import "server-only";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
   and,
   desc,
@@ -18,6 +18,7 @@ import {
   keywordMetricCache,
   keywordRankObservations,
   naverStoreConnections,
+  productAuditLogs,
   productKeywordAnalyses,
   productPublications,
   products,
@@ -791,7 +792,10 @@ export class DrizzleKeywordManagementRepository
   ) {
     return this.database.transaction(async (tx) => {
       const [current] = await tx
-        .select({ productInput: keywordManagedProducts.productInput })
+        .select({
+          productInput: keywordManagedProducts.productInput,
+          linkedProductId: keywordManagedProducts.linkedProductId,
+        })
         .from(keywordManagedProducts)
         .where(
           and(
@@ -830,6 +834,94 @@ export class DrizzleKeywordManagementRepository
           ),
         )
         .returning({ id: keywordManagedProducts.id });
+
+      if (updated && current.linkedProductId) {
+        const [linkedProduct] = await tx
+          .select({
+            title: products.title,
+            searchTags: products.searchTags,
+            sellingPrice: products.sellingPrice,
+            naverAttributes: products.naverAttributes,
+          })
+          .from(products)
+          .where(
+            and(
+              eq(products.id, current.linkedProductId),
+              or(eq(products.ownerId, ownerId), isNull(products.ownerId)),
+            ),
+          )
+          .limit(1);
+
+        if (linkedProduct) {
+          const naverAttributes = value.naverAttributes
+            ? value.naverAttributes.map((attribute) => ({
+                attributeSeq: attribute.attributeSeq,
+                attributeValueSeq: attribute.attributeValueSeq,
+                minValue: attribute.minValue ?? "",
+                maxValue: attribute.maxValue ?? "",
+                unitCode: attribute.unitCode ?? null,
+              }))
+            : linkedProduct.naverAttributes;
+          const syncedValues = {
+            title: value.title,
+            searchTags: value.searchTags,
+            sellingPrice: value.salePrice,
+            naverAttributes,
+          };
+          const changedFields = (
+            ["title", "searchTags", "sellingPrice", "naverAttributes"] as const
+          ).filter(
+            (field) =>
+              JSON.stringify(linkedProduct[field]) !==
+              JSON.stringify(syncedValues[field]),
+          );
+
+          if (changedFields.length) {
+            const [syncedProduct] = await tx
+              .update(products)
+              .set({
+                ...syncedValues,
+                draftVersion: sql`${products.draftVersion}+1`,
+                updatedAt: new Date(),
+              })
+              .where(
+                and(
+                  eq(products.id, current.linkedProductId),
+                  or(eq(products.ownerId, ownerId), isNull(products.ownerId)),
+                ),
+              )
+              .returning({
+                title: products.title,
+                searchTags: products.searchTags,
+                sellingPrice: products.sellingPrice,
+                naverAttributes: products.naverAttributes,
+              });
+
+            if (syncedProduct) {
+              await tx.insert(productAuditLogs).values({
+                actorId: ownerId,
+                entityId: current.linkedProductId,
+                action: "growth_management_naver_applied",
+                changedFields: [...changedFields],
+                oldValues: Object.fromEntries(
+                  changedFields.map((field) => [
+                    field,
+                    linkedProduct[field],
+                  ]),
+                ),
+                newValues: Object.fromEntries(
+                  changedFields.map((field) => [
+                    field,
+                    syncedProduct[field],
+                  ]),
+                ),
+                requestId: randomUUID(),
+              });
+            }
+          }
+        }
+      }
+
       return Boolean(updated);
     });
   }
