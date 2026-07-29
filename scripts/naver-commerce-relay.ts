@@ -97,7 +97,9 @@ const server = createServer(async (incoming, outgoing) => {
       }
     }
     const body =
-      incoming.method === "POST" ? await readIncomingBody(incoming) : undefined;
+      incoming.method === "POST" || incoming.method === "PUT"
+        ? await readIncomingBody(incoming)
+        : undefined;
     const request = new Request(requestUrl, {
       method: incoming.method,
       headers,
