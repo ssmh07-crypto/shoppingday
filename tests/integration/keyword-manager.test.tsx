@@ -18,6 +18,7 @@ afterEach(() => {
 describe("성장 상품 키워드 관리 화면", () => {
   it("그룹과 검색량 필터를 바꿔도 선택 상태를 유지한다", () => {
     renderManager();
+    openTab("키워드 분석");
 
     const medium = screen.getByRole("checkbox", {
       name: "여성 린넨 원피스 선택",
@@ -50,6 +51,7 @@ describe("성장 상품 키워드 관리 화면", () => {
 
   it("Mock 데이터를 실제 검색량처럼 오해하지 않도록 표시한다", () => {
     renderManager();
+    openTab("키워드 분석");
     expect(screen.getByText("Mock 데이터", { selector: ".keyword-runtime" })).toBeVisible();
     expect(screen.getAllByText("Mock").length).toBeGreaterThan(0);
   });
@@ -60,6 +62,7 @@ describe("성장 상품 키워드 관리 화면", () => {
       searchAdConfigured: true,
       apiHubConfigured: false,
     });
+    openTab("키워드 분석");
     expect(screen.getByText("규칙 기반 기본 모드")).toBeVisible();
     expect(screen.queryByText(/외부 API 키가 아직 설정되지 않았습니다/)).not.toBeInTheDocument();
     expect(screen.getByText(/월간 검색량 1,000 이하를/)).toBeVisible();
@@ -84,6 +87,7 @@ describe("성장 상품 키워드 관리 화면", () => {
       );
     vi.stubGlobal("fetch", fetcher);
     renderManager();
+    openTab("키워드 분석");
 
     fireEvent.click(
       screen.getByRole("button", { name: "선택한 키워드로 초안 만들기" }),
@@ -107,6 +111,7 @@ describe("성장 상품 키워드 관리 화면", () => {
 
   it("상품명 편집 중 검색 품질 권장사항을 실시간으로 안내한다", () => {
     renderManager();
+    openTab("키워드 분석");
 
     fireEvent.change(screen.getByPlaceholderText("초안을 만든 뒤 직접 수정하세요."), {
       target: { value: "여성 원피스 원피스 패션용품 무료배송" },
@@ -128,6 +133,7 @@ describe("성장 상품 키워드 관리 화면", () => {
       .mockResolvedValueOnce(Response.json({ success: true, items: [summary] }));
     vi.stubGlobal("fetch", fetcher);
     renderManager({ mockMode: false, searchAdConfigured: true, apiHubConfigured: false });
+    openTab("키워드 분석");
 
     expect(screen.queryByLabelText("원피스 다른 분류로 이동")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "키워드 후보 만들기" }));
@@ -163,6 +169,7 @@ describe("성장 상품 키워드 관리 화면", () => {
       );
     vi.stubGlobal("fetch", fetcher);
     renderManager();
+    openTab("변경·순위 이력");
 
     fireEvent.change(screen.getByLabelText("확인 키워드"), {
       target: { value: "여름 원피스" },
@@ -195,9 +202,11 @@ describe("성장 상품 키워드 관리 화면", () => {
     fireEvent.change(screen.getByLabelText(/^스마트스토어 상품명/), {
       target: { value: "성장형 여름 원피스" },
     });
-    fireEvent.change(screen.getByLabelText(/검색 태그/), {
-      target: { value: "휴양지룩, 하객룩" },
-    });
+    const tagInput = screen.getByLabelText("판매자 태그 추가");
+    fireEvent.change(tagInput, { target: { value: "휴양지룩" } });
+    fireEvent.keyDown(tagInput, { key: "Enter" });
+    fireEvent.change(tagInput, { target: { value: "하객룩" } });
+    fireEvent.keyDown(tagInput, { key: "Enter" });
     fireEvent.click(
       screen.getByRole("button", { name: "변경사항 스마트스토어 반영" }),
     );
@@ -220,6 +229,33 @@ describe("성장 상품 키워드 관리 화면", () => {
       ),
     );
   });
+
+  it("운영 핵심 정보와 태그를 압축하고 상세 기능을 탭과 접기 영역으로 분리한다", () => {
+    renderManager();
+
+    expect(screen.getByRole("tab", { name: "상품 운영" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    expect(screen.getByText("29,000원")).toBeVisible();
+    expect(screen.getByText("20개")).toBeVisible();
+    expect(screen.queryByText("네이버 등록 정보")).not.toBeInTheDocument();
+    expect(screen.queryByText("키워드 후보")).not.toBeInTheDocument();
+
+    const attributes = screen.getByText("카테고리·네이버 공식 속성").closest("details");
+    expect(attributes).not.toHaveAttribute("open");
+
+    fireEvent.change(screen.getByLabelText(/^스마트스토어 상품명/), {
+      target: { value: "변경한 여름 원피스" },
+    });
+    expect(screen.getByText("변경 1건")).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "변경사항 스마트스토어 반영" }),
+    ).toBeVisible();
+
+    openTab("키워드 분석");
+    expect(screen.getByText("키워드 후보")).toBeVisible();
+  });
 });
 
 function renderManager(runtime: {
@@ -238,6 +274,10 @@ function renderManager(runtime: {
       initialRuntime={runtime}
     />,
   );
+}
+
+function openTab(name: "상품 운영" | "키워드 분석" | "변경·순위 이력") {
+  fireEvent.click(screen.getByRole("tab", { name }));
 }
 
 const productInput = {
