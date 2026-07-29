@@ -21,7 +21,16 @@ export async function GET(request: Request) {
         await createNaverCategoryMetadataService().get(categoryId);
       return NextResponse.json(
         { success: true, requirements },
-        { headers: { "Cache-Control": "private, max-age=300" } },
+        {
+          headers: {
+            "Cache-Control": "private, max-age=300",
+            "X-Shoppingday-Cache": requirements.stale
+              ? "stale"
+              : requirements.cached
+                ? "hit"
+                : "miss",
+          },
+        },
       );
     });
   } catch (error) {

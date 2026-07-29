@@ -13,6 +13,7 @@ import {
   type NaverCategoriesClient,
 } from "./naver-commerce-relay";
 import { NaverCategoryRepository } from "./naver-category-repository";
+import { NaverStoreSettingsRepository } from "./naver-store-settings-repository";
 
 export function isNaverCommerceConfigured(env: ServerEnv = getServerEnv()) {
   const relayUrl = getNaverCommerceRelayUrl(env);
@@ -26,7 +27,11 @@ function getNaverCommerceRelayUrl(env: ServerEnv) {
   return env.NAVER_COMMERCE_RELAY_URL_OVERRIDE ?? env.NAVER_COMMERCE_RELAY_URL;
 }
 
-export function createNaverCommerceConfig(env: ServerEnv): NaverCommerceConfig {
+export function createNaverCommerceConfig(
+  env: ServerEnv,
+  accountIdOverride?: string | null,
+  tokenTypeOverride?: "SELF" | "SELLER",
+): NaverCommerceConfig {
   if (!env.NAVER_COMMERCE_CLIENT_ID || !env.NAVER_COMMERCE_CLIENT_SECRET) {
     throw new NaverCommerceError(
       "not_configured",
@@ -37,8 +42,8 @@ export function createNaverCommerceConfig(env: ServerEnv): NaverCommerceConfig {
     apiUrl: env.NAVER_COMMERCE_API_URL,
     clientId: env.NAVER_COMMERCE_CLIENT_ID,
     clientSecret: env.NAVER_COMMERCE_CLIENT_SECRET,
-    tokenType: env.NAVER_COMMERCE_TOKEN_TYPE,
-    accountId: env.NAVER_COMMERCE_ACCOUNT_ID,
+    tokenType: tokenTypeOverride ?? env.NAVER_COMMERCE_TOKEN_TYPE,
+    accountId: accountIdOverride || env.NAVER_COMMERCE_ACCOUNT_ID,
     timeoutMs: env.NAVER_COMMERCE_TIMEOUT_MS,
   };
 }
@@ -170,13 +175,48 @@ export function createNaverCategoryService(
   );
 }
 
-export function createConfiguredNaverClient(env: ServerEnv = getServerEnv()) {
+export function createConfiguredNaverClient(
+  env: ServerEnv = getServerEnv(),
+  accountIdOverride?: string | null,
+  tokenTypeOverride?: "SELF" | "SELLER",
+) {
   const relayUrl = getNaverCommerceRelayUrl(env);
   return relayUrl && env.NAVER_COMMERCE_RELAY_SHARED_SECRET
     ? new NaverCommerceRelayClient({
         relayUrl,
         sharedSecret: env.NAVER_COMMERCE_RELAY_SHARED_SECRET,
         timeoutMs: env.NAVER_COMMERCE_TIMEOUT_MS,
+        tokenType: tokenTypeOverride ?? env.NAVER_COMMERCE_TOKEN_TYPE,
+        accountId: accountIdOverride ?? env.NAVER_COMMERCE_ACCOUNT_ID,
       })
-    : new NaverCommerceClient(createNaverCommerceConfig(env));
+    : new NaverCommerceClient(
+        createNaverCommerceConfig(
+          env,
+          accountIdOverride,
+          tokenTypeOverride,
+        ),
+      );
+}
+
+export async function createConfiguredNaverClientForUser(
+  database: Database,
+  userId: string,
+  env: ServerEnv = getServerEnv(),
+  storeConnectionId?: string,
+) {
+  const repository = new NaverStoreSettingsRepository(database);
+  const settings = storeConnectionId
+    ? await repository.getById(userId, storeConnectionId)
+    : await repository.get(userId);
+  if (!settings) {
+    throw new NaverCommerceError(
+      "not_configured",
+      "등록할 스마트스토어를 설정 페이지에서 먼저 지정해 주세요.",
+    );
+  }
+  return createConfiguredNaverClient(
+    env,
+    settings.accountId,
+    settings.authType,
+  );
 }

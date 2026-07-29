@@ -4,6 +4,8 @@ export const NAVER_RELAY_HEADERS = {
   timestamp: "x-shoppingday-timestamp",
   nonce: "x-shoppingday-nonce",
   signature: "x-shoppingday-signature",
+  tokenType: "x-shoppingday-naver-token-type",
+  accountId: "x-shoppingday-naver-account-id",
 } as const;
 
 export type NaverRelaySignatureInput = {
@@ -11,7 +13,9 @@ export type NaverRelaySignatureInput = {
   nonce: string;
   method: string;
   pathAndQuery: string;
-  body?: string;
+  body?: string | Uint8Array | ArrayBuffer;
+  tokenType?: "SELF" | "SELLER";
+  accountId?: string | null;
 };
 
 export async function createNaverRelaySignature(
@@ -66,12 +70,23 @@ async function canonicalRequest(input: NaverRelaySignatureInput) {
     input.nonce,
     input.method.toUpperCase(),
     input.pathAndQuery,
+    input.tokenType ?? "",
+    input.accountId ?? "",
     bodyHash,
   ].join("\n");
 }
 
-async function sha256Hex(value: string) {
-  const hash = await crypto.subtle.digest("SHA-256", encoder.encode(value));
+async function sha256Hex(value: string | Uint8Array | ArrayBuffer) {
+  const bytes =
+    typeof value === "string"
+      ? encoder.encode(value)
+      : value instanceof Uint8Array
+        ? value
+        : new Uint8Array(value);
+  const hash = await crypto.subtle.digest(
+    "SHA-256",
+    Uint8Array.from(bytes).buffer,
+  );
   return Array.from(new Uint8Array(hash), (byte) =>
     byte.toString(16).padStart(2, "0"),
   ).join("");

@@ -39,7 +39,7 @@ export function ImportForm() {
   return (
     <>
       <form className="card" onSubmit={submit}>
-        <label htmlFor="goodsno">친구도매 상품번호</label>
+        <label htmlFor="goodsno">상품번호</label>
         <div className="row" style={{ marginTop: 10 }}>
           <input
             id="goodsno"

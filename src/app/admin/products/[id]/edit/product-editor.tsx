@@ -2,18 +2,52 @@
 /* eslint-disable @next/next/no-img-element -- supplier URLs are intentionally loaded directly; no image storage/optimizer proxy */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import dynamic from "next/dynamic";
 import type { NaverProductAttribute, SelectedImage } from "@/lib/db/schema";
-import { OptionEditor } from "./option-editor";
-import { MarginCalculator } from "./margin-calculator";
-import { NaverAttributeEditor } from "./naver-attribute-editor";
+import { buildSourcingRegistrationDraft } from "@/modules/sourcing/registration-draft";
+import { assessSearchTag } from "@/modules/keywords/search-tag-quality";
 import type {
   NaverCategoryOption,
   ProductEditorInitial,
+  ProductEditorMarketData,
+  SourcingRegistrationContext,
 } from "./product-editor-types";
 
-type EditorTab = "basic" | "content" | "market";
+const OptionEditor = dynamic(
+  () => import("./option-editor").then((module) => module.OptionEditor),
+  { loading: () => <PanelLoading label="옵션 편집기" /> },
+);
+const MarginCalculator = dynamic(
+  () =>
+    import("./margin-calculator").then((module) => module.MarginCalculator),
+  { loading: () => <PanelLoading label="마진 계산기" /> },
+);
+const NaverAttributeEditor = dynamic(
+  () =>
+    import("./naver-attribute-editor").then(
+      (module) => module.NaverAttributeEditor,
+    ),
+  { loading: () => <PanelLoading label="네이버 속성 편집기" /> },
+);
+const NaverPublicationPolicyForm = dynamic(
+  () =>
+    import("@/app/admin/components/naver-publication-policy-form").then(
+      (module) => module.NaverPublicationPolicyForm,
+    ),
+  { loading: () => <PanelLoading label="판매 정책 편집기" /> },
+);
+
+type EditorTab = "basic" | "content" | "attributes" | "market";
 type CategoryRequirements = {
   categoryId: string;
+  attributes: Array<{
+    attributeSeq: number;
+    attributeName: string;
+    attributeClassificationType?: "SINGLE_SELECT" | "MULTI_SELECT" | "RANGE";
+    unitUsable?: boolean;
+    representativeUnitCode?: string;
+    attributeValueMaxMatchingCount?: number;
+  }>;
   requiredAttributes: Array<{
     attributeSeq: number;
     attributeName: string;
@@ -48,14 +82,59 @@ type CategoryRequirements = {
   stale: boolean;
 };
 
+type PublicationInspection = {
+  ready: boolean;
+  issues?: Array<{ path: string; message: string }>;
+  payloadHash?: string;
+  action?: "create" | "retry_create" | "update" | "unchanged" | "blocked";
+  publication: {
+    status: "publishing" | "published" | "failed" | "deleting" | "deleted";
+    originProductNo: string | null;
+    channelProductNo: string | null;
+    remoteStatusType: "SALE" | "OUTOFSTOCK" | "SUSPENSION" | "DELETE" | null;
+    attemptCount: number;
+    lastErrorCode: string | null;
+    lastErrorMessage: string | null;
+    lastErrorHttpStatus: number | null;
+    lastAttemptedAt: string;
+    publishedAt: string | null;
+    lastSyncedAt: string | null;
+  } | null;
+};
+
+type TitleRecommendation = {
+  title: string;
+  source: "rules" | "rules_naver_search_ad" | "sourcing_rules";
+  analysis: {
+    productType: string;
+    materials: string[];
+    uses: string[];
+    modifiers: string[];
+    removedTerms: string[];
+  };
+  keywordEvidence: Array<{
+    keyword: string;
+    totalMonthlySearchVolume: number | null;
+    competition: "low" | "medium" | "high" | "unknown";
+    status: "success" | "not-found" | "error";
+  }>;
+  relatedKeywords: Array<{
+    keyword: string;
+    totalMonthlySearchVolume: number | null;
+  }>;
+  notices: string[];
+};
+
 export function ProductEditor({
   initial,
   onMutated,
   onDirtyChange,
+  registrationContext,
 }: {
   initial: ProductEditorInitial;
   onMutated?: () => void;
   onDirtyChange?: (dirty: boolean) => void;
+  registrationContext?: SourcingRegistrationContext;
 }) {
   const [form, setForm] = useState(() => fromInitial(initial));
   const [baseline, setBaseline] = useState(() =>
@@ -64,8 +143,47 @@ export function ProductEditor({
   const [activeTab, setActiveTab] = useState<EditorTab>("basic");
   const [status, setStatus] = useState(initial.product.status);
   const [saving, setSaving] = useState(false);
+  const [uploadingImages, setUploadingImages] = useState(false);
+  const [publishingNaver, setPublishingNaver] = useState(false);
+  const [marketData, setMarketData] = useState<ProductEditorMarketData | null>(
+    () =>
+      initial.naverPublicationPolicy &&
+      initial.naverStoreConnections &&
+      initial.naverDeliveryPolicies
+        ? {
+            naverPublicationPolicy: initial.naverPublicationPolicy,
+            naverStoreConnections: initial.naverStoreConnections,
+            naverDeliveryPolicies: initial.naverDeliveryPolicies,
+            naverStoreConnectionId:
+              initial.naverStoreConnectionId ?? null,
+          }
+        : null,
+  );
+  const [marketDataStatus, setMarketDataStatus] = useState("");
+  const [selectedStoreId, setSelectedStoreId] = useState(
+    initial.naverStoreConnectionId ?? "",
+  );
+  const [savingStoreTarget, setSavingStoreTarget] = useState(false);
+  const [selectedDeliveryPolicyId, setSelectedDeliveryPolicyId] = useState(
+    initial.naverPublicationPolicy?.deliveryPolicy?.id ?? "",
+  );
+  const [savingDeliveryPolicy, setSavingDeliveryPolicy] = useState(false);
+  const [recommendingTitle, setRecommendingTitle] = useState(false);
+  const [titleRecommendation, setTitleRecommendation] =
+    useState<TitleRecommendation | null>(null);
+  const [titleRecommendationStatus, setTitleRecommendationStatus] =
+    useState("");
+  const [preferredSourcingTitleKeyword, setPreferredSourcingTitleKeyword] =
+    useState("");
+  const [tagSelectionStatus, setTagSelectionStatus] = useState("");
   const [message, setMessage] = useState("저장됨");
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [thumbnailUrl, setThumbnailUrl] = useState("");
+  const [detailImageUrls, setDetailImageUrls] = useState("");
+  const [draggedImageId, setDraggedImageId] = useState<string | null>(null);
+  const [imageDropTargetId, setImageDropTargetId] = useState<string | null>(
+    null,
+  );
   const [naverCategorySearch, setNaverCategorySearch] = useState("");
   const [naverCategoryResults, setNaverCategoryResults] = useState<
     NaverCategoryOption[]
@@ -85,7 +203,23 @@ export function ProductEditor({
     useState<CategoryRequirements | null>(null);
   const [categoryRequirementsStatus, setCategoryRequirementsStatus] =
     useState("");
+  const [categoryRequirementsFailed, setCategoryRequirementsFailed] =
+    useState(false);
+  const [categoryRequirementsRefreshKey, setCategoryRequirementsRefreshKey] =
+    useState(0);
+  const [optionEditorOpen, setOptionEditorOpen] = useState(
+    initial.product.editedOptions.groups.length > 0,
+  );
+  const [publicationInspection, setPublicationInspection] =
+    useState<PublicationInspection | null>(null);
+  const [publicationInspectionStatus, setPublicationInspectionStatus] =
+    useState("");
+  const [publicationRefreshKey, setPublicationRefreshKey] = useState(0);
   const autoRecommendationStarted = useRef(false);
+  const publicationLoadedKey = useRef(-1);
+  const categoryRecommendationController = useRef<AbortController | null>(
+    null,
+  );
   const titleBeforeCategoryQuery = useRef(initial.product.title);
   const dirty = JSON.stringify(form) !== baseline;
   const margin = useMemo(
@@ -94,6 +228,83 @@ export function ProductEditor({
         ? form.sellingPrice - Number(initial.supplier.supplierPrice)
         : null,
     [form.sellingPrice, initial.supplier.supplierPrice],
+  );
+
+  async function selectStoreTarget(storeConnectionId: string) {
+    setSelectedStoreId(storeConnectionId);
+    setSavingStoreTarget(true);
+    setMessage("발행 대상 스토어를 변경하는 중입니다.");
+    try {
+      const response = await fetch(
+        `/api/products/${initial.product.id}/naver-store-target`,
+        {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ storeConnectionId }),
+        },
+      );
+      const body = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(
+          body?.error?.message ?? "발행 대상 스토어를 변경하지 못했습니다.",
+        );
+      }
+      window.location.reload();
+    } catch (error) {
+      setSelectedStoreId(initial.naverStoreConnectionId ?? "");
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : "발행 대상 스토어를 변경하지 못했습니다.",
+      );
+      setSavingStoreTarget(false);
+    }
+  }
+
+  async function selectDeliveryPolicy(deliveryPolicyId: string) {
+    const previousDeliveryPolicyId = selectedDeliveryPolicyId;
+    setSelectedDeliveryPolicyId(deliveryPolicyId);
+    setSavingDeliveryPolicy(true);
+    setMessage("배송정책을 변경하는 중입니다.");
+    try {
+      const response = await fetch(
+        `/api/products/${initial.product.id}/naver-delivery-policy`,
+        {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ deliveryPolicyId }),
+        },
+      );
+      const body = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(
+          body?.error?.message ?? "배송정책을 변경하지 못했습니다.",
+        );
+      }
+      setMessage(
+        `배송정책 ${body.policy.policyCode} · ${body.policy.name}을 선택했습니다.`,
+      );
+      setPublicationRefreshKey((current) => current + 1);
+    } catch (error) {
+      setSelectedDeliveryPolicyId(previousDeliveryPolicyId);
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : "배송정책을 변경하지 못했습니다.",
+      );
+    } finally {
+      setSavingDeliveryPolicy(false);
+    }
+  }
+  const sourcingRegistrationDraft = useMemo(
+    () =>
+      registrationContext
+        ? buildSourcingRegistrationDraft(
+            registrationContext.sourcingKeyword,
+            registrationContext.relatedKeywords,
+          )
+        : null,
+    [registrationContext],
   );
 
   useEffect(() => {
@@ -109,26 +320,43 @@ export function ProductEditor({
   }, [dirty, onDirtyChange]);
 
   useEffect(() => {
-    if (activeTab !== "market" || !form.naverCategoryId) return;
+    if (
+      !["attributes", "market"].includes(activeTab) ||
+      !form.naverCategoryId
+    ) {
+      return;
+    }
+    if (categoryRequirements?.categoryId === form.naverCategoryId) {
+      return;
+    }
     const controller = new AbortController();
     async function loadRequirements(categoryId: string) {
       setCategoryRequirements(null);
+      setCategoryRequirementsFailed(false);
       setCategoryRequirementsStatus("카테고리 필수정보를 확인하는 중입니다.");
       try {
-        const response = await fetch(
-          `/api/integrations/naver/category-requirements?categoryId=${encodeURIComponent(categoryId)}`,
-          { signal: controller.signal },
-        );
-        const body = await response.json();
+        const url = `/api/integrations/naver/category-requirements?categoryId=${encodeURIComponent(categoryId)}`;
+        let response = await fetch(url, {
+          signal: controller.signal,
+          cache: "no-store",
+        });
+        if (!response.ok && response.status >= 500) {
+          response = await fetch(url, {
+            signal: controller.signal,
+            cache: "no-store",
+          });
+        }
+        const body = await response.json().catch(() => null);
         if (!response.ok) {
           throw new Error(
-            body.error?.message ?? "카테고리 필수정보를 조회하지 못했습니다.",
+            body?.error?.message ?? "카테고리 필수정보를 조회하지 못했습니다.",
           );
         }
         setCategoryRequirements(body.requirements);
         setCategoryRequirementsStatus("");
       } catch (error) {
         if (controller.signal.aborted) return;
+        setCategoryRequirementsFailed(true);
         setCategoryRequirementsStatus(
           error instanceof Error
             ? error.message
@@ -138,7 +366,96 @@ export function ProductEditor({
     }
     void loadRequirements(form.naverCategoryId);
     return () => controller.abort();
-  }, [activeTab, form.naverCategoryId]);
+  }, [
+    activeTab,
+    categoryRequirements?.categoryId,
+    form.naverCategoryId,
+    categoryRequirementsRefreshKey,
+  ]);
+
+  useEffect(() => {
+    if (activeTab !== "market") return;
+    if (marketData) return;
+    const controller = new AbortController();
+    async function loadMarketData() {
+      setMarketDataStatus("스토어와 판매 정책을 불러오는 중입니다.");
+      try {
+        const response = await fetch(
+          `/api/products/${initial.product.id}/market-settings`,
+          {
+            signal: controller.signal,
+            cache: "no-store",
+          },
+        );
+        const body = await response.json().catch(() => null);
+        if (!response.ok) {
+          throw new Error(
+            body?.error?.message ??
+              "스토어와 판매 정책을 불러오지 못했습니다.",
+          );
+        }
+        const data = body.data as ProductEditorMarketData;
+        setMarketData(data);
+        setSelectedStoreId(data.naverStoreConnectionId ?? "");
+        setSelectedDeliveryPolicyId(
+          data.naverPublicationPolicy.deliveryPolicy?.id ?? "",
+        );
+        setMarketDataStatus("");
+      } catch (error) {
+        if (controller.signal.aborted) return;
+        setMarketDataStatus(
+          error instanceof Error
+            ? error.message
+            : "스토어와 판매 정책을 불러오지 못했습니다.",
+        );
+      }
+    }
+    void loadMarketData();
+    return () => controller.abort();
+  }, [activeTab, initial.product.id, marketData]);
+
+  useEffect(() => {
+    if (activeTab !== "market") return;
+    if (
+      publicationInspection &&
+      publicationLoadedKey.current === publicationRefreshKey
+    ) {
+      return;
+    }
+    const controller = new AbortController();
+    setPublicationInspectionStatus("발행 준비 상태를 확인하는 중입니다.");
+    void fetch(`/api/products/${initial.product.id}/naver-publication`, {
+      signal: controller.signal,
+      cache: "no-store",
+    })
+      .then(async (response) => {
+        const body = await response.json().catch(() => null);
+        if (!response.ok) {
+          throw new Error(
+            body?.error?.message ?? "발행 준비 상태를 확인하지 못했습니다.",
+          );
+        }
+        publicationLoadedKey.current = publicationRefreshKey;
+        setPublicationInspection(body.inspection);
+        setPublicationInspectionStatus("");
+      })
+      .catch((error) => {
+        if (controller.signal.aborted) return;
+        publicationLoadedKey.current = -1;
+        setPublicationInspection(null);
+        setPublicationInspectionStatus(
+          error instanceof Error
+            ? error.message
+            : "발행 준비 상태를 확인하지 못했습니다.",
+        );
+      });
+    return () => controller.abort();
+  }, [
+    activeTab,
+    initial.product.id,
+    publicationInspection,
+    publicationRefreshKey,
+  ]);
 
   useEffect(() => {
     const search = naverCategorySearch.trim();
@@ -183,10 +500,14 @@ export function ProductEditor({
         setCategoryRecommendationStatus("상품명을 두 글자 이상 입력해 주세요.");
         return;
       }
+      categoryRecommendationController.current?.abort();
+      const controller = new AbortController();
+      categoryRecommendationController.current = controller;
       setCategoryRecommendationStatus("상품명으로 카테고리를 찾는 중입니다.");
       try {
         const response = await fetch(
           `/api/integrations/naver/categories/recommend?productName=${encodeURIComponent(name)}`,
+          { signal: controller.signal },
         );
         const body = await response.json();
         if (!response.ok)
@@ -235,14 +556,24 @@ export function ProductEditor({
               : "동기화된 카테고리를 기준으로 자동 적용했습니다.",
         );
       } catch (error) {
+        if (controller.signal.aborted) return;
         setCategoryRecommendationStatus(
           error instanceof Error
             ? error.message
             : "카테고리를 추천하지 못했습니다.",
         );
+      } finally {
+        if (categoryRecommendationController.current === controller) {
+          categoryRecommendationController.current = null;
+        }
       }
     },
     [applyCategoryQueryToTitle],
+  );
+
+  useEffect(
+    () => () => categoryRecommendationController.current?.abort(),
+    [],
   );
 
   useEffect(() => {
@@ -261,6 +592,13 @@ export function ProductEditor({
   ]);
 
   async function submit(action: "draft" | "ready" | "revert-to-draft") {
+    if (registrationContext && form.title.trim().length > 50) {
+      setErrors({
+        title: "상품명은 50자를 넘길 수 없습니다.",
+      });
+      setMessage("상품명을 50자 이하로 줄여 주세요.");
+      return null;
+    }
     setSaving(true);
     setErrors({});
     setMessage("저장 중…");
@@ -285,10 +623,10 @@ export function ProductEditor({
       setStatus(product.status);
       setMessage(`저장 완료 ${new Date().toLocaleTimeString("ko-KR")}`);
       onMutated?.();
-      return true;
+      return product;
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "저장 실패");
-      return false;
+      return null;
     } finally {
       setSaving(false);
     }
@@ -337,6 +675,354 @@ export function ProductEditor({
     }
   }
 
+  async function recommendProductTitle() {
+    const title = form.title.trim();
+    if (registrationContext && sourcingRegistrationDraft) {
+      setRecommendingTitle(true);
+      setTitleRecommendation(null);
+      setTitleRecommendationStatus("소싱 키워드 분류와 검색 품질 규칙을 적용하는 중입니다.");
+      const draft = buildSourcingRegistrationDraft(
+        registrationContext.sourcingKeyword,
+        registrationContext.relatedKeywords,
+        { preferredTitleKeyword: preferredSourcingTitleKeyword },
+      );
+      if (!draft.title) {
+        setTitleRecommendationStatus(
+          "검색수 1,000 이하로 분류된 상품명 키워드를 먼저 선택해 주세요.",
+        );
+        setRecommendingTitle(false);
+        return;
+      }
+      setTitleRecommendation({
+        title: draft.title,
+        source: "sourcing_rules",
+        analysis: {
+          productType: registrationContext.sourcingKeyword,
+          materials: [],
+          uses: [],
+          modifiers: [],
+          removedTerms: [],
+        },
+        keywordEvidence: draft.usedTitleKeywords.map((keyword) => {
+          const source = registrationContext.relatedKeywords.find(
+            (item) =>
+              item.placement === "product_name" && item.keyword === keyword,
+          );
+          return {
+            keyword,
+            totalMonthlySearchVolume: source?.monthlySearchVolume ?? null,
+            competition: "unknown" as const,
+            status: source?.monthlySearchVolume == null
+              ? "not-found" as const
+              : "success" as const,
+          };
+        }),
+        relatedKeywords: [],
+        notices: draft.warnings,
+      });
+      setTitleRecommendationStatus("");
+      setRecommendingTitle(false);
+      return;
+    }
+    if (title.length < 2) {
+      setTitleRecommendationStatus(
+        "판매용 상품명을 두 글자 이상 입력해 주세요.",
+      );
+      return;
+    }
+    setRecommendingTitle(true);
+    setTitleRecommendation(null);
+    setTitleRecommendationStatus(
+      "상품 구조를 분석하고 네이버 키워드 검색량을 확인하는 중입니다.",
+    );
+    try {
+      const categoryPath =
+        selectedNaverCategory?.id === form.naverCategoryId
+          ? selectedNaverCategory.wholeCategoryName
+          : initial.naverCategory?.id === form.naverCategoryId
+            ? initial.naverCategory.wholeCategoryName
+            : "";
+      const response = await fetch(
+        `/api/products/${initial.product.id}/title-recommendation`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            title,
+            originalTitle: initial.supplier.originalName ?? "",
+            categoryPath,
+            searchTags: form.searchTags
+              .map((tag) => tag.trim())
+              .filter(Boolean),
+          }),
+        },
+      );
+      const body = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(
+          body?.error?.message ?? "상품명을 추천하지 못했습니다.",
+        );
+      }
+      setTitleRecommendation(body.recommendation);
+      setTitleRecommendationStatus("");
+    } catch (error) {
+      setTitleRecommendationStatus(
+        error instanceof Error
+          ? error.message
+          : "상품명을 추천하지 못했습니다.",
+      );
+    } finally {
+      setRecommendingTitle(false);
+    }
+  }
+
+  function toggleSourcingTag(tag: string) {
+    setForm((current) => {
+      const normalized = tag.trim();
+      const selected = current.searchTags.includes(normalized);
+      if (selected) {
+        setTagSelectionStatus("");
+        return {
+          ...current,
+          searchTags: current.searchTags.filter((item) => item !== normalized),
+        };
+      }
+      if (current.searchTags.filter((item) => item.trim()).length >= 10) {
+        setTagSelectionStatus("검색 태그는 최대 10개까지 선택할 수 있습니다.");
+        return current;
+      }
+      setTagSelectionStatus("");
+      return {
+        ...current,
+        searchTags: [...current.searchTags.filter((item) => item.trim()), normalized],
+      };
+    });
+  }
+
+  async function uploadNaverImages() {
+    let draftVersion = form.draftVersion;
+    if (dirty) {
+      const saved = await submit("draft");
+      if (!saved) return;
+      draftVersion = saved.draftVersion;
+    }
+    setUploadingImages(true);
+    setMessage("네이버에 이미지를 업로드하는 중…");
+    try {
+      const response = await fetch(
+        `/api/products/${initial.product.id}/naver-images/upload`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ draftVersion }),
+        },
+      );
+      const body = await response.json().catch(() => null);
+      const uploadedProduct = body?.data?.product;
+      if (uploadedProduct) {
+        const next = {
+          ...form,
+          draftVersion: uploadedProduct.draftVersion,
+          selectedImages: uploadedProduct.selectedImages,
+        };
+        setForm(next);
+        setBaseline(JSON.stringify(next));
+        setStatus(uploadedProduct.status);
+        onMutated?.();
+      }
+      if (!response.ok) {
+        setErrors(body?.error?.errors ?? {});
+        throw new Error(
+          body?.error?.message ?? "이미지 업로드에 실패했습니다.",
+        );
+      }
+      const product = body.data.product;
+      const next = {
+        ...form,
+        draftVersion: product.draftVersion,
+        selectedImages: product.selectedImages,
+      };
+      setForm(next);
+      setBaseline(JSON.stringify(next));
+      setStatus(product.status);
+      setMessage(
+        body.data.uploadedCount || body.data.reusedCount
+          ? [
+              body.data.uploadedCount
+                ? `네이버 이미지 ${body.data.uploadedCount}개 업로드`
+                : "",
+              body.data.reusedCount
+                ? `기존 이미지 ${body.data.reusedCount}개 재사용`
+                : "",
+            ]
+              .filter(Boolean)
+              .join(" · ")
+          : "모든 이미지가 이미 업로드되어 있습니다.",
+      );
+      onMutated?.();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "이미지 업로드 실패");
+    } finally {
+      setUploadingImages(false);
+    }
+  }
+
+  async function publishToNaver() {
+    if (dirty) {
+      setMessage("변경사항을 먼저 저장한 뒤 등록해 주세요.");
+      return;
+    }
+    setPublishingNaver(true);
+    setErrors({});
+    try {
+      const inspection = publicationInspection;
+      if (!inspection) {
+        throw new Error("발행 준비 상태를 먼저 확인해 주세요.");
+      }
+      if (!inspection.ready || !inspection.payloadHash) {
+        throw new Error("필수 상품 정보와 판매 정책을 먼저 입력해 주세요.");
+      }
+      if (
+        !inspection.action ||
+        !["create", "retry_create", "update"].includes(inspection.action)
+      ) {
+        throw new Error(
+          inspection.action === "unchanged"
+            ? "이미 최신 상태로 등록된 상품입니다."
+            : "이전 등록 요청의 결과를 먼저 확인해 주세요.",
+        );
+      }
+      const actionLabel =
+        inspection.action === "update"
+          ? "등록 상품 정보 수정"
+          : inspection.action === "retry_create"
+            ? "등록을 다시 시도"
+            : "신규 등록";
+      const confirmed = window.confirm(
+        `[스마트스토어 실제 등록]\n\n상품명: ${form.title}\n판매가: ${Number(form.sellingPrice ?? 0).toLocaleString("ko-KR")}원\n작업: ${actionLabel}\n\n확인하면 네이버에 상품이 실제 등록되며 전시 정책에 따라 노출될 수 있습니다. 계속할까요?`,
+      );
+      if (!confirmed) return;
+
+      setMessage("스마트스토어에 상품을 등록하는 중…");
+      const response = await fetch(
+        `/api/products/${initial.product.id}/naver-publication`,
+        {
+          method: inspection.action === "update" ? "PUT" : "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            confirmed: true,
+            payloadHash: inspection.payloadHash,
+          }),
+        },
+      );
+      const body = await response.json().catch(() => null);
+      if (!response.ok) {
+        setErrors(body?.error?.errors ?? {});
+        throw new Error(
+          body?.error?.message ?? "스마트스토어 등록에 실패했습니다.",
+        );
+      }
+      const published = body.result?.publication;
+      setMessage(
+        inspection.action === "update"
+          ? "스마트스토어 상품 변경사항을 반영했습니다."
+          : published?.channelProductNo
+            ? `스마트스토어 등록 완료 · 채널상품번호 ${published.channelProductNo}`
+            : "스마트스토어 등록을 완료했습니다.",
+      );
+      onMutated?.();
+    } catch (error) {
+      setMessage(
+        error instanceof Error ? error.message : "스마트스토어 등록 실패",
+      );
+    } finally {
+      setPublishingNaver(false);
+      setPublicationRefreshKey((current) => current + 1);
+    }
+  }
+
+  async function changeNaverSaleStatus(
+    statusType: "SALE" | "OUTOFSTOCK" | "SUSPENSION",
+  ) {
+    const labels = {
+      SALE: "판매 재개",
+      OUTOFSTOCK: "품절 처리",
+      SUSPENSION: "판매 중지",
+    } as const;
+    if (
+      !window.confirm(
+        `[스마트스토어 ${labels[statusType]}]\n\n상품명: ${form.title}\n\n네이버 상품 상태를 실제로 변경할까요?`,
+      )
+    ) {
+      return;
+    }
+    setPublishingNaver(true);
+    setMessage(`스마트스토어 상품을 ${labels[statusType]}하는 중…`);
+    try {
+      const response = await fetch(
+        `/api/products/${initial.product.id}/naver-publication`,
+        {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ confirmed: true, statusType }),
+        },
+      );
+      const body = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(
+          body?.error?.message ?? "스마트스토어 판매 상태를 변경하지 못했습니다.",
+        );
+      }
+      setMessage(`스마트스토어 상품을 ${labels[statusType]}했습니다.`);
+      onMutated?.();
+    } catch (error) {
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : "스마트스토어 판매 상태를 변경하지 못했습니다.",
+      );
+    } finally {
+      setPublishingNaver(false);
+      setPublicationRefreshKey((current) => current + 1);
+    }
+  }
+
+  async function deleteNaverProduct() {
+    const confirmation = window.prompt(
+      `[네이버 상품 완전 삭제]\n\n상품명: ${form.title}\n\n채널 상품과 원상품이 차례로 삭제되며 되돌릴 수 없습니다. 계속하려면 '삭제'를 입력하세요.`,
+    );
+    if (confirmation !== "삭제") return;
+    setPublishingNaver(true);
+    setMessage("스마트스토어 상품을 삭제하는 중…");
+    try {
+      const response = await fetch(
+        `/api/products/${initial.product.id}/naver-publication`,
+        {
+          method: "DELETE",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ confirmed: true }),
+        },
+      );
+      const body = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(
+          body?.error?.message ?? "스마트스토어 상품을 삭제하지 못했습니다.",
+        );
+      }
+      setMessage("스마트스토어 채널 상품과 원상품을 삭제했습니다.");
+      onMutated?.();
+    } catch (error) {
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : "스마트스토어 상품을 삭제하지 못했습니다.",
+      );
+    } finally {
+      setPublishingNaver(false);
+      setPublicationRefreshKey((current) => current + 1);
+    }
+  }
+
   function imageChange(index: number, patch: Partial<SelectedImage>) {
     setForm((old) => ({
       ...old,
@@ -359,8 +1045,113 @@ export function ProductEditor({
         selectedImages[target]!,
         selectedImages[index]!,
       ];
+      return {
+        ...old,
+        selectedImages: selectedImages.map((image, sortOrder) => ({
+          ...image,
+          sortOrder,
+        })),
+      };
+    });
+  }
+
+  function reorderImage(draggedId: string, targetId: string) {
+    if (draggedId === targetId) return;
+    setForm((old) => {
+      const selectedImages = [...old.selectedImages];
+      const sourceIndex = selectedImages.findIndex(
+        (image) => image.id === draggedId,
+      );
+      const targetIndex = selectedImages.findIndex(
+        (image) => image.id === targetId,
+      );
+      if (sourceIndex < 0 || targetIndex < 0) return old;
+      const [moved] = selectedImages.splice(sourceIndex, 1);
+      selectedImages.splice(targetIndex, 0, moved!);
+      return {
+        ...old,
+        selectedImages: selectedImages.map((image, sortOrder) => ({
+          ...image,
+          sortOrder,
+        })),
+      };
+    });
+  }
+
+  function addThumbnailUrl() {
+    const url = normalizeHttpUrl(thumbnailUrl);
+    if (!url) {
+      setMessage("http 또는 https로 시작하는 이미지 URL을 입력해 주세요.");
+      return;
+    }
+    if (form.selectedImages.length >= 10) {
+      setMessage(
+        "상품 이미지는 대표 이미지 1개와 추가 이미지 9개, 총 10개까지 등록할 수 있습니다.",
+      );
+      return;
+    }
+    if (form.selectedImages.some((image) => image.sourceUrl === url)) {
+      setMessage("이미 추가된 이미지 URL입니다.");
+      return;
+    }
+    setForm((old) => ({
+      ...old,
+      selectedImages: [
+        ...old.selectedImages,
+        {
+          id: crypto.randomUUID(),
+          source: "url",
+          sourceUrl: url,
+          storedUrl: null,
+          altText: old.title,
+          sortOrder: old.selectedImages.length,
+          isPrimary: !old.selectedImages.some(
+            (image) => image.enabled && image.isPrimary,
+          ),
+          enabled: true,
+        },
+      ],
+    }));
+    setThumbnailUrl("");
+    setMessage(
+      "이미지 URL을 추가했습니다. 저장 후 네이버 이미지 업로드를 진행하세요.",
+    );
+  }
+
+  function removeImage(index: number) {
+    setForm((old) => {
+      const removed = old.selectedImages[index];
+      const selectedImages = old.selectedImages
+        .filter((_, imageIndex) => imageIndex !== index)
+        .map((image, sortOrder) => ({ ...image, sortOrder }));
+      if (removed?.isPrimary) {
+        const firstEnabled = selectedImages.find((image) => image.enabled);
+        if (firstEnabled) firstEnabled.isPrimary = true;
+      }
       return { ...old, selectedImages };
     });
+  }
+
+  function addDetailImageUrls() {
+    const urls = detailImageUrls
+      .split(/\r?\n/)
+      .map(normalizeHttpUrl)
+      .filter((url): url is string => Boolean(url));
+    if (!urls.length) {
+      setMessage("한 줄에 하나씩 상세 이미지 URL을 입력해 주세요.");
+      return;
+    }
+    const imageHtml = [...new Set(urls)]
+      .map((url) => `<p><img src="${url}" alt="" /></p>`)
+      .join("\n");
+    setForm((old) => ({
+      ...old,
+      description: [old.description.trim(), imageHtml]
+        .filter(Boolean)
+        .join("\n"),
+    }));
+    setDetailImageUrls("");
+    setMessage(`${urls.length}개의 상세 이미지 URL을 추가했습니다.`);
   }
 
   const enabledImageCount = form.selectedImages.filter(
@@ -387,9 +1178,9 @@ export function ProductEditor({
     { label: "상품명 입력", done: Boolean(form.title.trim()) },
     { label: "판매가 입력", done: Boolean(form.sellingPrice) },
     {
-      label: "대표 이미지 선택",
+      label: "네이버 대표 이미지 업로드",
       done: form.selectedImages.some(
-        (image) => image.enabled && image.isPrimary,
+        (image) => image.enabled && image.isPrimary && image.storedUrl,
       ),
     },
     { label: "상세페이지 입력", done: Boolean(form.description.trim()) },
@@ -400,7 +1191,7 @@ export function ProductEditor({
     <div className="drawer-editor">
       <div className="drawer-source-summary">
         <div>
-          <span>친구도매 상품번호</span>
+          <span>상품번호</span>
           <strong>{initial.supplier.externalProductId}</strong>
         </div>
         <div>
@@ -430,13 +1221,20 @@ export function ProductEditor({
           disabled={saving}
           onClick={() => void changeTab("content")}
           number="2"
-          label="이미지·상세"
+          label="이미지"
+        />
+        <TabButton
+          active={activeTab === "attributes"}
+          disabled={saving}
+          onClick={() => void changeTab("attributes")}
+          number="3"
+          label="속성"
         />
         <TabButton
           active={activeTab === "market"}
           disabled={saving}
           onClick={() => void changeTab("market")}
-          number="3"
+          number="4"
           label="스마트스토어"
         />
       </nav>
@@ -599,39 +1397,281 @@ export function ProductEditor({
                   </small>
                 )}
               </div>
-              <label>
-                판매용 상품명
+              <div className="drawer-product-title-field">
+                {sourcingRegistrationDraft && (
+                  <label className="registration-title-basis">
+                    기준 상품명 검색어
+                    <select
+                      value={preferredSourcingTitleKeyword}
+                      onChange={(event) => {
+                        setPreferredSourcingTitleKeyword(event.target.value);
+                        setTitleRecommendation(null);
+                        setTitleRecommendationStatus("");
+                      }}
+                    >
+                      <option value="">검색수 높은 순으로 자동 조합</option>
+                      {sourcingRegistrationDraft.titleCandidates.map((keyword) => {
+                        const source = registrationContext?.relatedKeywords.find(
+                          (item) =>
+                            item.placement === "product_name" &&
+                            item.keyword === keyword,
+                        );
+                        return (
+                          <option value={keyword} key={keyword}>
+                            {keyword}
+                            {source?.monthlySearchVolume == null
+                              ? ""
+                              : ` · 월 ${source.monthlySearchVolume.toLocaleString("ko-KR")}`}
+                          </option>
+                        );
+                      })}
+                    </select>
+                    <small>
+                      검색수 1,000 이하 상품명 후보가 여러 개면 하나를 골라
+                      해당 표현을 우선한 추천을 만들 수 있습니다.
+                    </small>
+                  </label>
+                )}
+                <div className="drawer-product-title-heading">
+                  <label htmlFor="product-selling-title">판매용 상품명</label>
+                  <button
+                    type="button"
+                    disabled={
+                      recommendingTitle ||
+                      (sourcingRegistrationDraft
+                        ? !sourcingRegistrationDraft.titleCandidates.length
+                        : form.title.trim().length < 2)
+                    }
+                    onClick={() => void recommendProductTitle()}
+                  >
+                    {recommendingTitle ? "추천 분석 중…" : "상품명 추천"}
+                  </button>
+                </div>
                 <input
+                  id="product-selling-title"
                   value={form.title}
-                  maxLength={200}
-                  onChange={(event) =>
-                    setForm({ ...form, title: event.target.value })
-                  }
+                  maxLength={registrationContext ? 50 : 200}
+                  onChange={(event) => {
+                    setForm({ ...form, title: event.target.value });
+                    setTitleRecommendation(null);
+                    setTitleRecommendationStatus("");
+                  }}
                   onBlur={() => {
                     if (!form.naverCategoryId)
                       void recommendNaverCategory(form.title);
                   }}
                 />
-                <small>{form.title.length}/200자</small>
+                <small>
+                  {form.title.length}/{registrationContext ? 50 : 200}자
+                </small>
+                {registrationContext && form.title.length > 40 && (
+                  <small className="registration-title-length-warning">
+                    40자를 넘었습니다. 핵심 상품과 수식어가 바로 이해되는지
+                    검토해 주세요. 최대 50자까지 입력할 수 있습니다.
+                  </small>
+                )}
+                {errors.title && (
+                  <small className="field-error">{errors.title}</small>
+                )}
                 <span className="drawer-original-title">
                   <small>원본 상품명</small>
                   <strong>{initial.supplier.originalName ?? "-"}</strong>
                 </span>
-              </label>
-              <label>
-                검색 키워드
-                <input
-                  value={form.searchTags.join(", ")}
-                  placeholder="쉼표로 구분해 입력"
-                  onChange={(event) =>
-                    setForm({
-                      ...form,
-                      searchTags: event.target.value.split(","),
-                    })
-                  }
-                />
-                <small>최대 20개까지 입력할 수 있습니다.</small>
-              </label>
+                {titleRecommendationStatus && (
+                  <small className="drawer-title-recommendation-status">
+                    {titleRecommendationStatus}
+                  </small>
+                )}
+                {titleRecommendation && (
+                  <div
+                    className="drawer-title-recommendation"
+                    aria-live="polite"
+                  >
+                    <div className="drawer-title-recommendation-head">
+                      <div>
+                        <small>
+                          {titleRecommendation.source === "sourcing_rules"
+                            ? "소싱 분류 + 검색 품질 규칙"
+                            : titleRecommendation.source ===
+                                "rules_naver_search_ad"
+                            ? "규칙 분석 + 네이버 검색광고 실제 데이터"
+                            : "규칙 기반 기본 모드"}
+                        </small>
+                        <strong>{titleRecommendation.title}</strong>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setForm((current) => ({
+                            ...current,
+                            title: titleRecommendation.title,
+                          }));
+                          setTitleRecommendationStatus(
+                            "추천 상품명을 적용했습니다. 저장 전까지 네이버에는 반영되지 않습니다.",
+                          );
+                        }}
+                      >
+                        이 상품명 적용
+                      </button>
+                    </div>
+                    {titleRecommendation.source === "sourcing_rules" ? (
+                      <dl>
+                        <div>
+                          <dt>기본 상품 유형</dt>
+                          <dd>{titleRecommendation.analysis.productType}</dd>
+                        </div>
+                        <div>
+                          <dt>우선 기준 검색어</dt>
+                          <dd>
+                            {preferredSourcingTitleKeyword ||
+                              "검색수 높은 순 자동 조합"}
+                          </dd>
+                        </div>
+                      </dl>
+                    ) : (
+                      <dl>
+                        <div>
+                          <dt>상품 유형</dt>
+                          <dd>{titleRecommendation.analysis.productType}</dd>
+                        </div>
+                        <div>
+                          <dt>소재·재질</dt>
+                          <dd>
+                            {titleRecommendation.analysis.materials.join(", ") ||
+                              "감지 안 됨"}
+                          </dd>
+                        </div>
+                        <div>
+                          <dt>용도</dt>
+                          <dd>
+                            {titleRecommendation.analysis.uses.join(", ") ||
+                              "감지 안 됨"}
+                          </dd>
+                        </div>
+                        <div>
+                          <dt>정리한 표현</dt>
+                          <dd>
+                            {titleRecommendation.analysis.removedTerms.join(
+                              ", ",
+                            ) || "없음"}
+                          </dd>
+                        </div>
+                      </dl>
+                    )}
+                    {titleRecommendation.keywordEvidence.length > 0 && (
+                      <div className="drawer-title-keyword-evidence">
+                        <small>
+                          {titleRecommendation.source === "sourcing_rules"
+                            ? `추천에 사용한 상품명 키워드 (${titleRecommendation.keywordEvidence.length}개)`
+                            : "네이버 키워드 근거"}
+                        </small>
+                        <div>
+                          {titleRecommendation.keywordEvidence.map((item) => (
+                            <span key={item.keyword}>
+                              {item.keyword} ·{" "}
+                              {item.totalMonthlySearchVolume == null
+                                ? "조회 안 됨"
+                                : `월 ${item.totalMonthlySearchVolume.toLocaleString("ko-KR")}`}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {titleRecommendation.notices.map((notice) => (
+                      <p key={notice}>{notice}</p>
+                    ))}
+                    <small className="drawer-title-recommendation-disclaimer">
+                      {titleRecommendation.source === "sourcing_rules"
+                        ? "검색수는 아이템스카우트에서 가져오거나 사용자가 입력한 값입니다. 추천 상품명은 검색 노출이나 매출을 보장하지 않습니다."
+                        : "검색량은 네이버 검색광고 API 값이며 추천 상품명이 검색 노출이나 매출을 보장하지 않습니다."}
+                    </small>
+                  </div>
+                )}
+              </div>
+              {sourcingRegistrationDraft ? (
+                <div className="registration-tag-selector">
+                  <strong>
+                    검색 태그 선택 (
+                    {form.searchTags.filter((tag) => tag.trim()).length}/10)
+                  </strong>
+                  <p>
+                    소싱 조사에서 태그로 분류한 후보입니다. 월 검색수를 참고해
+                    실제 등록할 태그를 최대 10개까지 직접 선택하세요.
+                  </p>
+                  {sourcingRegistrationDraft.tagCandidates.length ? (
+                    <div>
+                      {sourcingRegistrationDraft.tagCandidates.map((tag) => {
+                        const tooLong = tag.length > 30;
+                        const qualityIssues = assessSearchTag(tag, {
+                          title: form.title,
+                        });
+                        const selected = form.searchTags.includes(tag);
+                        const source = registrationContext?.relatedKeywords.find(
+                          (item) =>
+                            item.placement === "tag" &&
+                            item.keyword === tag,
+                        );
+                        return (
+                          <label
+                            key={tag}
+                            className={selected ? "selected" : undefined}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={selected}
+                              disabled={tooLong || qualityIssues.length > 0}
+                              onChange={() => toggleSourcingTag(tag)}
+                            />
+                            <span>{tag}</span>
+                            <small>
+                              {source?.monthlySearchVolume == null
+                                ? "월 검색수 미입력"
+                                : `월 검색수 ${source.monthlySearchVolume.toLocaleString("ko-KR")}`}
+                              {tooLong ? " · 30자 초과" : ""}
+                              {qualityIssues.length
+                                ? ` · ${qualityIssues[0]?.message}`
+                                : ""}
+                            </small>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <small>소싱 조사에서 태그로 분류한 키워드가 없습니다.</small>
+                  )}
+                  {tagSelectionStatus && (
+                    <small className="field-error">{tagSelectionStatus}</small>
+                  )}
+                </div>
+              ) : (
+                <label>
+                  검색 키워드
+                  <input
+                    value={form.searchTags.join(", ")}
+                    placeholder="쉼표로 구분해 입력"
+                    onChange={(event) =>
+                      setForm({
+                        ...form,
+                        searchTags: event.target.value.split(","),
+                      })
+                    }
+                  />
+                  <small>
+                    최대 10개까지 입력할 수 있습니다. 상품명과 중복되거나
+                    배송·할인 등 홍보성인 태그는 저장할 수 없습니다.
+                  </small>
+                  {form.searchTags.flatMap((tag) =>
+                    assessSearchTag(tag, { title: form.title }).map((issue) => (
+                      <small
+                        className="field-error"
+                        key={`${tag}-${issue.code}`}
+                      >
+                        {tag.trim()}: {issue.message}
+                      </small>
+                    )),
+                  )}
+                </label>
+              )}
               <div className="drawer-price-grid">
                 <label>
                   공급가
@@ -672,17 +1712,41 @@ export function ProductEditor({
               />
             </section>
 
-            <details className="drawer-options">
+            <details
+              className="drawer-options"
+              open={optionEditorOpen}
+              onToggle={(event) =>
+                setOptionEditorOpen(event.currentTarget.open)
+              }
+            >
               <summary>
                 옵션 정보 편집{" "}
-                <span>{form.editedOptions.groups.length}개 그룹</span>
+                <span
+                  className={
+                    form.editedOptions.groups.length > 0 &&
+                    !form.editedOptions.combinations.some(
+                      (combination) => combination.enabled,
+                    )
+                      ? "needs-attention"
+                      : undefined
+                  }
+                >
+                  {form.editedOptions.groups.length > 0 &&
+                  !form.editedOptions.combinations.some(
+                    (combination) => combination.enabled,
+                  )
+                    ? "활성 조합 입력 필요"
+                    : `${form.editedOptions.groups.length}개 그룹`}
+                </span>
               </summary>
-              <OptionEditor
-                value={form.editedOptions}
-                onChange={(editedOptions) =>
-                  setForm({ ...form, editedOptions })
-                }
-              />
+              {optionEditorOpen && (
+                <OptionEditor
+                  value={form.editedOptions}
+                  onChange={(editedOptions) =>
+                    setForm({ ...form, editedOptions })
+                  }
+                />
+              )}
             </details>
           </div>
         )}
@@ -695,29 +1759,127 @@ export function ProductEditor({
                 <div>
                   <h3>썸네일 이미지</h3>
                   <p>
-                    사용할 이미지와 대표 이미지를 선택하고 순서를 조정하세요.
+                    대표 이미지 1개와 추가 이미지 9개까지 등록할 수 있습니다.
+                    이미지를 끌어 놓아 노출 순서를 바꾸세요. 대표 이미지에는
+                    텍스트·워터마크·허위 이벤트 문구나 여러 상품 나열을 넣지
+                    마세요.
                   </p>
                 </div>
-                <button type="button" onClick={resetImages} disabled={saving}>
-                  원본으로 초기화
-                </button>
+                <div className="drawer-section-actions">
+                  <button
+                    type="button"
+                    onClick={() => void uploadNaverImages()}
+                    disabled={
+                      saving ||
+                      uploadingImages ||
+                      !form.selectedImages.some(
+                        (image) => image.enabled && !image.storedUrl,
+                      )
+                    }
+                  >
+                    {uploadingImages ? "업로드 중…" : "네이버 이미지 업로드"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={resetImages}
+                    disabled={saving || uploadingImages}
+                  >
+                    원본으로 초기화
+                  </button>
+                </div>
               </div>
               <p className="drawer-image-count">
-                전체 {form.selectedImages.length}개 중 {enabledImageCount}개
-                사용
+                사용 이미지 {enabledImageCount}/10 · 대표 1개 + 추가 최대 9개
               </p>
-              <div className="drawer-images">
+              <div className="drawer-url-import">
+                <label htmlFor="thumbnail-url">썸네일 이미지 URL</label>
+                <div>
+                  <input
+                    id="thumbnail-url"
+                    type="url"
+                    value={thumbnailUrl}
+                    onChange={(event) => setThumbnailUrl(event.target.value)}
+                    placeholder="https://example.com/product.jpg"
+                  />
+                  <button
+                    type="button"
+                    onClick={addThumbnailUrl}
+                    disabled={saving}
+                  >
+                    URL 추가
+                  </button>
+                </div>
+                <small>
+                  외부 이미지 주소를 최대 10개까지 추가한 뒤 네이버 이미지
+                  업로드를 실행하세요.
+                </small>
+              </div>
+              <div
+                className="drawer-images"
+                role="list"
+                aria-label="상품 이미지 순서"
+              >
                 {form.selectedImages.map((image, index) => (
                   <article
                     key={image.id}
-                    className={!image.enabled ? "disabled" : ""}
+                    role="listitem"
+                    aria-label={`${image.isPrimary ? "대표 이미지" : "추가 이미지"} ${index + 1}`}
+                    draggable={!saving && !uploadingImages}
+                    className={[
+                      !image.enabled ? "disabled" : "",
+                      draggedImageId === image.id ? "dragging" : "",
+                      imageDropTargetId === image.id ? "drop-target" : "",
+                    ]
+                      .filter(Boolean)
+                      .join(" ")}
+                    onDragStart={(event) => {
+                      setDraggedImageId(image.id);
+                      event.dataTransfer.effectAllowed = "move";
+                      event.dataTransfer.setData("text/plain", image.id);
+                    }}
+                    onDragOver={(event) => {
+                      event.preventDefault();
+                      event.dataTransfer.dropEffect = "move";
+                      setImageDropTargetId(image.id);
+                    }}
+                    onDragLeave={() =>
+                      setImageDropTargetId((current) =>
+                        current === image.id ? null : current,
+                      )
+                    }
+                    onDrop={(event) => {
+                      event.preventDefault();
+                      const sourceId =
+                        event.dataTransfer.getData("text/plain") ||
+                        draggedImageId;
+                      if (sourceId) reorderImage(sourceId, image.id);
+                      setDraggedImageId(null);
+                      setImageDropTargetId(null);
+                    }}
+                    onDragEnd={() => {
+                      setDraggedImageId(null);
+                      setImageDropTargetId(null);
+                    }}
                   >
                     <div className="drawer-image-preview">
                       <img
                         src={image.storedUrl ?? image.sourceUrl}
                         alt={image.altText}
                       />
-                      {image.isPrimary && image.enabled && <span>대표</span>}
+                      {image.enabled && (
+                        <span>
+                          {image.isPrimary
+                            ? "대표 이미지"
+                            : `추가 이미지 ${form.selectedImages
+                                .slice(0, index + 1)
+                                .filter(
+                                  (candidate) =>
+                                    candidate.enabled &&
+                                    !candidate.isPrimary,
+                                ).length}`}
+                        </span>
+                      )}
+                      {image.storedUrl && <small>네이버 업로드 완료</small>}
                     </div>
                     <label>
                       <input
@@ -755,6 +1917,13 @@ export function ProductEditor({
                       >
                         →
                       </button>
+                      <button
+                        type="button"
+                        onClick={() => removeImage(index)}
+                        aria-label={`${index + 1}번 이미지 삭제`}
+                      >
+                        삭제
+                      </button>
                     </div>
                   </article>
                 ))}
@@ -768,13 +1937,6 @@ export function ProductEditor({
                   <p>판매 페이지에 표시할 HTML을 편집하고 미리 확인하세요.</p>
                 </div>
               </div>
-              <textarea
-                rows={13}
-                value={form.description}
-                onChange={(event) =>
-                  setForm({ ...form, description: event.target.value })
-                }
-              />
               <div className="drawer-description-preview">
                 <span>미리보기</span>
                 <iframe
@@ -783,8 +1945,85 @@ export function ProductEditor({
                   title="판매 상세페이지 미리보기"
                 />
               </div>
+              <div className="drawer-url-import detail">
+                <label htmlFor="detail-image-urls">상세 이미지 URL</label>
+                <textarea
+                  id="detail-image-urls"
+                  rows={4}
+                  value={detailImageUrls}
+                  onChange={(event) => setDetailImageUrls(event.target.value)}
+                  placeholder={
+                    "https://example.com/detail-01.jpg\nhttps://example.com/detail-02.jpg"
+                  }
+                />
+                <button
+                  type="button"
+                  onClick={addDetailImageUrls}
+                  disabled={saving}
+                >
+                  상세페이지에 URL 이미지 추가
+                </button>
+                <small>
+                  외부 웹페이지 전체가 아닌 공개된 http/https 이미지 URL을 상세
+                  HTML에 추가합니다.
+                </small>
+              </div>
+              <label className="drawer-description-html">
+                <span>HTML 편집</span>
+                <textarea
+                  rows={13}
+                  value={form.description}
+                  onChange={(event) =>
+                    setForm({ ...form, description: event.target.value })
+                  }
+                />
+              </label>
             </section>
           </div>
+        )}
+
+        {activeTab === "attributes" && (
+          <section className="drawer-attributes">
+            <div className="drawer-section-title">
+              <span>03</span>
+              <div>
+                <h3>네이버 카테고리 속성</h3>
+                <p>
+                  주요 소재, 사이즈 특징 등 카테고리 속성을 항목별 한 행에서
+                  선택하세요.
+                </p>
+              </div>
+            </div>
+            {!form.naverCategoryId ? (
+              <div className="drawer-attributes-empty">
+                <strong>네이버 카테고리를 먼저 선택해 주세요.</strong>
+                <p>
+                  기본정보에서 최종 카테고리를 선택하면 해당 카테고리의 공식
+                  속성을 불러옵니다.
+                </p>
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={() => void changeTab("basic")}
+                >
+                  기본정보로 이동
+                </button>
+              </div>
+            ) : (
+              <NaverAttributesPanel
+                requirements={categoryRequirements}
+                status={categoryRequirementsStatus}
+                failed={categoryRequirementsFailed}
+                value={form.naverAttributes}
+                onRetry={() =>
+                  setCategoryRequirementsRefreshKey((current) => current + 1)
+                }
+                onChange={(naverAttributes) =>
+                  setForm({ ...form, naverAttributes })
+                }
+              />
+            )}
+          </section>
         )}
 
         {activeTab === "market" && (
@@ -806,93 +2045,253 @@ export function ProductEditor({
               ))}
             </div>
             <div className="drawer-category-requirements">
-              <strong>선택 카테고리 필수정보</strong>
-              {categoryRequirementsStatus && (
-                <p role="status">{categoryRequirementsStatus}</p>
-              )}
-              {categoryRequirements && (
-                <>
-                  <div>
-                    <span>필수 상품 속성</span>
-                    <strong>
-                      {categoryRequirements.requiredAttributes.length}개
-                    </strong>
-                  </div>
-                  <ul>
-                    {categoryRequirements.requiredAttributes.map(
-                      (attribute) => (
-                        <li key={attribute.attributeSeq}>
-                          {attribute.attributeName}
-                          <small>
-                            {attributeTypeLabel(
-                              attribute.attributeClassificationType,
-                            )}
-                          </small>
-                        </li>
-                      ),
-                    )}
-                    {!categoryRequirements.requiredAttributes.length && (
-                      <li>필수 상품 속성 없음</li>
-                    )}
-                  </ul>
-                  {categoryRequirements.requiredAttributes.length > 0 && (
-                    <NaverAttributeEditor
-                      attributes={categoryRequirements.requiredAttributes}
-                      candidates={categoryRequirements.attributeValues}
-                      units={categoryRequirements.units}
-                      value={form.naverAttributes}
-                      onChange={(naverAttributes) =>
-                        setForm({ ...form, naverAttributes })
+              <strong>스마트스토어 발행 상태</strong>
+              <div className="naver-store-target-field">
+                <strong>발행 대상 스마트스토어</strong>
+                {marketData?.naverStoreConnections.length ? (
+                  <>
+                    <select
+                      aria-label="발행 대상 스마트스토어"
+                      value={selectedStoreId}
+                      disabled={savingStoreTarget || publishingNaver}
+                      onChange={(event) =>
+                        void selectStoreTarget(event.target.value)
                       }
-                    />
-                  )}
+                    >
+                      {marketData.naverStoreConnections.map((connection) => (
+                        <option key={connection.id} value={connection.id}>
+                          {connection.storeName}
+                          {connection.authType === "SELLER"
+                            ? " · 다른 판매자"
+                            : " · 내 스토어"}
+                          {connection.isDefault ? " · 기본" : ""}
+                        </option>
+                      ))}
+                    </select>
+                    <small>
+                      배송정책, 발행 이력과 실제 등록 계정은 선택한 스토어별로
+                      분리됩니다.
+                    </small>
+                  </>
+                ) : (
+                  <p>
+                    스마트스토어 설정에서 발행 대상 스토어를 먼저 연결해 주세요.
+                  </p>
+                )}
+              </div>
+              <div className="naver-store-target-field">
+                <strong>배송정책 관리번호</strong>
+                {marketData?.naverDeliveryPolicies.length ? (
+                  <>
+                    <select
+                      aria-label="배송정책 관리번호"
+                      value={selectedDeliveryPolicyId}
+                      disabled={
+                        savingDeliveryPolicy ||
+                        savingStoreTarget ||
+                        publishingNaver
+                      }
+                      onChange={(event) =>
+                        void selectDeliveryPolicy(event.target.value)
+                      }
+                    >
+                      <option value="">배송정책을 선택해 주세요</option>
+                      {marketData.naverDeliveryPolicies.map((policy) => (
+                        <option key={policy.id} value={policy.id}>
+                          {policy.policyCode} · {policy.name}
+                        </option>
+                      ))}
+                    </select>
+                    <small>
+                      선택한 관리번호에 저장된 출고지·반품지·택배사·배송비
+                      정보가 실제 등록에 사용됩니다.
+                    </small>
+                  </>
+                ) : (
+                  <p>
+                    선택한 스토어에 저장된 배송정책이 없습니다.{" "}
+                    <a href="/admin/channels/naver">
+                      스마트스토어 설정에서 배송정책 만들기
+                    </a>
+                  </p>
+                )}
+              </div>
+              {publicationInspectionStatus && (
+                <p role="status">{publicationInspectionStatus}</p>
+              )}
+              {marketDataStatus && <p role="status">{marketDataStatus}</p>}
+              {publicationInspection && (
+                <div className="drawer-publication-status">
                   <div>
-                    <span>필수 표준 옵션</span>
+                    <span>현재 상태</span>
                     <strong>
-                      {categoryRequirements.requiredOptionGroups.length}개
+                      {publicationStatusLabel(publicationInspection)}
                     </strong>
                   </div>
-                  <ul>
-                    {categoryRequirements.requiredOptionGroups.map((group) => (
-                      <li
-                        key={`${group.groupName ?? ""}-${group.attributeName}`}
-                      >
-                        {group.groupName || group.attributeName}
-                        {group.groupName && (
-                          <small>{group.attributeName}</small>
-                        )}
-                      </li>
-                    ))}
-                    {!categoryRequirements.requiredOptionGroups.length && (
-                      <li>
-                        {categoryRequirements.standardOptions.useStandardOption
-                          ? "필수 표준 옵션 없음"
-                          : "표준 옵션을 사용하지 않는 카테고리"}
-                      </li>
-                    )}
-                  </ul>
-                  {categoryRequirements.stale && (
-                    <p>릴레이 연결 문제로 마지막 조회 결과를 표시합니다.</p>
+                  {publicationInspection.publication?.originProductNo && (
+                    <div>
+                      <span>네이버 원상품 번호</span>
+                      <strong>
+                        {publicationInspection.publication.originProductNo}
+                      </strong>
+                    </div>
                   )}
-                </>
+                  {publicationInspection.publication?.channelProductNo && (
+                    <div>
+                      <span>채널 상품 번호</span>
+                      <strong>
+                        {publicationInspection.publication.channelProductNo}
+                      </strong>
+                    </div>
+                  )}
+                  {publicationInspection.publication?.remoteStatusType &&
+                    publicationInspection.publication.remoteStatusType !==
+                      "DELETE" && (
+                      <div>
+                        <span>네이버 판매 상태</span>
+                        <strong>
+                          {naverRemoteStatusLabel(
+                            publicationInspection.publication.remoteStatusType,
+                          )}
+                        </strong>
+                      </div>
+                    )}
+                  {!publicationInspection.ready && (
+                    <ul>
+                      {(publicationInspection.issues ?? []).map((issue) => (
+                        <li key={`${issue.path}-${issue.message}`}>
+                          <span>{issue.message}</span>
+                          {issue.path.includes("optionInfo") && (
+                            <button
+                              type="button"
+                              className="secondary"
+                              onClick={() => {
+                                setOptionEditorOpen(true);
+                                void changeTab("basic");
+                              }}
+                            >
+                              옵션 입력으로 이동
+                            </button>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  {publicationInspection.publication?.lastErrorMessage && (
+                    <p className="drawer-publication-error">
+                      최근 오류:{" "}
+                      {publicationInspection.publication.lastErrorMessage}
+                    </p>
+                  )}
+                </div>
+              )}
+              {publicationInspection?.publication?.originProductNo &&
+                publicationInspection.publication.channelProductNo &&
+                publicationInspection.publication.status !== "deleted" && (
+                  <div className="drawer-publication-actions">
+                    <strong>네이버 상품 운영</strong>
+                    <p>
+                      판매 상태는 즉시 반영됩니다. 가격·상품명·이미지 등 편집
+                      내용은 저장 후 아래 변경사항 반영 버튼을 사용하세요.
+                    </p>
+                    <div>
+                      <button
+                        type="button"
+                        className="secondary"
+                        disabled={publishingNaver}
+                        onClick={() => void changeNaverSaleStatus("SALE")}
+                      >
+                        판매 재개
+                      </button>
+                      <button
+                        type="button"
+                        className="secondary"
+                        disabled={publishingNaver}
+                        onClick={() =>
+                          void changeNaverSaleStatus("OUTOFSTOCK")
+                        }
+                      >
+                        품절 처리
+                      </button>
+                      <button
+                        type="button"
+                        className="secondary"
+                        disabled={publishingNaver}
+                        onClick={() =>
+                          void changeNaverSaleStatus("SUSPENSION")
+                        }
+                      >
+                        판매 중지
+                      </button>
+                      <button
+                        type="button"
+                        className="danger"
+                        disabled={publishingNaver}
+                        onClick={() => void deleteNaverProduct()}
+                      >
+                        네이버 상품 삭제
+                      </button>
+                    </div>
+                  </div>
+                )}
+            </div>
+            <div className="drawer-category-requirements">
+              <strong>상품별 판매 정책</strong>
+              {marketData ? (
+                <NaverPublicationPolicyForm
+                  mode="product"
+                  endpoint={`/api/products/${initial.product.id}/naver-publication-policy`}
+                  initialDefaults={marketData.naverPublicationPolicy.defaults}
+                  initialOverrides={marketData.naverPublicationPolicy.overrides}
+                  categoryId={form.naverCategoryId}
+                  onSaved={() =>
+                    setPublicationRefreshKey((current) => current + 1)
+                  }
+                />
+              ) : (
+                <PanelLoading label="판매 정책" />
               )}
             </div>
             <div className="drawer-market-notice">
-              <strong>스마트스토어 API 연동 예정</strong>
+              <strong>실제 상품 등록 전 확인</strong>
               <p>
-                현재는 등록 화면과 준비 상태 확인만 제공됩니다. 실제 전송 기능은
-                API 연동 후 활성화됩니다.
+                버튼을 누르면 최신 payload를 다시 검증하고 최종 확인창을
+                표시합니다. 확인 전에는 네이버로 상품을 전송하지 않습니다.
               </p>
             </div>
             <button
               type="button"
               className="drawer-market-button"
-              onClick={() =>
-                setMessage("스마트스토어 API 연동 후 사용할 수 있습니다.")
+              disabled={
+                dirty ||
+                saving ||
+                publishingNaver ||
+                !selectedStoreId ||
+                !publicationInspection?.ready ||
+                !["create", "retry_create", "update"].includes(
+                  publicationInspection.action ?? "",
+                )
               }
+              onClick={() => void publishToNaver()}
             >
-              스마트스토어 등록 <small>연동 예정</small>
+              {publishingNaver
+                ? "네이버 처리 중…"
+                : publicationInspection?.action === "update"
+                  ? "변경사항 스마트스토어 반영"
+                  : "스마트스토어 실제 등록"}
+              {!publishingNaver && (
+                <small>
+                  {publicationInspection?.action === "update"
+                    ? "가격·이미지·상품정보 수정"
+                    : "최종 확인 필요"}
+                </small>
+              )}
             </button>
+            {dirty && (
+              <small className="drawer-market-help">
+                저장되지 않은 변경사항을 먼저 저장해 주세요.
+              </small>
+            )}
             {!readyForMarket && (
               <small className="drawer-market-help">
                 미완료 항목을 앞선 탭에서 입력해 주세요.
@@ -958,6 +2357,86 @@ function TabButton({
   );
 }
 
+function PanelLoading({ label }: { label: string }) {
+  return <p role="status">{label} 불러오는 중…</p>;
+}
+
+function NaverAttributesPanel({
+  requirements,
+  status,
+  failed,
+  value,
+  onRetry,
+  onChange,
+}: {
+  requirements: CategoryRequirements | null;
+  status: string;
+  failed: boolean;
+  value: NaverProductAttribute[];
+  onRetry: () => void;
+  onChange: (value: NaverProductAttribute[]) => void;
+}) {
+  return (
+    <div className="drawer-category-requirements drawer-attributes-panel">
+      <strong>네이버 카테고리별 공식 속성</strong>
+      <p>
+        최종 카테고리를 기준으로 네이버 커머스 API에서 필수 속성, 선택값,
+        단위와 표준 옵션을 불러옵니다.
+      </p>
+      {status && <p role="status">{status}</p>}
+      {failed && (
+        <button type="button" className="secondary" onClick={onRetry}>
+          카테고리 필수속성 다시 불러오기
+        </button>
+      )}
+      {requirements && (
+        <>
+          <div>
+            <span>카테고리 상품 속성</span>
+            <strong>
+              전체 {requirements.attributes.length}개 · 필수{" "}
+              {requirements.requiredAttributes.length}개
+            </strong>
+          </div>
+          {requirements.attributes.length > 0 ? (
+            <NaverAttributeEditor
+              attributes={requirements.attributes}
+              candidates={requirements.attributeValues}
+              units={requirements.units}
+              value={value}
+              onChange={onChange}
+            />
+          ) : (
+            <p>입력할 카테고리 상품 속성이 없습니다.</p>
+          )}
+          <div>
+            <span>필수 표준 옵션</span>
+            <strong>{requirements.requiredOptionGroups.length}개</strong>
+          </div>
+          <ul>
+            {requirements.requiredOptionGroups.map((group) => (
+              <li key={`${group.groupName ?? ""}-${group.attributeName}`}>
+                {group.groupName || group.attributeName}
+                {group.groupName && <small>{group.attributeName}</small>}
+              </li>
+            ))}
+            {!requirements.requiredOptionGroups.length && (
+              <li>
+                {requirements.standardOptions.useStandardOption
+                  ? "필수 표준 옵션 없음"
+                  : "표준 옵션을 사용하지 않는 카테고리"}
+              </li>
+            )}
+          </ul>
+          {requirements.stale && (
+            <p>릴레이 연결 문제로 마지막 조회 결과를 표시합니다.</p>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 function isNaverAttributeComplete(
   attributeSeq: number,
   candidates: CategoryRequirements["attributeValues"],
@@ -979,15 +2458,43 @@ function isNaverAttributeComplete(
     : attributeSelections.some((value) => value.minValue || value.maxValue);
 }
 
-function attributeTypeLabel(
-  type: CategoryRequirements["requiredAttributes"][number]["attributeClassificationType"],
+function publicationStatusLabel(inspection: PublicationInspection) {
+  if (!inspection.ready) return "필수 정보 확인 필요";
+  const actionLabels = {
+    create: "신규 등록 가능",
+    retry_create: "등록 재시도 가능",
+    update: "네이버 반영 필요",
+    unchanged: "최신 상태",
+    blocked:
+      inspection.publication?.status === "failed"
+        ? "중복 등록 확인 필요"
+        : "처리 중",
+  } as const;
+  if (inspection.action) return actionLabels[inspection.action];
+  return inspection.publication
+    ? {
+        publishing: "등록 처리 중",
+        published: "등록 완료",
+        failed: "등록 실패",
+        deleting: "삭제 처리 중",
+        deleted: "삭제됨",
+      }[inspection.publication.status]
+    : "미등록";
+}
+
+function naverRemoteStatusLabel(
+  status: NonNullable<
+    PublicationInspection["publication"]
+  >["remoteStatusType"],
 ) {
-  if (!type) return "입력";
-  return {
-    SINGLE_SELECT: "단일 선택",
-    MULTI_SELECT: "복수 선택",
-    RANGE: "범위 입력",
-  }[type];
+  return (
+    {
+      SALE: "판매 중",
+      OUTOFSTOCK: "품절",
+      SUSPENSION: "판매 중지",
+      DELETE: "삭제됨",
+    }[status ?? "SALE"] ?? status
+  );
 }
 
 function fromInitial(initial: ProductEditorInitial) {
@@ -1005,6 +2512,16 @@ function fromInitial(initial: ProductEditorInitial) {
     editedOptions: product.editedOptions,
     naverAttributes: product.naverAttributes ?? [],
   };
+}
+
+function normalizeHttpUrl(value: string) {
+  try {
+    const url = new URL(value.trim());
+    if (!["http:", "https:"].includes(url.protocol)) return null;
+    return url.toString();
+  } catch {
+    return null;
+  }
 }
 
 function formatWon(value: string | null) {

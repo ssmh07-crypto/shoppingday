@@ -2,7 +2,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
-import { NaverCategoryMetadataService } from "@/modules/channels/naver/naver-category-metadata";
+import {
+  invalidateNaverCategoryMetadata,
+  NaverCategoryMetadataService,
+} from "@/modules/channels/naver/naver-category-metadata";
 import type { NaverCategoriesClient } from "@/modules/channels/naver/naver-commerce-relay";
 
 function client() {
@@ -69,5 +72,39 @@ describe("네이버 카테고리 필수정보", () => {
     expect(second.cached).toBe(true);
     expect(api.fetchProductAttributes).toHaveBeenCalledTimes(1);
     expect(api.fetchStandardOptions).toHaveBeenCalledTimes(1);
+  });
+
+  it("같은 카테고리의 동시 요청을 한 번만 조회한다", async () => {
+    const api = client();
+    const service = new NaverCategoryMetadataService(
+      api as unknown as NaverCategoriesClient,
+      () => 2_000,
+    );
+
+    await Promise.all([
+      service.get("59990002"),
+      service.get("59990002"),
+      service.get("59990002"),
+    ]);
+
+    expect(api.fetchProductAttributes).toHaveBeenCalledTimes(1);
+    expect(api.fetchProductAttributeValues).toHaveBeenCalledTimes(1);
+    expect(api.fetchStandardOptions).toHaveBeenCalledTimes(1);
+  });
+
+  it("카테고리 동기화 후 선택한 메타데이터를 다시 조회한다", async () => {
+    const api = client();
+    const service = new NaverCategoryMetadataService(
+      api as unknown as NaverCategoriesClient,
+      () => 3_000,
+    );
+
+    await service.get("59990003");
+    invalidateNaverCategoryMetadata("59990003");
+    await service.get("59990003");
+
+    expect(api.fetchProductAttributes).toHaveBeenCalledTimes(2);
+    expect(api.fetchProductAttributeValues).toHaveBeenCalledTimes(2);
+    expect(api.fetchStandardOptions).toHaveBeenCalledTimes(2);
   });
 });

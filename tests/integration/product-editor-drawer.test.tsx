@@ -104,6 +104,7 @@ describe("상품 편집 서랍", () => {
     expect(screen.getByDisplayValue("빠른 편집 상품")).toBeInTheDocument();
     expect(fetchMock).toHaveBeenLastCalledWith(
       "/api/integrations/naver/categories/recommend?productName=%EB%B9%A0%EB%A5%B8%20%ED%8E%B8%EC%A7%91%20%EC%83%81%ED%92%88",
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
   });
 
@@ -191,6 +192,62 @@ describe("상품 편집 서랍", () => {
     ).toBeChecked();
   });
 
+  it("판매용 상품명 추천 근거를 확인한 뒤 사용자가 적용한다", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        editorResponse({
+          id: "title-recommendation-product",
+          title: "철제 바느질 골무 바느질부자재",
+        }),
+      )
+      .mockResolvedValueOnce(
+        Response.json({
+          success: true,
+          recommendation: {
+            title: "철제 바느질 골무",
+            source: "rules_naver_search_ad",
+            analysis: {
+              productType: "골무",
+              materials: ["철제"],
+              uses: ["바느질"],
+              modifiers: [],
+              removedTerms: ["바느질부자재"],
+            },
+            keywordEvidence: [
+              {
+                keyword: "골무",
+                totalMonthlySearchVolume: 3290,
+                competition: "medium",
+                status: "success",
+              },
+            ],
+            relatedKeywords: [],
+            notices: [],
+          },
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    render(<ProductEditorDrawer initialProductId="title-recommendation-product" />);
+
+    await screen.findByDisplayValue("철제 바느질 골무 바느질부자재");
+    fireEvent.click(screen.getByRole("button", { name: "상품명 추천" }));
+
+    expect(await screen.findByText("규칙 분석 + 네이버 검색광고 실제 데이터")).toBeVisible();
+    expect(screen.getByText("골무", { selector: "dd" })).toBeVisible();
+    expect(screen.getByText("골무 · 월 3,290")).toBeVisible();
+    expect(
+      screen.getByDisplayValue("철제 바느질 골무 바느질부자재"),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "이 상품명 적용" }));
+    expect(screen.getByDisplayValue("철제 바느질 골무")).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      "/api/products/title-recommendation-product/title-recommendation",
+      expect.objectContaining({ method: "POST" }),
+    );
+  });
+
   it("변경 후 다른 탭을 누르면 초안을 저장한 뒤 이동한다", async () => {
     const fetchMock = vi
       .fn()
@@ -208,7 +265,7 @@ describe("상품 편집 서랍", () => {
 
     const title = await screen.findByDisplayValue("저장 전 상품명");
     fireEvent.change(title, { target: { value: "자동 저장 상품명" } });
-    fireEvent.click(screen.getByRole("button", { name: /이미지·상세/ }));
+    fireEvent.click(screen.getByRole("button", { name: /이미지/ }));
 
     await waitFor(() =>
       expect(fetchMock).toHaveBeenLastCalledWith(
@@ -220,6 +277,61 @@ describe("상품 편집 서랍", () => {
       expect(screen.getByText("상세페이지")).toBeInTheDocument(),
     );
   });
+
+  it("대표 이미지와 추가 이미지를 표시하고 드래그로 순서를 바꾼다", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(
+      editorResponse({
+        id: "image-order-product",
+        title: "이미지 순서 상품",
+        selectedImages: [
+          selectedImage("first", "첫 이미지", true, 0),
+          selectedImage("second", "두 번째 이미지", false, 1),
+        ],
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    render(<ProductEditorDrawer initialProductId="image-order-product" />);
+
+    await screen.findByDisplayValue("이미지 순서 상품");
+    fireEvent.click(screen.getByRole("button", { name: /이미지/ }));
+
+    expect(
+      await screen.findByText("사용 이미지 2/10 · 대표 1개 + 추가 최대 9개"),
+    ).toBeVisible();
+    expect(screen.getByText("대표 이미지")).toBeVisible();
+    expect(screen.getByText("추가 이미지 1")).toBeVisible();
+    const preview = screen.getByTitle("판매 상세페이지 미리보기");
+    const detailUrls = screen.getByLabelText("상세 이미지 URL");
+    const htmlEditor = screen.getByText("HTML 편집").closest("label")!;
+    expect(
+      preview.compareDocumentPosition(detailUrls) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      detailUrls.compareDocumentPosition(htmlEditor) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+
+    const firstCard = screen.getByAltText("첫 이미지").closest("article")!;
+    const secondCard = screen
+      .getByAltText("두 번째 이미지")
+      .closest("article")!;
+    const transfer = {
+      effectAllowed: "none",
+      dropEffect: "none",
+      setData: vi.fn(),
+      getData: vi.fn(() => "first"),
+    };
+    fireEvent.dragStart(firstCard, { dataTransfer: transfer });
+    fireEvent.dragOver(secondCard, { dataTransfer: transfer });
+    fireEvent.drop(secondCard, { dataTransfer: transfer });
+
+    expect(
+      screen
+        .getAllByRole("listitem")
+        .map((item) => item.querySelector("img")?.getAttribute("alt")),
+    ).toEqual(["두 번째 이미지", "첫 이미지"]);
+  });
 });
 
 function editorResponse({
@@ -228,12 +340,14 @@ function editorResponse({
   originalName = "공급처 원본 상품",
   naverCategoryId = "50001799",
   applyCategoryQueryToTitleByDefault = false,
+  selectedImages = [],
 }: {
   id: string;
   title: string;
   originalName?: string;
   naverCategoryId?: string | null;
   applyCategoryQueryToTitleByDefault?: boolean;
+  selectedImages?: ReturnType<typeof selectedImage>[];
 }) {
   return Response.json({
     success: true,
@@ -252,7 +366,7 @@ function editorResponse({
         description: "",
         categoryId: null,
         naverCategoryId,
-        selectedImages: [],
+        selectedImages,
         editedOptions: { groups: [], combinations: [] },
         naverAttributes: [],
         draftVersion: 1,
@@ -278,4 +392,22 @@ function editorResponse({
       },
     },
   });
+}
+
+function selectedImage(
+  id: string,
+  altText: string,
+  isPrimary: boolean,
+  sortOrder: number,
+) {
+  return {
+    id,
+    source: "supplier" as const,
+    sourceUrl: `https://example.test/${id}.jpg`,
+    storedUrl: null,
+    altText,
+    sortOrder,
+    isPrimary,
+    enabled: true,
+  };
 }

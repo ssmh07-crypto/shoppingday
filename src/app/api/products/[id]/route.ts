@@ -14,7 +14,13 @@ export async function GET(
       new ProductProcessingSettingsRepository(database).get(user.id),
     ]);
     return NextResponse.json(
-      { success: true, data: { ...data, settings } },
+      {
+        success: true,
+        data: {
+          ...data,
+          settings,
+        },
+      },
       { headers: { "Cache-Control": "private, no-store" } },
     );
   });

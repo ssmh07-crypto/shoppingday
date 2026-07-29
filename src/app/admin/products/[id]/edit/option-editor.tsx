@@ -103,6 +103,47 @@ export function OptionEditor({
         i === index ? { ...item, ...patch } : item,
       ),
     });
+  const combinationCount = value.groups.reduce(
+    (count, group) =>
+      count * group.values.filter((item) => item.enabled).length,
+    value.groups.length ? 1 : 0,
+  );
+  const canGenerateCombinations =
+    value.groups.length > 0 &&
+    value.groups.every((group) =>
+      group.values.some((item) => item.enabled),
+    ) &&
+    combinationCount <= 500;
+  const generateCombinations = () => {
+    if (!canGenerateCombinations) return;
+    const combinations = cartesianProduct(
+      value.groups.map((group) =>
+        group.values.filter((item) => item.enabled).map((item) => item.id),
+      ),
+    );
+    const existing = new Map(
+      value.combinations.map((combination) => [
+        combination.valueIds.join("\u0000"),
+        combination,
+      ]),
+    );
+    onChange({
+      ...value,
+      combinations: combinations.map((valueIds) => {
+        const saved = existing.get(valueIds.join("\u0000"));
+        return (
+          saved ?? {
+            id: crypto.randomUUID(),
+            valueIds,
+            additionalPrice: 0,
+            stock: 0,
+            enabled: true,
+            supplierOptionReference: null,
+          }
+        );
+      }),
+    });
+  };
 
   return (
     <div className="option-editor">
@@ -178,16 +219,44 @@ export function OptionEditor({
       {value.groups.length > 0 && (
         <>
           <div className="page-head">
-            <h3>옵션 조합</h3>
-            <button
-              type="button"
-              className="secondary"
-              disabled={value.groups.some((group) => !group.values.length)}
-              onClick={addCombination}
-            >
-              + 조합 추가
-            </button>
+            <div>
+              <h3>옵션 조합</h3>
+              <p>
+                판매할 조합을 만들고 각 조합의 재고와 추가금을 확인하세요.
+              </p>
+            </div>
+            <div className="option-combination-actions">
+              <button
+                type="button"
+                className="secondary"
+                disabled={!canGenerateCombinations}
+                onClick={generateCombinations}
+              >
+                활성 옵션으로 전체 조합 생성
+                {canGenerateCombinations ? ` (${combinationCount}개)` : ""}
+              </button>
+              <button
+                type="button"
+                className="secondary"
+                disabled={value.groups.some((group) => !group.values.length)}
+                onClick={addCombination}
+              >
+                + 조합 한 개 추가
+              </button>
+            </div>
           </div>
+          {!value.combinations.some((combination) => combination.enabled) && (
+            <p className="option-combination-warning" role="alert">
+              활성 옵션 조합이 없습니다. 전체 조합을 생성하거나 조합을 한 개
+              이상 추가해 주세요.
+            </p>
+          )}
+          {combinationCount > 500 && (
+            <p className="option-combination-warning" role="alert">
+              가능한 조합이 500개를 넘습니다. 옵션값을 줄인 뒤 조합을
+              생성해 주세요.
+            </p>
+          )}
           <div className="combination-list">
             {value.combinations.map((combination, index) => (
               <div className="combination-row" key={combination.id}>
@@ -278,5 +347,15 @@ export function OptionEditor({
       )}
       {!value.groups.length && <p>옵션이 없는 단일 상품입니다.</p>}
     </div>
+  );
+}
+
+function cartesianProduct(groups: string[][]): string[][] {
+  return groups.reduce<string[][]>(
+    (combinations, values) =>
+      combinations.flatMap((combination) =>
+        values.map((value) => [...combination, value]),
+      ),
+    [[]],
   );
 }

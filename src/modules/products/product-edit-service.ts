@@ -61,6 +61,7 @@ export class ProductEditService {
   async saveDraft(id: string, ownerId: string, raw: unknown) {
     let input = draftInputSchema.parse(raw);
     const current = await this.get(id, ownerId);
+    validateSourcingTitle(current.supplier.code, input.title);
     if (current.product.naverCategoryId !== input.naverCategoryId) {
       input = { ...input, naverAttributes: [] };
     }
@@ -82,6 +83,7 @@ export class ProductEditService {
   async saveTitle(id: string, ownerId: string, raw: unknown) {
     const { draftVersion, title } = titleInputSchema.parse(raw);
     const current = await this.get(id, ownerId);
+    validateSourcingTitle(current.supplier.code, title);
     if (current.product.draftVersion !== draftVersion)
       throw new ProductConflictError();
     const input: DraftInput = {
@@ -113,6 +115,8 @@ export class ProductEditService {
   }
   async markReady(id: string, ownerId: string, raw: unknown) {
     const input = draftInputSchema.parse(raw);
+    const current = await this.get(id, ownerId);
+    validateSourcingTitle(current.supplier.code, input.title);
     const errors = readyErrors(input);
     if (input.naverCategoryId && this.naverRequirements) {
       try {
@@ -144,7 +148,6 @@ export class ProductEditService {
       }
     }
     if (Object.keys(errors).length) throw new ProductValidationError(errors);
-    const current = await this.get(id, ownerId);
     return this.handle(
       await this.repo.save(
         id,
@@ -161,6 +164,7 @@ export class ProductEditService {
   async revert(id: string, ownerId: string, raw: unknown) {
     const input = draftInputSchema.parse(raw);
     const current = await this.get(id, ownerId);
+    validateSourcingTitle(current.supplier.code, input.title);
     return this.handle(
       await this.repo.save(
         id,
@@ -197,6 +201,17 @@ export class ProductEditService {
         naverCategoryId: "동기화된 네이버 최종 카테고리를 선택해 주세요.",
       });
     return result;
+  }
+}
+
+function validateSourcingTitle(
+  supplierCode: string | undefined,
+  title: string,
+) {
+  if (supplierCode === "sourcing" && title.trim().length > 50) {
+    throw new ProductValidationError({
+      title: "소싱 등록 상품명은 50자를 넘길 수 없습니다.",
+    });
   }
 }
 function changedFields(

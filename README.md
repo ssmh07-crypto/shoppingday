@@ -1,6 +1,6 @@
 # Modular PIM
 
-Next.js App Router, Supabase Auth/PostgreSQL, Drizzle ORM 기반의 모듈형 PIM입니다. 친구도매 상품 동기화와 판매용 상품 편집, 네이버 커머스API 카테고리 동기화 기반을 제공합니다. 스마트스토어 상품 등록·수정·삭제 전송은 후속 구현 범위입니다.
+Next.js App Router, Supabase Auth/PostgreSQL, Drizzle ORM 기반의 모듈형 PIM입니다. 친구도매 상품 동기화와 판매용 상품 편집, 네이버 커머스API 연동, 판매 반응이 확인된 스마트스토어 상품의 키워드 관리를 제공합니다.
 
 세션이 초기화된 뒤 작업을 재개할 때는 먼저 [`docs/NEXT_SESSION.md`](docs/NEXT_SESSION.md)와 [`docs/ARCHITECTURE_DECISIONS.md`](docs/ARCHITECTURE_DECISIONS.md)를 확인합니다.
 
@@ -22,6 +22,13 @@ Next.js App Router, Supabase Auth/PostgreSQL, Drizzle ORM 기반의 모듈형 PI
 - `NAVER_COMMERCE_CLIENT_ID`, `NAVER_COMMERCE_CLIENT_SECRET`: 서버 전용 네이버 커머스API 애플리케이션 인증정보
 - `NAVER_COMMERCE_TOKEN_TYPE`: 본인 스토어는 `SELF`(기본값), 판매자 계정 연동 방식은 `SELLER`
 - `NAVER_COMMERCE_ACCOUNT_ID`: `SELLER` 방식에서만 필요한 판매자 계정 ID
+- `USE_MOCK_EXTERNAL_APIS`: `true`이면 성장 상품 분석과 검색량 조회에 고정 fixture 사용. 운영 환경에서는 활성화할 수 없음
+- `NAVER_SEARCH_AD_API_KEY`, `NAVER_SEARCH_AD_SECRET_KEY`, `NAVER_SEARCH_AD_CUSTOMER_ID`: 검색광고 키워드 도구용 서버 전용 인증정보
+- `NAVER_SEARCH_AD_API_URL`, `NAVER_SEARCH_AD_TIMEOUT_MS`: 검색광고 API 주소와 응답 제한 시간
+- `NAVER_API_HUB_CLIENT_ID`, `NAVER_API_HUB_CLIENT_SECRET`: 향후 쇼핑 인사이트 추세 보조 데이터용 선택 설정. 이번 MVP 화면에서는 사용하지 않음
+- `KEYWORD_METRICS_CACHE_HOURS`: 검색량 캐시 유효시간(기본 24시간)
+- `KEYWORD_CANDIDATE_COUNT`: 규칙 후보와 네이버 연관 후보를 합친 최대 수(기본 30개)
+- `GENERATED_TITLE_MAX_LENGTH`: 상품명 초안 최대 길이(기본 60자)
 
 ## 실행
 
@@ -40,6 +47,14 @@ DOME_API_MOCK_MODE=true
 ```
 
 mock 모드에서 `goodsno=434379`는 `tests/fixtures/dome/product-normal.xml`을 반환하고, 다른 번호는 상품 없음 fixture를 반환합니다. 실제 API ID와 Key는 필요하지 않습니다. `/admin/products/import`에서 버튼을 눌렀을 때만 import가 실행됩니다.
+
+성장 상품 관리도 외부 API 키 없이 전체 흐름을 확인할 수 있습니다.
+
+```dotenv
+USE_MOCK_EXTERNAL_APIS=true
+```
+
+`/admin/keywords`에서 스마트스토어 상품 링크를 연결하고 상품 분석, 고정 검색량 조회, 소형·중형·대형 필터, 키워드 선택, 상품명 초안 생성과 저장을 확인합니다. 모든 Mock 값은 화면에 `Mock`으로 표시되며 무작위로 바뀌지 않습니다. `NODE_ENV=production`에서는 Mock 모드가 켜져 있으면 서버 환경변수 검증이 실패합니다.
 
 최초 전체 상품 가져오기는 Cloudflare Workers의 CPU 제한을 피하기 위해 Node.js 관리 명령으로 실행합니다. 실제 친구도매 API를 1회 호출하고 100개마다 진행 상황을 출력합니다. 기존 상품은 `supplier_products` 원본만 갱신하고 판매용 편집값은 유지합니다.
 
@@ -68,6 +83,30 @@ DB 변경 적용:
 ```bash
 npm run db:migrate
 ```
+
+## 성장 상품 키워드 관리
+
+`/admin/keywords`는 1,000개 상품 슬롯 전체를 비싸게 분석하는 화면이 아니라, 판매가 발생했거나 가능성이 보이는 상품만 골라 관리하는 업무 화면입니다. 스마트스토어/브랜드스토어 상품 링크와 최소 상품명을 입력한 뒤 다음 흐름을 사용합니다.
+
+```text
+상품 저장 → 규칙 기반 상품 분석 → 사용자 검토·수정 → 키워드 후보 생성
+→ 네이버 연관 키워드 필터·검색량 조회
+→ 검색량 기반 소형·중형·대형 분류 → 사용자 필터·선택
+→ 선택 키워드 기반 상품명 초안 → 사용자 수정·저장
+```
+
+- 공식 기능명은 `규칙 기반 기본 모드`이며 생성형 AI API를 사용하지 않습니다.
+- 공급사 원본 상품명, 현재 상품명, 생성 초안과 최종 상품명을 분리해 보존합니다.
+- 네이버 검색광고 키워드 도구가 반환한 연관 키워드를 남은 후보 슬롯에 추가합니다.
+- 연관 키워드는 상품 유형과 확인된 속성의 충돌을 검사하고, 제외 사유와 복원 기능을 제공합니다.
+- 검색량·경쟁도는 네이버 검색광고 API의 참고 데이터이며 노출 순위나 판매를 보장하지 않습니다.
+- `< 10` 같은 범위형 응답은 원문을 표시하고 내부 필터용 값만 별도로 정규화합니다.
+- 필터를 바꿔도 선택 상태는 유지됩니다.
+- 키워드 선택과 최종 상품명은 사용자 결정이며 네이버 상품에 자동 반영하지 않습니다.
+- 동일 키워드 검색량은 기본 24시간 캐시합니다.
+- 순위 추적, 판매자센터 크롤링, 자동 상품명 변경은 이번 MVP에 포함하지 않습니다.
+
+구조와 외부 API 범위는 [`docs/architecture.md`](docs/architecture.md), [`docs/external-apis.md`](docs/external-apis.md)를 참고합니다. 제품의 상시 판단 기준은 [`docs/product-strategy.md`](docs/product-strategy.md)에 기록되어 있습니다.
 
 ## 검증 명령
 

@@ -3,10 +3,43 @@ import type {
   NaverProductAttribute,
   SelectedImage,
 } from "@/lib/db/schema";
+import type { SourcingRelatedKeyword } from "@/modules/sourcing/types";
 import type { ProductProcessingSettings } from "@/modules/products/product-processing-settings";
+import type { NaverPublicationPolicyData, NaverPublicationPolicyOverrides } from "@/lib/db/schema";
+
+export type ProductEditorMarketData = {
+  naverPublicationPolicy: {
+    defaults: NaverPublicationPolicyData;
+    overrides: NaverPublicationPolicyOverrides;
+    effective: NaverPublicationPolicyData;
+    deliveryPolicy?: {
+      id: string;
+      policyCode: string;
+      name: string;
+    } | null;
+  };
+  naverDeliveryPolicies: Array<{
+    id: string;
+    policyCode: string;
+    name: string;
+  }>;
+  naverStoreConnections: Array<{
+    id: string;
+    storeName: string;
+    storeUrl: string;
+    authType: "SELF" | "SELLER";
+    accountId: string | null;
+    isDefault: boolean;
+  }>;
+  naverStoreConnectionId: string | null;
+};
 
 export type ProductEditorInitial = {
   settings: ProductProcessingSettings;
+  naverPublicationPolicy?: ProductEditorMarketData["naverPublicationPolicy"];
+  naverDeliveryPolicies?: ProductEditorMarketData["naverDeliveryPolicies"];
+  naverStoreConnections?: ProductEditorMarketData["naverStoreConnections"];
+  naverStoreConnectionId?: string | null;
   product: {
     id: string;
     status: string;
@@ -46,4 +79,10 @@ export type NaverCategoryOption = {
   name: string;
   wholeCategoryName: string;
   last: boolean;
+};
+
+export type SourcingRegistrationContext = {
+  researchId: string;
+  sourcingKeyword: string;
+  relatedKeywords: SourcingRelatedKeyword[];
 };

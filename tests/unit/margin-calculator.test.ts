@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { calculateSellingPrice } from "@/modules/pricing/margin-calculator";
+import {
+  calculateSellingPrice,
+  getNaverTotalFeeRatePercent,
+} from "@/modules/pricing/margin-calculator";
 
 describe("판매가 계산기", () => {
   it("공급가·배송비·수수료와 목표 실마진을 모두 역산한다", () => {
@@ -49,5 +52,25 @@ describe("판매가 계산기", () => {
         targetMarginPercent: 20,
       }),
     ).toThrow("100% 미만");
+  });
+
+  it("일반 등급 네이버쇼핑 유입에서 원가 5,600원의 30% 마진 판매가를 계산한다", () => {
+    const feeRatePercent = getNaverTotalFeeRatePercent(
+      "general",
+      "shopping",
+    );
+    const result = calculateSellingPrice({
+      supplierCost: 5_600,
+      sellerShippingCost: 0,
+      packagingAndFixedCost: 0,
+      buyerShippingCharge: 0,
+      feeRatePercent,
+      targetMarginPercent: 30,
+      roundingUnit: 100,
+    });
+
+    expect(feeRatePercent).toBeCloseTo(6.63);
+    expect(result.sellingPrice).toBe(8_900);
+    expect(result.expectedMarginPercent).toBeGreaterThanOrEqual(30);
   });
 });

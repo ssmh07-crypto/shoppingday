@@ -39,6 +39,148 @@ function json(value: unknown, status = 200) {
 }
 
 describe("네이버 커머스API 클라이언트", () => {
+  it("변경 주문 번호와 상품 주문 상세를 개인정보 없이 조회한다", async () => {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        json({ access_token: "token", expires_in: 10800, token_type: "Bearer" }),
+      )
+      .mockResolvedValueOnce(
+        json({
+          data: {
+            lastChangeStatuses: [{ productOrderId: "order-1" }],
+            more: {
+              moreFrom: "2026-07-28T12:00:00+09:00",
+              moreSequence: 12,
+            },
+          },
+        }),
+      )
+      .mockResolvedValueOnce(
+        json({
+          data: [
+            {
+              order: {
+                paymentDate: "2026-07-28T10:00:00+09:00",
+                ordererName: "응답에서 제거되어야 함",
+              },
+              productOrder: {
+                productId: "200000001",
+                productOrderStatus: "PAYED",
+                quantity: 2,
+                remainQuantity: 2,
+                shippingAddress: { baseAddress: "응답에서 제거되어야 함" },
+              },
+            },
+          ],
+        }),
+      );
+    const client = new NaverCommerceClient(config, fetcher, () => now);
+
+    await expect(
+      client.fetchLastChangedProductOrders({
+        lastChangedFrom: "2026-07-28T00:00:00.000Z",
+        lastChangedTo: "2026-07-29T00:00:00.000Z",
+      }),
+    ).resolves.toEqual({
+      productOrderIds: ["order-1"],
+      more: {
+        moreFrom: "2026-07-28T12:00:00+09:00",
+        moreSequence: "12",
+      },
+    });
+    await expect(client.fetchProductOrders(["order-1"])).resolves.toEqual([
+      {
+        order: { paymentDate: "2026-07-28T10:00:00+09:00" },
+        productOrder: {
+          productId: "200000001",
+          productOrderStatus: "PAYED",
+          quantity: 2,
+          remainQuantity: 2,
+        },
+      },
+    ]);
+    expect(String(fetcher.mock.calls[1]?.[0])).toContain(
+      "/v1/pay-order/seller/product-orders/last-changed-statuses",
+    );
+    expect(fetcher.mock.calls[2]?.[1]).toMatchObject({
+      method: "POST",
+      body: JSON.stringify({
+        productOrderIds: ["order-1"],
+        quantityClaimCompatibility: true,
+      }),
+    });
+  });
+
+  it("v2 상품 등록 응답의 원상품번호와 채널상품번호를 저장 형식으로 변환한다", async () => {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        json({ access_token: "token", expires_in: 10800, token_type: "Bearer" }),
+      )
+      .mockResolvedValueOnce(
+        json({
+          originProductNo: 100000001,
+          smartstoreChannelProductNo: 200000001,
+        }),
+      );
+    const client = new NaverCommerceClient(config, fetcher, () => now);
+
+    await expect(client.createProduct({} as never)).resolves.toEqual({
+      originProductNo: "100000001",
+      channelProductNo: "200000001",
+    });
+    expect(String(fetcher.mock.calls[1]?.[0])).toBe(
+      "https://api.example.test/external/v2/products",
+    );
+    expect(fetcher.mock.calls[1]?.[1]).toMatchObject({
+      method: "POST",
+      body: "{}",
+    });
+  });
+
+  it("상품 등록 유효성 오류의 필드별 상세 내용을 보존한다", async () => {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        json({ access_token: "token", expires_in: 10800, token_type: "Bearer" }),
+      )
+      .mockResolvedValueOnce(
+        json(
+          {
+            code: "INVALID_INPUT",
+            message: "입력한 데이터가 유효하지 않습니다.",
+            invalidInputs: [
+              {
+                name: "originProduct.detailAttribute.originAreaInfo",
+                type: "INVALID",
+                message: "원산지 정보를 확인해 주세요.",
+              },
+            ],
+          },
+          400,
+        ),
+      );
+
+    await expect(
+      new NaverCommerceClient(config, fetcher, () => now).createProduct(
+        {} as never,
+      ),
+    ).rejects.toMatchObject({
+      code: "request_failed",
+      responseStatus: 400,
+      invalidInputs: [
+        {
+          name: "originProduct.detailAttribute.originAreaInfo",
+          type: "INVALID",
+          message: "원산지 정보를 확인해 주세요.",
+        },
+      ],
+      message:
+        "입력한 데이터가 유효하지 않습니다. - originProduct.detailAttribute.originAreaInfo: 원산지 정보를 확인해 주세요.",
+    });
+  });
+
   it("공식 bcrypt+Base64 방식으로 전자서명을 만든다", async () => {
     const signature = await createNaverCommerceSignature(
       clientId,
@@ -234,6 +376,171 @@ describe("네이버 커머스API 클라이언트", () => {
     );
     expect(String(fetcher.mock.calls[2]?.[0])).toContain(
       "/v1/product-attributes/attribute-value-units",
+    );
+  });
+
+  it("대카테고리별 상품정보제공고시 목록과 단건을 조회한다", async () => {
+    const notice = {
+      productInfoProvidedNoticeType: "ETC",
+      productInfoProvidedNoticeTypeName: "기타 재화",
+      productInfoProvidedNoticeContents: [
+        {
+          fieldType: "STRING",
+          fieldName: "itemName",
+          fieldDescription: "품명",
+          fieldAddDescription: "",
+          fieldMaxLength: 100,
+        },
+      ],
+    };
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        json({ access_token: "token", expires_in: 10800, token_type: "Bearer" }),
+      )
+      .mockResolvedValueOnce(json([notice]))
+      .mockResolvedValueOnce(json(notice));
+    const client = new NaverCommerceClient(config, fetcher, () => now);
+
+    await expect(client.fetchProvidedNotices("50000000")).resolves.toEqual([notice]);
+    await expect(client.fetchProvidedNotice("ETC")).resolves.toEqual(notice);
+    expect(String(fetcher.mock.calls[1]?.[0])).toContain(
+      "/v1/products-for-provided-notice?categoryId=50000000",
+    );
+    expect(String(fetcher.mock.calls[2]?.[0])).toContain(
+      "/v1/products-for-provided-notice/ETC",
+    );
+  });
+
+  it("이미지를 imageFiles multipart 필드로 업로드한다", async () => {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        json({ access_token: "token", expires_in: 10800, token_type: "Bearer" }),
+      )
+      .mockResolvedValueOnce(
+        json({ images: [{ url: "https://shop-phinf.pstatic.net/uploaded.jpg" }] }),
+      );
+    const client = new NaverCommerceClient(config, fetcher, () => now);
+
+    await expect(
+      client.uploadProductImages([
+        {
+          name: "product.jpg",
+          type: "image/jpeg",
+          bytes: new Uint8Array([0xff, 0xd8, 0xff, 0xd9]),
+        },
+      ]),
+    ).resolves.toEqual([
+      { url: "https://shop-phinf.pstatic.net/uploaded.jpg" },
+    ]);
+    expect(String(fetcher.mock.calls[1]?.[0])).toContain(
+      "/v1/product-images/upload",
+    );
+    const body = fetcher.mock.calls[1]?.[1]?.body;
+    expect(body).toBeInstanceOf(FormData);
+    expect((body as FormData).getAll("imageFiles")).toHaveLength(1);
+  });
+
+  it("채널 상품에서 카테고리와 등록 속성 및 판매자 태그를 읽는다", async () => {
+    const channelProduct = {
+      originProduct: {
+        leafCategoryId: "50000805",
+        name: "린넨 여름 원피스",
+        deliveryInfo: {
+          deliveryType: "DELIVERY",
+          deliveryCompany: "HANJIN",
+          deliveryFee: { deliveryFeeType: "FREE", baseFee: 0 },
+        },
+        detailAttribute: {
+          productAttributes: [
+            { attributeSeq: 10, attributeValueSeq: 100 },
+          ],
+          seoInfo: { sellerTags: [{ code: 1, text: "여름원피스" }] },
+        },
+      },
+    };
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        json({ access_token: "token", expires_in: 10800, token_type: "Bearer" }),
+      )
+      .mockResolvedValueOnce(json(channelProduct));
+
+    await expect(
+      new NaverCommerceClient(config, fetcher, () => now).fetchChannelProduct(
+        "200000001",
+      ),
+    ).resolves.toEqual(channelProduct);
+    expect(String(fetcher.mock.calls[1]?.[0])).toBe(
+      "https://api.example.test/external/v2/products/channel-products/200000001",
+    );
+  });
+
+  it("판매자 주소록과 배송 관련 선택지를 네이버 응답에서 읽는다", async () => {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        json({ access_token: "token", expires_in: 10800, token_type: "Bearer" }),
+      )
+      .mockResolvedValueOnce(
+        json({
+          addressBooks: [
+            {
+              addressBookNo: 101,
+              name: "기본 출고지",
+              addressType: "RELEASE",
+              postalCode: "00000",
+              baseAddress: "서울시 테스트구",
+              detailAddress: "1층",
+              address: "서울시 테스트구 1층",
+            },
+          ],
+          page: 1,
+          totalPage: 1,
+        }),
+      )
+      .mockResolvedValueOnce(
+        json({
+          deliveryBundleGroups: [
+            {
+              id: 202,
+              name: "기본 묶음배송",
+              usable: true,
+              baseGroup: true,
+              deliveryFeeChargeMethodType: "MIN",
+            },
+          ],
+        }),
+      )
+      .mockResolvedValueOnce(
+        json({
+          returnDeliveryCompanies: [
+            {
+              id: 303,
+              name: "한진택배",
+              returnDeliveryCompanyPriorityType: "PRIMARY",
+            },
+          ],
+        }),
+      );
+    const client = new NaverCommerceClient(config, fetcher, () => now);
+
+    await expect(client.fetchSellerAddresses()).resolves.toHaveLength(1);
+    await expect(client.fetchDeliveryBundleGroups()).resolves.toMatchObject([
+      { id: 202, baseGroup: true },
+    ]);
+    await expect(client.fetchReturnDeliveryCompanies()).resolves.toMatchObject([
+      { name: "한진택배", returnDeliveryCompanyPriorityType: "PRIMARY" },
+    ]);
+    expect(String(fetcher.mock.calls[1]?.[0])).toContain(
+      "/v1/seller/addressbooks-for-page",
+    );
+    expect(String(fetcher.mock.calls[2]?.[0])).toContain(
+      "/v1/product-delivery-info/bundle-groups",
+    );
+    expect(String(fetcher.mock.calls[3]?.[0])).toContain(
+      "/v2/product-delivery-info/return-delivery-companies",
     );
   });
 });

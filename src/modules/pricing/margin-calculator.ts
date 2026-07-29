@@ -16,6 +16,32 @@ export type MarginCalculation = {
   expectedMarginPercent: number;
 };
 
+export const naverNpayFeeRates = {
+  micro: { label: "영세", percent: 1.947 },
+  small1: { label: "중소1", percent: 2.563 },
+  small2: { label: "중소2", percent: 2.728 },
+  small3: { label: "중소3", percent: 3.003 },
+  general: { label: "일반", percent: 3.63 },
+} as const;
+
+export const naverSalesFeeRates = {
+  shopping: { label: "네이버쇼핑 일반 유입", percent: 3 },
+  sellerMarketing: { label: "판매자 마케팅 유입", percent: 1 },
+} as const;
+
+export type NaverNpayFeeGrade = keyof typeof naverNpayFeeRates;
+export type NaverSalesFeeType = keyof typeof naverSalesFeeRates;
+
+export function getNaverTotalFeeRatePercent(
+  npayGrade: NaverNpayFeeGrade,
+  salesFeeType: NaverSalesFeeType,
+) {
+  return (
+    naverNpayFeeRates[npayGrade].percent +
+    naverSalesFeeRates[salesFeeType].percent
+  );
+}
+
 export function calculateSellingPrice(
   input: MarginCalculationInput,
 ): MarginCalculation {

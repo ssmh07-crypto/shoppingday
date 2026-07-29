@@ -3,11 +3,13 @@ import {
   createNaverCommerceRelayHandler,
   NaverCommerceRelayClient,
 } from "@/modules/channels/naver/naver-commerce-relay";
+import { NaverCommerceError } from "@/modules/channels/naver/naver-commerce-client";
 import {
   createNaverRelaySignature,
   NAVER_RELAY_HEADERS,
   verifyNaverRelaySignature,
 } from "@/modules/channels/naver/naver-relay-auth";
+import type { NaverProductPayload } from "@/modules/channels/naver/naver-product-payload";
 
 const now = 1_752_700_000_000;
 const sharedSecret = "test-shared-secret-that-is-at-least-32-characters";
@@ -47,13 +49,77 @@ const standardOptions = {
     },
   ],
 };
+const productPayload = {
+  originProduct: {
+    statusType: "SALE",
+    saleType: "NEW",
+    leafCategoryId: "50000805",
+    name: "테스트 상품",
+    detailContent: "<p>테스트 상품 상세</p>",
+    images: {
+      representativeImage: {
+        url: "https://shop-phinf.pstatic.net/uploaded.jpg",
+      },
+      optionalImages: [],
+    },
+    salePrice: 10000,
+    stockQuantity: 3,
+    deliveryInfo: { deliveryType: "DELIVERY" },
+    detailAttribute: {
+      afterServiceInfo: {
+        afterServiceTelephoneNumber: "02-0000-0000",
+        afterServiceGuideContent: "판매자 문의",
+      },
+      originAreaInfo: { originAreaCode: "00", plural: false },
+      sellerCodeInfo: { sellerManagementCode: "TEST-001" },
+      productAttributes: [],
+      productInfoProvidedNotice: { productInfoProvidedNoticeType: "ETC" },
+      taxType: "TAX",
+      minorPurchasable: true,
+    },
+  },
+  smartstoreChannelProduct: {
+    naverShoppingRegistration: true,
+    channelProductDisplayStatusType: "ON",
+  },
+} as NaverProductPayload;
 
 function metadataClientMocks() {
   return {
+    fetchSellerAddresses: vi.fn().mockResolvedValue([]),
+    fetchDeliveryBundleGroups: vi.fn().mockResolvedValue([]),
+    fetchReturnDeliveryCompanies: vi.fn().mockResolvedValue([]),
+    fetchChannelProduct: vi.fn().mockResolvedValue({
+      originProduct: {
+        leafCategoryId: "50000805",
+        name: "여성 여름 원피스",
+        detailAttribute: { productAttributes: [], seoInfo: { sellerTags: [] } },
+      },
+    }),
     fetchProductAttributes: vi.fn().mockResolvedValue(productAttributes),
     fetchProductAttributeValues: vi.fn().mockResolvedValue([]),
     fetchProductAttributeUnits: vi.fn().mockResolvedValue([]),
     fetchStandardOptions: vi.fn().mockResolvedValue(standardOptions),
+    fetchProvidedNotices: vi.fn().mockResolvedValue([]),
+    fetchProvidedNotice: vi.fn().mockResolvedValue({
+      productInfoProvidedNoticeType: "ETC",
+      productInfoProvidedNoticeTypeName: "기타 재화",
+      productInfoProvidedNoticeContents: [],
+    }),
+    uploadProductImages: vi.fn().mockResolvedValue([
+      { url: "https://shop-phinf.pstatic.net/uploaded.jpg" },
+    ]),
+    createProduct: vi.fn().mockResolvedValue({
+      originProductNo: "100000001",
+      channelProductNo: "200000001",
+    }),
+    updateProduct: vi.fn().mockResolvedValue({
+      originProductNo: "100000001",
+      channelProductNo: "200000001",
+    }),
+    changeProductStatus: vi.fn().mockResolvedValue({ success: true }),
+    deleteChannelProduct: vi.fn().mockResolvedValue({ success: true }),
+    deleteOriginProduct: vi.fn().mockResolvedValue({ success: true }),
   };
 }
 
@@ -81,6 +147,104 @@ async function signedRequest(path = "/v1/categories") {
 }
 
 describe("네이버 커머스API 중계 인증", () => {
+  it("네이버 유효성 오류의 필드별 상세 내용을 중계한다", async () => {
+    const client = {
+      fetchCategories: vi.fn().mockRejectedValue(
+        new NaverCommerceError(
+          "request_failed",
+          "입력한 데이터가 유효하지 않습니다.",
+          400,
+          [
+            {
+              name: "originProduct.deliveryInfo",
+              type: "INVALID",
+              message: "배송 정보를 확인해 주세요.",
+            },
+          ],
+        ),
+      ),
+      fetchProductModels: vi.fn(),
+      ...metadataClientMocks(),
+    };
+    const handler = createNaverCommerceRelayHandler({
+      sharedSecret,
+      client,
+      now: () => now,
+    });
+    const response = await handler(await signedRequest());
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      error: {
+        invalidInputs: [
+          {
+            name: "originProduct.deliveryInfo",
+            type: "INVALID",
+            message: "배송 정보를 확인해 주세요.",
+          },
+        ],
+      },
+    });
+  });
+
+  it("배송 주소록과 묶음배송 및 반품 택배사 조회 경로를 전달한다", async () => {
+    const client = {
+      fetchCategories: vi.fn().mockResolvedValue(categories),
+      fetchProductModels: vi.fn().mockResolvedValue(productModels),
+      ...metadataClientMocks(),
+    };
+    const cases = [
+      ["/v1/seller/addressbooks-for-page", client.fetchSellerAddresses],
+      [
+        "/v1/product-delivery-info/bundle-groups",
+        client.fetchDeliveryBundleGroups,
+      ],
+      [
+        "/v2/product-delivery-info/return-delivery-companies",
+        client.fetchReturnDeliveryCompanies,
+      ],
+    ] as const;
+
+    for (const [path, method] of cases) {
+      const handler = createNaverCommerceRelayHandler({
+        sharedSecret,
+        client,
+        now: () => now,
+      });
+      const response = await handler(await signedRequest(path));
+      expect(response.status).toBe(200);
+      expect(method).toHaveBeenCalledOnce();
+    }
+  });
+
+  it("상품정보제공고시 목록과 단건 경로만 제한적으로 전달한다", async () => {
+    const client = {
+      fetchCategories: vi.fn().mockResolvedValue(categories),
+      fetchProductModels: vi.fn().mockResolvedValue(productModels),
+      ...metadataClientMocks(),
+    };
+    const handler = createNaverCommerceRelayHandler({
+      sharedSecret,
+      client,
+      now: () => now,
+    });
+    const listPath = "/v1/products-for-provided-notice?categoryId=50000000";
+    const listResponse = await handler(await signedRequest(listPath));
+    expect(listResponse.status).toBe(200);
+    expect(client.fetchProvidedNotices).toHaveBeenCalledWith("50000000");
+
+    const secondHandler = createNaverCommerceRelayHandler({
+      sharedSecret,
+      client,
+      now: () => now,
+    });
+    const singleResponse = await secondHandler(
+      await signedRequest("/v1/products-for-provided-notice/KITCHEN_UTENSILS"),
+    );
+    expect(singleResponse.status).toBe(200);
+    expect(client.fetchProvidedNotice).toHaveBeenCalledWith("KITCHEN_UTENSILS");
+  });
+
   it("요청 경로와 본문까지 포함한 HMAC 서명을 검증한다", async () => {
     const input = {
       timestamp: now,
@@ -218,6 +382,85 @@ describe("네이버 커머스API 중계 인증", () => {
 });
 
 describe("네이버 커머스API 중계 클라이언트", () => {
+  it("검증된 상품 JSON만 HMAC 서명해 v2 등록 경로로 전달한다", async () => {
+    const upstream = {
+      fetchCategories: vi.fn(),
+      fetchProductModels: vi.fn(),
+      ...metadataClientMocks(),
+    };
+    const handler = createNaverCommerceRelayHandler({
+      sharedSecret,
+      client: upstream,
+      now: () => now,
+    });
+    const fetcher = vi.fn<typeof fetch>(async (input, init) =>
+      handler(new Request(input, init)),
+    );
+    let mutationNonce = 0;
+    const client = new NaverCommerceRelayClient(
+      {
+        relayUrl: "https://relay.example.test",
+        sharedSecret,
+        timeoutMs: 1000,
+      },
+      fetcher,
+      () => now,
+      () => `mutation-nonce-${++mutationNonce}`,
+    );
+
+    await expect(client.createProduct(productPayload)).resolves.toEqual({
+      originProductNo: "100000001",
+      channelProductNo: "200000001",
+    });
+    expect(upstream.createProduct).toHaveBeenCalledWith(productPayload);
+    expect(String(fetcher.mock.calls[0]?.[0])).toBe(
+      "https://relay.example.test/v2/products",
+    );
+    expect(fetcher.mock.calls[0]?.[1]?.method).toBe("POST");
+  });
+
+  it("multipart 이미지 바이트를 HMAC 서명해 허용된 업로드 경로로 전달한다", async () => {
+    const upstream = {
+      fetchCategories: vi.fn(),
+      fetchProductModels: vi.fn(),
+      ...metadataClientMocks(),
+    };
+    const handler = createNaverCommerceRelayHandler({
+      sharedSecret,
+      client: upstream,
+      now: () => now,
+    });
+    const fetcher = vi.fn<typeof fetch>(async (input, init) =>
+      handler(new Request(input, init)),
+    );
+    const client = new NaverCommerceRelayClient(
+      {
+        relayUrl: "https://relay.example.test",
+        sharedSecret,
+        timeoutMs: 1000,
+      },
+      fetcher,
+      () => now,
+      () => nonce,
+    );
+
+    await expect(
+      client.uploadProductImages([
+        {
+          name: "product.jpg",
+          type: "image/jpeg",
+          bytes: new Uint8Array([0xff, 0xd8, 0xff, 0xd9]),
+        },
+      ]),
+    ).resolves.toEqual([
+      { url: "https://shop-phinf.pstatic.net/uploaded.jpg" },
+    ]);
+    expect(upstream.uploadProductImages).toHaveBeenCalledWith([
+      expect.objectContaining({ name: "image-1.jpg", type: "image/jpeg" }),
+    ]);
+    expect(fetcher.mock.calls[0]?.[1]?.method).toBe("POST");
+  });
+
   it("네이버 인증정보 없이 서명된 요청을 보내고 응답을 검증한다", async () => {
     const fetcher = vi.fn<typeof fetch>().mockResolvedValue(json(categories));
     const client = new NaverCommerceRelayClient(
@@ -243,6 +486,46 @@ describe("네이버 커머스API 중계 클라이언트", () => {
       [NAVER_RELAY_HEADERS.nonce]: nonce,
     });
     expect(JSON.stringify(init)).not.toContain("client_secret");
+  });
+
+  it("서명된 SELLER 컨텍스트로 선택한 판매자 클라이언트를 사용한다", async () => {
+    const fallback = {
+      fetchCategories: vi.fn(),
+      fetchProductModels: vi.fn(),
+      ...metadataClientMocks(),
+    };
+    const seller = {
+      fetchCategories: vi.fn().mockResolvedValue(categories),
+      fetchProductModels: vi.fn(),
+      ...metadataClientMocks(),
+    };
+    const clientFactory = vi.fn().mockReturnValue(seller);
+    const handler = createNaverCommerceRelayHandler({
+      sharedSecret,
+      client: fallback,
+      clientFactory,
+      now: () => now,
+    });
+    const client = new NaverCommerceRelayClient(
+      {
+        relayUrl: "https://relay.example.test",
+        sharedSecret,
+        timeoutMs: 1000,
+        tokenType: "SELLER",
+        accountId: "ncp_seller_uid",
+      },
+      async (input, init) => handler(new Request(input, init)),
+      () => now,
+      () => nonce,
+    );
+
+    await expect(client.fetchCategories()).resolves.toEqual(categories);
+    expect(clientFactory).toHaveBeenCalledWith({
+      tokenType: "SELLER",
+      accountId: "ncp_seller_uid",
+    });
+    expect(seller.fetchCategories).toHaveBeenCalled();
+    expect(fallback.fetchCategories).not.toHaveBeenCalled();
   });
 
   it("상품명을 서명된 카탈로그 검색 요청으로 전달한다", async () => {
@@ -293,5 +576,86 @@ describe("네이버 커머스API 중계 클라이언트", () => {
     const firstHeaders = fetcher.mock.calls[0]?.[1]?.headers;
     const secondHeaders = fetcher.mock.calls[1]?.[1]?.headers;
     expect(firstHeaders).not.toEqual(secondHeaders);
+  });
+
+  it("숫자로 된 채널 상품 경로만 중계한다", async () => {
+    const client = {
+      fetchCategories: vi.fn().mockResolvedValue(categories),
+      fetchProductModels: vi.fn().mockResolvedValue(productModels),
+      ...metadataClientMocks(),
+    };
+    const handler = createNaverCommerceRelayHandler({
+      sharedSecret,
+      client,
+      now: () => now,
+    });
+    const response = await handler(
+      await signedRequest("/v2/products/channel-products/200000001"),
+    );
+
+    expect(response.status).toBe(200);
+    expect(client.fetchChannelProduct).toHaveBeenCalledWith("200000001");
+
+    const invalidHandler = createNaverCommerceRelayHandler({
+      sharedSecret,
+      client,
+      now: () => now,
+    });
+    const invalid = await invalidHandler(
+      await signedRequest("/v2/products/channel-products/not-a-number"),
+    );
+    expect(invalid.status).toBe(404);
+  });
+
+  it("상품 수정, 판매 상태 변경, 삭제 요청을 서명해 허용된 경로로 전달한다", async () => {
+    const upstream = {
+      fetchCategories: vi.fn(),
+      fetchProductModels: vi.fn(),
+      ...metadataClientMocks(),
+    };
+    const handler = createNaverCommerceRelayHandler({
+      sharedSecret,
+      client: upstream,
+      now: () => now,
+    });
+    const fetcher = vi.fn<typeof fetch>(async (input, init) =>
+      handler(new Request(input, init)),
+    );
+    let productMutationNonce = 0;
+    const client = new NaverCommerceRelayClient(
+      {
+        relayUrl: "https://relay.example.test",
+        sharedSecret,
+        timeoutMs: 1000,
+      },
+      fetcher,
+      () => now,
+      () => `product-mutation-nonce-${++productMutationNonce}`,
+    );
+
+    await client.updateProduct("100000001", productPayload);
+    await client.changeProductStatus("100000001", {
+      statusType: "OUTOFSTOCK",
+      stockQuantity: 0,
+    });
+    await client.deleteChannelProduct("200000001");
+    await client.deleteOriginProduct("100000001");
+
+    expect(upstream.updateProduct).toHaveBeenCalledWith(
+      "100000001",
+      productPayload,
+    );
+    expect(upstream.changeProductStatus).toHaveBeenCalledWith("100000001", {
+      statusType: "OUTOFSTOCK",
+      stockQuantity: 0,
+    });
+    expect(upstream.deleteChannelProduct).toHaveBeenCalledWith("200000001");
+    expect(upstream.deleteOriginProduct).toHaveBeenCalledWith("100000001");
+    expect(fetcher.mock.calls.map((call) => call[1]?.method)).toEqual([
+      "PUT",
+      "PUT",
+      "DELETE",
+      "DELETE",
+    ]);
   });
 });

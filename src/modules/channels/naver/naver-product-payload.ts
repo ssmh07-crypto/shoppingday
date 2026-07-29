@@ -4,6 +4,7 @@ import type {
   NaverProductAttribute,
   SelectedImage,
 } from "@/lib/db/schema";
+import type { NaverPublicationPolicyData } from "@/lib/db/schema";
 
 type JsonPrimitive = string | number | boolean | null;
 export type JsonValue = JsonPrimitive | JsonObject | JsonValue[];
@@ -21,27 +22,7 @@ export type NaverProductPayloadSource = {
   naverAttributes: NaverProductAttribute[];
 };
 
-export type NaverPublicationProfile = {
-  singleStockQuantity?: number;
-  deliveryInfo?: JsonObject;
-  afterServiceInfo?: {
-    afterServiceTelephoneNumber: string;
-    afterServiceGuideContent: string;
-  };
-  originAreaInfo?: {
-    originAreaCode: "00" | "01" | "02" | "03" | "04" | "05";
-    importer?: string;
-    content?: string;
-    plural: boolean;
-  };
-  productInfoProvidedNotice?: JsonObject & {
-    productInfoProvidedNoticeType: string;
-  };
-  taxType?: "TAX" | "DUTYFREE" | "SMALL";
-  minorPurchasable?: boolean;
-  naverShoppingRegistration?: boolean;
-  channelProductDisplayStatusType?: "ON" | "SUSPENSION";
-};
+export type NaverPublicationProfile = Partial<NaverPublicationPolicyData>;
 
 export type NaverProductPayloadIssue = {
   path: string;
@@ -51,7 +32,7 @@ export type NaverProductPayloadIssue = {
 
 export type NaverProductPayload = {
   originProduct: {
-    statusType: "SALE";
+    statusType: "SALE" | "SUSPENSION";
     saleType: "NEW";
     leafCategoryId: string;
     name: string;
@@ -88,6 +69,8 @@ export type NaverProductPayload = {
 type NaverPayloadAttribute = {
   attributeSeq: number;
   attributeValueSeq: number;
+  attributeRealValue?: string;
+  attributeRealValueUnitCode?: string;
 };
 
 type NaverOptionInfo = {
@@ -214,6 +197,7 @@ export function buildNaverProductPayload(
     : profile.singleStockQuantity;
   if (
     stockQuantity === undefined ||
+    stockQuantity === null ||
     !Number.isInteger(stockQuantity) ||
     stockQuantity < 0 ||
     stockQuantity > MAX_STOCK
@@ -291,7 +275,9 @@ export function buildNaverProductPayload(
         },
         ...(options ? { optionInfo: options } : {}),
         productAttributes: attributes,
-        productInfoProvidedNotice: profile.productInfoProvidedNotice!,
+        productInfoProvidedNotice: normalizeProvidedNotice(
+          profile.productInfoProvidedNotice!,
+        ),
         taxType: profile.taxType!,
         minorPurchasable: profile.minorPurchasable!,
         ...(source.searchTags.length
@@ -378,6 +364,13 @@ function mapAttributes(
       {
         attributeSeq: attribute.attributeSeq,
         attributeValueSeq: attribute.attributeValueSeq,
+        ...(attribute.unitCode && (attribute.minValue || attribute.maxValue)
+          ? {
+              attributeRealValue:
+                attribute.minValue.trim() || attribute.maxValue.trim(),
+              attributeRealValueUnitCode: attribute.unitCode,
+            }
+          : {}),
       },
     ];
   });
@@ -550,6 +543,90 @@ function validateDeliveryInfo(
       message: "배송 속성 유형이 필요합니다.",
     });
   }
+  if (
+    deliveryInfo.deliveryType === "DELIVERY" &&
+    !String(deliveryInfo.deliveryCompany ?? "").trim()
+  ) {
+    issues.push({
+      path: "originProduct.deliveryInfo.deliveryCompany",
+      code: "required",
+      message: "발송 택배사를 선택해야 합니다.",
+    });
+  }
+  const deliveryFee = jsonObject(deliveryInfo.deliveryFee);
+  if (!deliveryFee) {
+    issues.push({
+      path: "originProduct.deliveryInfo.deliveryFee",
+      code: "required",
+      message: "배송비 정책이 필요합니다.",
+    });
+  } else if (
+    !["FREE", "PAID", "CONDITIONAL_FREE", "CHARGE_BY_QUANTITY"].includes(
+      String(deliveryFee.deliveryFeeType),
+    )
+  ) {
+    issues.push({
+      path: "originProduct.deliveryInfo.deliveryFee.deliveryFeeType",
+      code: "invalid",
+      message: "배송비 유형을 선택해야 합니다.",
+    });
+  }
+  const claim = jsonObject(deliveryInfo.claimDeliveryInfo);
+  if (!claim) {
+    issues.push({
+      path: "originProduct.deliveryInfo.claimDeliveryInfo",
+      code: "required",
+      message: "출고지와 반품·교환 정책이 필요합니다.",
+    });
+  } else {
+    if (!positiveInteger(claim.shippingAddressId)) {
+      issues.push({
+        path:
+          "originProduct.deliveryInfo.claimDeliveryInfo.shippingAddressId",
+        code: "required",
+        message: "스마트스토어 출고지를 선택해야 합니다.",
+      });
+    }
+    if (!positiveInteger(claim.returnAddressId)) {
+      issues.push({
+        path: "originProduct.deliveryInfo.claimDeliveryInfo.returnAddressId",
+        code: "required",
+        message: "스마트스토어 반품·교환지를 선택해야 합니다.",
+      });
+    }
+    if (
+      !/^PRIMARY$|^SECONDARY_[1-9]$/.test(
+        String(claim.returnDeliveryCompanyPriorityType ?? ""),
+      )
+    ) {
+      issues.push({
+        path:
+          "originProduct.deliveryInfo.claimDeliveryInfo.returnDeliveryCompanyPriorityType",
+        code: "required",
+        message: "반품 택배사 계약을 선택해야 합니다.",
+      });
+    }
+  }
+  if (
+    deliveryInfo.deliveryBundleGroupUsable === true &&
+    !positiveInteger(deliveryInfo.deliveryBundleGroupId)
+  ) {
+    issues.push({
+      path: "originProduct.deliveryInfo.deliveryBundleGroupId",
+      code: "required",
+      message: "묶음배송 그룹을 선택해야 합니다.",
+    });
+  }
+}
+
+function jsonObject(value: unknown): Record<string, unknown> | undefined {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+function positiveInteger(value: unknown) {
+  return typeof value === "number" && Number.isInteger(value) && value > 0;
 }
 
 function validateAfterServiceInfo(
@@ -601,6 +678,30 @@ function validateProvidedNotice(
       message: `${type} 상품군의 고시 항목이 필요합니다.`,
     });
   }
+}
+
+function normalizeProvidedNotice(
+  notice: NonNullable<NaverPublicationProfile["productInfoProvidedNotice"]>,
+) {
+  const type = notice.productInfoProvidedNoticeType;
+  const bodyKey = type
+    .toLowerCase()
+    .replace(/_([a-z])/g, (_, character: string) => character.toUpperCase());
+  const body = notice[bodyKey];
+  if (
+    !body ||
+    typeof body !== "object" ||
+    Array.isArray(body) ||
+    typeof body.afterServiceDirector !== "string" ||
+    !body.afterServiceDirector.trim() ||
+    typeof body.customerServicePhoneNumber !== "string" ||
+    !body.customerServicePhoneNumber.trim()
+  ) {
+    return notice;
+  }
+  const normalizedBody = { ...body };
+  delete normalizedBody.customerServicePhoneNumber;
+  return { ...notice, [bodyKey]: normalizedBody };
 }
 
 function stableStringify(value: JsonValue | NaverProductPayload): string {

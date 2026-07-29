@@ -1,7 +1,8 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
-import { and, asc, desc, eq, ilike, isNull, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, ilike, isNull, ne, or, sql } from "drizzle-orm";
 import { getDb, type Database } from "@/lib/db";
+import { logger } from "@/lib/logging/logger";
 import {
   productAuditLogs,
   productCategories,
@@ -41,6 +42,7 @@ export type ProductEditorRecord = {
     wholeCategoryName: string;
   } | null;
   supplier: {
+    code?: string;
     name: string;
     externalProductId: string;
     originalName: string | null;
@@ -65,12 +67,13 @@ export class ProductEditRepository {
   constructor(private readonly database: Database = getDb()) {}
 
   async list(query: ListQuery) {
+    const started = performance.now();
     const ownership = or(
       eq(products.ownerId, query.ownerId),
       isNull(products.ownerId),
     )!;
     const search = query.search?.trim();
-    const conditions = [ownership];
+    const conditions = [ownership, ne(suppliers.code, "sourcing")];
     if (search)
       conditions.push(
         or(
@@ -118,16 +121,22 @@ export class ProductEditRepository {
         title: products.title,
         draftVersion: products.draftVersion,
         sellingPrice: products.sellingPrice,
-        selectedImages: products.selectedImages,
-        categoryId: products.categoryId,
+        primaryImage: sql<SelectedImage | null>`coalesce(
+          jsonb_path_query_first(
+            ${products.selectedImages},
+            '$[*] ? (@.enabled == true && @.isPrimary == true)'
+          ),
+          jsonb_path_query_first(
+            ${products.selectedImages},
+            '$[*] ? (@.enabled == true)'
+          )
+        )`,
         updatedAt: products.updatedAt,
-        supplierCode: suppliers.code,
         supplierName: suppliers.name,
         externalProductId: supplierProducts.externalProductId,
         originalName: supplierProducts.originalName,
         supplierPrice: supplierProducts.supplierPrice,
         availability: supplierProducts.availability,
-        lastSyncedAt: supplierProducts.lastSyncedAt,
       })
       .from(products)
       .innerJoin(
@@ -140,23 +149,28 @@ export class ProductEditRepository {
       )
       .innerJoin(suppliers, eq(suppliers.id, supplierProducts.supplierId))
       .where(where);
+    const needsFilteredCount = Boolean(search || query.filter);
+    const countRequest = needsFilteredCount
+      ? this.database
+          .select({ count: sql<number>`count(*)::int` })
+          .from(products)
+          .innerJoin(
+            productSupplierLinks,
+            eq(productSupplierLinks.productId, products.id),
+          )
+          .innerJoin(
+            supplierProducts,
+            eq(supplierProducts.id, productSupplierLinks.supplierProductId),
+          )
+          .innerJoin(suppliers, eq(suppliers.id, supplierProducts.supplierId))
+          .where(where)
+      : Promise.resolve([] as Array<{ count: number }>);
     const [items, countRows, statsRows] = await Promise.all([
       base
         .orderBy(order)
         .limit(query.pageSize)
         .offset((query.page - 1) * query.pageSize),
-      this.database
-        .select({ count: sql<number>`count(*)::int` })
-        .from(products)
-        .innerJoin(
-          productSupplierLinks,
-          eq(productSupplierLinks.productId, products.id),
-        )
-        .innerJoin(
-          supplierProducts,
-          eq(supplierProducts.id, productSupplierLinks.supplierProductId),
-        )
-        .where(where),
+      countRequest,
       this.database
         .select({
           total: sql<number>`count(*)::int`,
@@ -175,11 +189,14 @@ export class ProductEditRepository {
           supplierProducts,
           eq(supplierProducts.id, productSupplierLinks.supplierProductId),
         )
-        .where(ownership),
+        .innerJoin(suppliers, eq(suppliers.id, supplierProducts.supplierId))
+        .where(and(ownership, ne(suppliers.code, "sourcing"))),
     ]);
-    return {
+    const result = {
       items,
-      total: countRows[0]?.count ?? 0,
+      total: needsFilteredCount
+        ? countRows[0]?.count ?? 0
+        : statsRows[0]?.total ?? 0,
       page: query.page,
       pageSize: query.pageSize,
       stats: statsRows[0] ?? {
@@ -189,6 +206,20 @@ export class ProductEditRepository {
         unregistered: 0,
       },
     };
+    const durationMs = Math.round(performance.now() - started);
+    if (durationMs >= 500) {
+      logger.info("product_list_query_timing", {
+        durationMs,
+        itemCount: items.length,
+        total: result.total,
+        page: query.page,
+        pageSize: query.pageSize,
+        filter: query.filter ?? "all",
+        sort: query.sort ?? "created",
+        searched: Boolean(search),
+      });
+    }
+    return result;
   }
 
   async find(id: string, ownerId: string): Promise<ProductEditorRecord | null> {
@@ -217,6 +248,7 @@ export class ProductEditRepository {
           wholeCategoryName: naverCommerceCategories.wholeCategoryName,
         },
         supplier: {
+          code: suppliers.code,
           name: suppliers.name,
           externalProductId: supplierProducts.externalProductId,
           originalName: supplierProducts.originalName,
@@ -376,6 +408,72 @@ export class ProductEditRepository {
         action:
           kind === "images" ? "product_images_reset" : "product_options_reset",
         changedFields: [kind === "images" ? "selectedImages" : "editedOptions"],
+        requestId: randomUUID(),
+      });
+      return { kind: "ok" as const, product };
+    });
+  }
+
+  async saveNaverImageUrls(
+    id: string,
+    ownerId: string,
+    version: number,
+    uploads: Array<{ imageId: string; sourceUrl: string; storedUrl: string }>,
+  ) {
+    return this.database.transaction(async (tx) => {
+      const [old] = await tx
+        .select()
+        .from(products)
+        .where(
+          and(
+            eq(products.id, id),
+            or(eq(products.ownerId, ownerId), isNull(products.ownerId)),
+          ),
+        )
+        .limit(1);
+      if (!old) return { kind: "not_found" as const };
+      if (old.draftVersion !== version) return { kind: "conflict" as const };
+      if (
+        !uploads.every((upload) =>
+          old.selectedImages.some(
+            (image) =>
+              image.id === upload.imageId && image.sourceUrl === upload.sourceUrl,
+          ),
+        )
+      ) {
+        return { kind: "conflict" as const };
+      }
+      const byId = new Map(uploads.map((upload) => [upload.imageId, upload]));
+      const selectedImages = old.selectedImages.map((image) => {
+        const upload = byId.get(image.id);
+        return upload && upload.sourceUrl === image.sourceUrl
+          ? { ...image, storedUrl: upload.storedUrl }
+          : image;
+      });
+      const [product] = await tx
+        .update(products)
+        .set({
+          ownerId,
+          selectedImages,
+          status: "editing",
+          readyAt: null,
+          draftVersion: sql`${products.draftVersion}+1`,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(products.id, id),
+            eq(products.draftVersion, version),
+            or(eq(products.ownerId, ownerId), isNull(products.ownerId)),
+          ),
+        )
+        .returning();
+      if (!product) return { kind: "conflict" as const };
+      await tx.insert(productAuditLogs).values({
+        actorId: ownerId,
+        entityId: id,
+        action: "naver_product_images_uploaded",
+        changedFields: ["selectedImages"],
         requestId: randomUUID(),
       });
       return { kind: "ok" as const, product };

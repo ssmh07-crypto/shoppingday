@@ -1,4 +1,6 @@
 import "server-only";
+import { AsyncTtlCache } from "@/modules/core/async-ttl-cache";
+import { logger } from "@/lib/logging/logger";
 import type { NaverCategoriesClient } from "./naver-commerce-relay";
 import { createConfiguredNaverClient } from "./naver-category-service";
 
@@ -19,8 +21,8 @@ type Metadata = {
   >;
 };
 
-const cache = new Map<string, { value: Metadata; expiresAt: number }>();
-let unitsCache: { value: Metadata["units"]; expiresAt: number } | undefined;
+const metadataCache = new AsyncTtlCache<Metadata>(CACHE_TTL_MS, 500);
+const unitsCache = new AsyncTtlCache<Metadata["units"]>(CACHE_TTL_MS, 1);
 
 export class NaverCategoryMetadataService {
   constructor(
@@ -29,47 +31,73 @@ export class NaverCategoryMetadataService {
   ) {}
 
   async get(categoryId: string) {
-    const cached = cache.get(categoryId);
-    if (cached && cached.expiresAt > this.now()) {
-      return summarize(categoryId, cached.value, true, false);
-    }
-
-    try {
-      const [attributes, attributeValues, units, standardOptions] =
-        await Promise.all([
-          this.client.fetchProductAttributes(categoryId),
-          this.client.fetchProductAttributeValues(categoryId),
-          this.getUnits(),
-          this.client.fetchStandardOptions(categoryId),
-        ]);
-      const value = { attributes, attributeValues, units, standardOptions };
-      cache.set(categoryId, {
-        value,
-        expiresAt: this.now() + CACHE_TTL_MS,
-      });
-      return summarize(categoryId, value, false, false);
-    } catch (error) {
-      if (cached) return summarize(categoryId, cached.value, true, true);
-      throw error;
-    }
+    const result = await metadataCache.get(
+      categoryId,
+      async () => {
+        const [attributes, attributeValues, units, standardOptions] =
+          await Promise.all([
+            this.client.fetchProductAttributes(categoryId),
+            this.client.fetchProductAttributeValues(categoryId),
+            this.getUnits(),
+            this.client.fetchStandardOptions(categoryId),
+          ]);
+        return { attributes, attributeValues, units, standardOptions };
+      },
+      this.now,
+    );
+    reportCache("category", result.stale);
+    return summarize(
+      categoryId,
+      result.value,
+      result.cached,
+      result.stale,
+    );
   }
 
   private async getUnits() {
-    if (unitsCache && unitsCache.expiresAt > this.now())
-      return unitsCache.value;
-    try {
-      const value = await this.client.fetchProductAttributeUnits();
-      unitsCache = { value, expiresAt: this.now() + CACHE_TTL_MS };
-      return value;
-    } catch (error) {
-      if (unitsCache) return unitsCache.value;
-      throw error;
-    }
+    const result = await unitsCache.get(
+      "all",
+      () => this.client.fetchProductAttributeUnits(),
+      this.now,
+    );
+    reportCache("units", result.stale);
+    return result.value;
   }
 }
 
 export function createNaverCategoryMetadataService() {
   return new NaverCategoryMetadataService(createConfiguredNaverClient());
+}
+
+export function invalidateNaverCategoryMetadata(categoryId?: string) {
+  if (categoryId) metadataCache.delete(categoryId);
+  else {
+    metadataCache.clear();
+    unitsCache.clear();
+  }
+}
+
+export function naverCategoryMetadataCacheStats() {
+  return {
+    category: metadataCache.snapshot(),
+    units: unitsCache.snapshot(),
+  };
+}
+
+function reportCache(cache: "category" | "units", stale: boolean) {
+  const stats =
+    cache === "category" ? metadataCache.snapshot() : unitsCache.snapshot();
+  if (!stale && stats.requests % 100 !== 0) return;
+  logger.info("naver_metadata_cache_stats", {
+    cache,
+    requests: stats.requests,
+    hits: stats.hits,
+    misses: stats.misses,
+    coalesced: stats.coalesced,
+    staleFallbacks: stats.staleFallbacks,
+    loadFailures: stats.loadFailures,
+    entries: stats.entries,
+  });
 }
 
 function summarize(

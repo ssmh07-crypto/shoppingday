@@ -1,5 +1,7 @@
 import bcrypt from "bcryptjs";
 import { z } from "zod";
+import { logger } from "@/lib/logging/logger";
+import type { NaverProductPayload } from "./naver-product-payload";
 
 const tokenSchema = z.object({
   access_token: z.string().min(1),
@@ -51,6 +53,7 @@ const productAttributeValueSchema = z.object({
   maxAttributeValue: z.string().optional(),
   maxAttributeValueUnitCode: z.string().optional(),
   exposureOrder: z.number().int().optional(),
+  attributeValueName: z.string().trim().optional(),
 });
 const productAttributeValuesSchema = z.array(productAttributeValueSchema);
 
@@ -72,6 +75,147 @@ const standardOptionsSchema = z.object({
   useStandardOption: z.boolean().default(false),
   standardOptionCategoryGroups: z.array(standardOptionGroupSchema).default([]),
 });
+const providedNoticeFieldSchema = z.object({
+  fieldType: z.string().default(""),
+  fieldName: z.string().min(1),
+  fieldDescription: z.string().default(""),
+  fieldAddDescription: z.string().default(""),
+  fieldMaxLength: z.number().int().nonnegative().default(0),
+});
+const providedNoticeSchema = z.object({
+  productInfoProvidedNoticeType: z.string().min(1),
+  productInfoProvidedNoticeTypeName: z.string().min(1),
+  productInfoProvidedNoticeContents: z.array(providedNoticeFieldSchema).default([]),
+});
+const providedNoticesSchema = z.array(providedNoticeSchema);
+const uploadedImageSchema = z.object({ url: z.string().url() });
+const uploadedImagesSchema = z.object({ images: z.array(uploadedImageSchema).min(1).max(10) });
+const createdProductSchema = z.object({
+  originProductNo: z.union([z.string(), z.number().int()]).transform(String),
+  smartstoreChannelProductNo: z
+    .union([z.string(), z.number().int()])
+    .transform(String),
+});
+const relayedCreatedProductSchema = z.object({
+  originProductNo: z.string().regex(/^\d+$/),
+  channelProductNo: z.string().regex(/^\d+$/),
+});
+const channelProductAttributeSchema = z.looseObject({
+  attributeSeq: z.number().int(),
+  attributeValueSeq: z.number().int().nullable().optional(),
+  attributeValueName: z.string().trim().optional(),
+  attributeRealValue: z.union([z.string(), z.number()]).optional(),
+  attributeRealValueUnitCode: z.string().trim().optional(),
+});
+const channelProductSellerTagSchema = z.looseObject({
+  code: z.number().int().optional(),
+  text: z.string().trim().min(1),
+});
+const channelProductDeliveryInfoSchema = z.record(z.string(), z.json());
+const channelProductSchema = z.looseObject({
+  originProductNo: z
+    .union([z.string(), z.number().int()])
+    .transform(String)
+    .optional(),
+  originProduct: z.looseObject({
+    leafCategoryId: z.string().min(1),
+    name: z.string().trim().min(1),
+    statusType: z.string().optional(),
+    salePrice: z.number().int().nonnegative().optional(),
+    stockQuantity: z.number().int().nonnegative().optional(),
+    deliveryInfo: channelProductDeliveryInfoSchema.optional(),
+    images: z
+      .looseObject({
+        representativeImage: z
+          .looseObject({ url: z.string().url() })
+          .optional(),
+      })
+      .optional(),
+    detailAttribute: z.looseObject({
+      productAttributes: z.array(channelProductAttributeSchema).default([]),
+      seoInfo: z
+        .looseObject({
+          sellerTags: z.array(channelProductSellerTagSchema).default([]),
+        })
+        .optional(),
+    }),
+  }),
+  smartstoreChannelProduct: z.looseObject({}).optional(),
+});
+const sellerAddressSchema = z.looseObject({
+  addressBookNo: z.number().int().nonnegative(),
+  name: z.string().default(""),
+  addressType: z.enum([
+    "REPRESENTATIVE",
+    "BUSINESS",
+    "GENERAL",
+    "RELEASE",
+    "REFUND_OR_EXCHANGE",
+    "LOGISTICS_CENTER_RELEASE",
+    "LOGISTICS_CENTER_REFUND_OR_EXCHANGE",
+    "OVERSEAS_BANK",
+  ]),
+  postalCode: z.string().default(""),
+  baseAddress: z.string().default(""),
+  detailAddress: z.string().default(""),
+  address: z.string().default(""),
+});
+const deliveryBundleGroupSchema = z.looseObject({
+  id: z.number().int().nonnegative(),
+  name: z.string().min(1),
+  usable: z.boolean(),
+  baseGroup: z.boolean(),
+  deliveryFeeChargeMethodType: z.enum(["MIN", "MAX"]),
+});
+const returnDeliveryCompanySchema = z.looseObject({
+  id: z.number().int().nonnegative(),
+  name: z.string().min(1),
+  returnDeliveryCompanyPriorityType: z.enum([
+    "PRIMARY",
+    "SECONDARY_1",
+    "SECONDARY_2",
+    "SECONDARY_3",
+    "SECONDARY_4",
+    "SECONDARY_5",
+    "SECONDARY_6",
+    "SECONDARY_7",
+    "SECONDARY_8",
+    "SECONDARY_9",
+  ]),
+});
+const changedProductOrderSchema = z.object({
+  productOrderId: z.string().min(1),
+  lastChangedDate: z.string().min(1).optional(),
+});
+const changedProductOrderMoreSchema = z
+  .object({
+    moreFrom: z.string().min(1),
+    moreSequence: z.union([z.string(), z.number()]).transform(String),
+  })
+  .optional();
+const changedProductOrdersEnvelopeSchema = z.object({
+  data: z.union([
+    z.array(changedProductOrderSchema),
+    z.object({
+      lastChangeStatuses: z.array(changedProductOrderSchema).default([]),
+      more: changedProductOrderMoreSchema,
+    }),
+  ]),
+});
+const productOrderInfoSchema = z.object({
+  order: z.object({
+    paymentDate: z.string().min(1).nullable().optional(),
+  }),
+  productOrder: z.object({
+    productId: z.union([z.string(), z.number()]).transform(String),
+    productOrderStatus: z.string().default(""),
+    quantity: z.number().int().nonnegative().default(0),
+    remainQuantity: z.number().int().nonnegative().nullable().optional(),
+  }),
+});
+const productOrdersEnvelopeSchema = z.object({
+  data: z.array(productOrderInfoSchema).default([]),
+});
 
 export type NaverCommerceCategory = z.infer<typeof categorySchema>;
 export type NaverCommerceProductModel = z.infer<typeof productModelSchema>;
@@ -87,6 +231,31 @@ export type NaverCommerceProductAttributeUnit = z.infer<
 export type NaverCommerceStandardOptions = z.infer<
   typeof standardOptionsSchema
 >;
+export type NaverCommerceProvidedNotice = z.infer<typeof providedNoticeSchema>;
+export type NaverCommerceUploadedImage = z.infer<typeof uploadedImageSchema>;
+export type NaverCommerceCreatedProduct = z.infer<
+  typeof relayedCreatedProductSchema
+>;
+export type NaverCommerceChannelProduct = z.infer<
+  typeof channelProductSchema
+>;
+export type NaverCommerceSellerAddress = z.infer<typeof sellerAddressSchema>;
+export type NaverCommerceDeliveryBundleGroup = z.infer<
+  typeof deliveryBundleGroupSchema
+>;
+export type NaverCommerceReturnDeliveryCompany = z.infer<
+  typeof returnDeliveryCompanySchema
+>;
+export type NaverCommerceChangedProductOrders = {
+  productOrderIds: string[];
+  more?: { moreFrom: string; moreSequence: string };
+};
+export type NaverCommerceProductOrder = z.infer<typeof productOrderInfoSchema>;
+export type NaverImageUploadFile = {
+  name: string;
+  type: "image/jpeg" | "image/png";
+  bytes: Uint8Array;
+};
 
 export async function parseNaverCommerceCategories(response: Response) {
   const json = await parseJson(response);
@@ -152,6 +321,107 @@ export async function parseNaverCommerceStandardOptions(response: Response) {
   );
 }
 
+export async function parseNaverCommerceProvidedNotices(response: Response) {
+  return parseResponse(
+    response,
+    providedNoticesSchema,
+    "네이버 상품정보제공고시 응답 형식이 올바르지 않습니다.",
+  );
+}
+
+export async function parseNaverCommerceProvidedNotice(response: Response) {
+  return parseResponse(
+    response,
+    providedNoticeSchema,
+    "네이버 상품정보제공고시 응답 형식이 올바르지 않습니다.",
+  );
+}
+
+export async function parseNaverCommerceUploadedImages(response: Response) {
+  const parsed = await parseResponse(
+    response,
+    uploadedImagesSchema,
+    "네이버 이미지 업로드 응답 형식이 올바르지 않습니다.",
+  );
+  return parsed.images;
+}
+
+export async function parseNaverCommerceCreatedProduct(response: Response) {
+  return parseResponse(
+    response,
+    relayedCreatedProductSchema,
+    "네이버 상품 등록 응답 형식이 올바르지 않습니다.",
+  );
+}
+
+export async function parseNaverCommerceChannelProduct(response: Response) {
+  return parseResponse(
+    response,
+    channelProductSchema,
+    "네이버 채널 상품 조회 응답 형식이 올바르지 않습니다.",
+  );
+}
+
+export async function parseNaverCommerceSellerAddresses(response: Response) {
+  return parseListResponse(
+    response,
+    sellerAddressSchema,
+    ["addressBooks", "content", "contents", "addresses"],
+    "네이버 판매자 주소록 응답 형식이 올바르지 않습니다.",
+  );
+}
+
+export async function parseNaverCommerceDeliveryBundleGroups(
+  response: Response,
+) {
+  return parseListResponse(
+    response,
+    deliveryBundleGroupSchema,
+    ["deliveryBundleGroups", "contents", "content"],
+    "네이버 묶음배송 그룹 응답 형식이 올바르지 않습니다.",
+  );
+}
+
+export async function parseNaverCommerceReturnDeliveryCompanies(
+  response: Response,
+) {
+  return parseListResponse(
+    response,
+    returnDeliveryCompanySchema,
+    ["returnDeliveryCompanies", "contents", "content"],
+    "네이버 반품 택배사 응답 형식이 올바르지 않습니다.",
+  );
+}
+
+export async function parseNaverCommerceChangedProductOrders(
+  response: Response,
+): Promise<NaverCommerceChangedProductOrders> {
+  const parsed = await parseResponse(
+    response,
+    changedProductOrdersEnvelopeSchema,
+    "네이버 변경 상품 주문 응답 형식이 올바르지 않습니다.",
+  );
+  const data = parsed.data;
+  if (Array.isArray(data)) {
+    return { productOrderIds: data.map((item) => item.productOrderId) };
+  }
+  return {
+    productOrderIds: data.lastChangeStatuses.map(
+      (item) => item.productOrderId,
+    ),
+    ...(data.more ? { more: data.more } : {}),
+  };
+}
+
+export async function parseNaverCommerceProductOrders(response: Response) {
+  const parsed = await parseResponse(
+    response,
+    productOrdersEnvelopeSchema,
+    "네이버 상품 주문 상세 응답 형식이 올바르지 않습니다.",
+  );
+  return parsed.data;
+}
+
 export type NaverCommerceConfig = {
   apiUrl: string;
   clientId: string;
@@ -159,6 +429,12 @@ export type NaverCommerceConfig = {
   tokenType: "SELF" | "SELLER";
   accountId?: string;
   timeoutMs: number;
+};
+
+export type NaverCommerceInvalidInput = {
+  name: string;
+  type?: string;
+  message: string;
 };
 
 export class NaverCommerceError extends Error {
@@ -172,6 +448,7 @@ export class NaverCommerceError extends Error {
       | "timeout",
     message: string,
     readonly responseStatus?: number,
+    readonly invalidInputs: NaverCommerceInvalidInput[] = [],
   ) {
     super(message);
     this.name = "NaverCommerceError";
@@ -253,6 +530,188 @@ export class NaverCommerceClient {
     return parseNaverCommerceStandardOptions(response);
   }
 
+  async fetchProvidedNotices(categoryId?: string) {
+    const url = new URL(`${this.config.apiUrl}/v1/products-for-provided-notice`);
+    if (categoryId) url.searchParams.set("categoryId", categoryId);
+    return parseNaverCommerceProvidedNotices(await this.authorizedFetch(url));
+  }
+
+  async fetchProvidedNotice(productInfoProvidedNoticeType: string) {
+    const url = new URL(
+      `${this.config.apiUrl}/v1/products-for-provided-notice/${encodeURIComponent(productInfoProvidedNoticeType)}`,
+    );
+    return parseNaverCommerceProvidedNotice(
+      await this.authorizedFetch(url, { allowNotFound: true }),
+    );
+  }
+
+  async fetchChannelProduct(channelProductNo: string) {
+    if (!/^\d{1,20}$/.test(channelProductNo)) {
+      throw new NaverCommerceError(
+        "request_failed",
+        "네이버 채널 상품 번호 형식이 올바르지 않습니다.",
+      );
+    }
+    const url = new URL(
+      `${this.config.apiUrl}/v2/products/channel-products/${channelProductNo}`,
+    );
+    return parseNaverCommerceChannelProduct(await this.authorizedFetch(url));
+  }
+
+  async fetchSellerAddresses() {
+    const url = new URL(
+      `${this.config.apiUrl}/v1/seller/addressbooks-for-page`,
+    );
+    return parseNaverCommerceSellerAddresses(await this.authorizedFetch(url));
+  }
+
+  async fetchDeliveryBundleGroups() {
+    const url = new URL(
+      `${this.config.apiUrl}/v1/product-delivery-info/bundle-groups`,
+    );
+    return parseNaverCommerceDeliveryBundleGroups(
+      await this.authorizedFetch(url),
+    );
+  }
+
+  async fetchReturnDeliveryCompanies() {
+    const url = new URL(
+      `${this.config.apiUrl}/v2/product-delivery-info/return-delivery-companies`,
+    );
+    return parseNaverCommerceReturnDeliveryCompanies(
+      await this.authorizedFetch(url),
+    );
+  }
+
+  async fetchLastChangedProductOrders(input: {
+    lastChangedFrom: string;
+    lastChangedTo: string;
+    moreSequence?: string;
+  }) {
+    const url = new URL(
+      `${this.config.apiUrl}/v1/pay-order/seller/product-orders/last-changed-statuses`,
+    );
+    url.searchParams.set("lastChangedFrom", input.lastChangedFrom);
+    url.searchParams.set("lastChangedTo", input.lastChangedTo);
+    url.searchParams.set("limitCount", "300");
+    if (input.moreSequence) {
+      url.searchParams.set("moreSequence", input.moreSequence);
+    }
+    return parseNaverCommerceChangedProductOrders(
+      await this.authorizedFetch(url),
+    );
+  }
+
+  async fetchProductOrders(productOrderIds: string[]) {
+    if (!productOrderIds.length || productOrderIds.length > 300) {
+      throw new NaverCommerceError(
+        "request_failed",
+        "조회할 상품 주문 번호는 1개 이상 300개 이하여야 합니다.",
+      );
+    }
+    return parseNaverCommerceProductOrders(
+      await this.authorizedJsonPost(
+        new URL(
+          `${this.config.apiUrl}/v1/pay-order/seller/product-orders/query`,
+        ),
+        {
+          productOrderIds,
+          quantityClaimCompatibility: true,
+        },
+      ),
+    );
+  }
+
+  async uploadProductImages(files: NaverImageUploadFile[]) {
+    const form = new FormData();
+    for (const file of files) {
+      form.append(
+        "imageFiles",
+        new Blob([file.bytes as BlobPart], { type: file.type }),
+        file.name,
+      );
+    }
+    const response = await this.authorizedMultipartFetch(
+      new URL(`${this.config.apiUrl}/v1/product-images/upload`),
+      form,
+    );
+    return parseNaverCommerceUploadedImages(response);
+  }
+
+  async createProduct(payload: NaverProductPayload) {
+    const response = await this.authorizedJsonPost(
+      new URL(`${this.config.apiUrl}/v2/products`),
+      payload,
+    );
+    const parsed = await parseResponse(
+      response,
+      createdProductSchema,
+      "네이버 상품 등록 응답 형식이 올바르지 않습니다.",
+    );
+    return {
+      originProductNo: parsed.originProductNo,
+      channelProductNo: parsed.smartstoreChannelProductNo,
+    };
+  }
+
+  async updateProduct(originProductNo: string, payload: NaverProductPayload) {
+    assertNaverProductNo(originProductNo, "원상품");
+    const response = await this.authorizedJsonRequest(
+      "PUT",
+      new URL(
+        `${this.config.apiUrl}/v2/products/origin-products/${originProductNo}`,
+      ),
+      payload,
+    );
+    const parsed = await parseResponse(
+      response,
+      createdProductSchema,
+      "네이버 상품 수정 응답 형식이 올바르지 않습니다.",
+    );
+    return {
+      originProductNo: parsed.originProductNo,
+      channelProductNo: parsed.smartstoreChannelProductNo,
+    };
+  }
+
+  async changeProductStatus(
+    originProductNo: string,
+    input: {
+      statusType: "SALE" | "OUTOFSTOCK" | "SUSPENSION";
+      stockQuantity?: number;
+    },
+  ) {
+    assertNaverProductNo(originProductNo, "원상품");
+    await this.authorizedJsonRequest(
+      "PUT",
+      new URL(
+        `${this.config.apiUrl}/v1/products/origin-products/${originProductNo}/change-status`,
+      ),
+      input,
+    );
+    return { success: true as const };
+  }
+
+  async deleteChannelProduct(channelProductNo: string) {
+    assertNaverProductNo(channelProductNo, "채널 상품");
+    await this.authorizedDelete(
+      new URL(
+        `${this.config.apiUrl}/v2/products/channel-products/${channelProductNo}`,
+      ),
+    );
+    return { success: true as const };
+  }
+
+  async deleteOriginProduct(originProductNo: string) {
+    assertNaverProductNo(originProductNo, "원상품");
+    await this.authorizedDelete(
+      new URL(
+        `${this.config.apiUrl}/v2/products/origin-products/${originProductNo}`,
+      ),
+    );
+    return { success: true as const };
+  }
+
   private async authorizedFetch(
     url: URL,
     options: { allowNotFound?: boolean } = {},
@@ -287,6 +746,76 @@ export class NaverCommerceClient {
       false,
       allowedStatuses,
     );
+  }
+
+  private async authorizedMultipartFetch(url: URL, body: FormData) {
+    const request = async (token: string, allowUnauthorized: boolean) =>
+      this.request(
+        url,
+        {
+          method: "POST",
+          headers: {
+            accept: "application/json;charset=UTF-8",
+            authorization: `Bearer ${token}`,
+          },
+          body,
+        },
+        allowUnauthorized,
+      );
+    const response = await request(await this.getAccessToken(), true);
+    if (response.status !== 401) return response;
+    this.token = undefined;
+    return request(await this.getAccessToken(), false);
+  }
+
+  private async authorizedJsonPost(url: URL, value: unknown) {
+    return this.authorizedJsonRequest("POST", url, value);
+  }
+
+  private async authorizedJsonRequest(
+    method: "POST" | "PUT",
+    url: URL,
+    value: unknown,
+  ) {
+    const body = JSON.stringify(value);
+    const request = async (token: string, allowUnauthorized: boolean) =>
+      this.request(
+        url,
+        {
+          method,
+          headers: {
+            accept: "application/json;charset=UTF-8",
+            authorization: `Bearer ${token}`,
+            "content-type": "application/json;charset=UTF-8",
+          },
+          body,
+        },
+        allowUnauthorized,
+      );
+    const response = await request(await this.getAccessToken(), true);
+    if (response.status !== 401) return response;
+    this.token = undefined;
+    return request(await this.getAccessToken(), false);
+  }
+
+  private async authorizedDelete(url: URL) {
+    const request = async (token: string, allowUnauthorized: boolean) =>
+      this.request(
+        url,
+        {
+          method: "DELETE",
+          headers: {
+            accept: "application/json;charset=UTF-8",
+            authorization: `Bearer ${token}`,
+          },
+        },
+        allowUnauthorized,
+        [404],
+      );
+    const response = await request(await this.getAccessToken(), true);
+    if (response.status !== 401) return response;
+    this.token = undefined;
+    return request(await this.getAccessToken(), false);
   }
 
   private async getAccessToken() {
@@ -347,6 +876,9 @@ export class NaverCommerceClient {
   ) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.config.timeoutMs);
+    const started = performance.now();
+    let responseStatus: number | undefined;
+    let errorCode: string | undefined;
     try {
       const response = await this.fetcher(url, {
         ...init,
@@ -354,6 +886,7 @@ export class NaverCommerceClient {
         signal: controller.signal,
         cache: "no-store",
       });
+      responseStatus = response.status;
       if (allowUnauthorized && response.status === 401) return response;
       if (response.status >= 300 && response.status < 400) {
         throw new NaverCommerceError(
@@ -364,8 +897,8 @@ export class NaverCommerceClient {
       }
       if (allowedStatuses.includes(response.status)) return response;
       if (!response.ok) {
-        const gatewayCode = await readGatewayErrorCode(response);
-        if (gatewayCode === "GW.IP_NOT_ALLOWED") {
+        const gatewayError = await readGatewayError(response);
+        if (gatewayError?.code === "GW.IP_NOT_ALLOWED") {
           throw new NaverCommerceError(
             "ip_not_allowed",
             "현재 서버의 공인 IP가 네이버 커머스API 호출 IP에 등록되지 않았습니다.",
@@ -378,12 +911,16 @@ export class NaverCommerceClient {
             : "request_failed",
           response.status === 401 || response.status === 403
             ? "네이버 커머스API 인증 또는 권한을 확인해 주세요."
-            : "네이버 커머스API 요청에 실패했습니다.",
+            : formatGatewayErrorMessage(gatewayError) ||
+                "네이버 커머스API 요청에 실패했습니다.",
           response.status,
+          gatewayError?.invalidInputs,
         );
       }
       return response;
     } catch (error) {
+      errorCode =
+        error instanceof NaverCommerceError ? error.code : "request_failed";
       if (error instanceof NaverCommerceError) throw error;
       if (error instanceof Error && error.name === "AbortError") {
         throw new NaverCommerceError(
@@ -397,19 +934,103 @@ export class NaverCommerceClient {
       );
     } finally {
       clearTimeout(timeout);
+      logNaverRequestTiming({
+        transport: "direct",
+        method: init.method ?? "GET",
+        path: url.pathname,
+        responseStatus,
+        errorCode,
+        started,
+      });
     }
   }
 }
 
-async function readGatewayErrorCode(response: Response) {
+function logNaverRequestTiming(input: {
+  transport: "direct" | "relay";
+  method: string;
+  path: string;
+  responseStatus?: number;
+  errorCode?: string;
+  started: number;
+}) {
+  const durationMs = Math.round(performance.now() - input.started);
+  if (durationMs < 1_000 && !input.errorCode && (input.responseStatus ?? 0) < 400)
+    return;
+  logger.info("naver_api_request_timing", {
+    transport: input.transport,
+    method: input.method,
+    path: input.path,
+    responseStatus: input.responseStatus,
+    errorCode: input.errorCode,
+    durationMs,
+  });
+}
+
+export { logNaverRequestTiming };
+
+async function readGatewayError(response: Response) {
   const contentType = response.headers.get("content-type") ?? "";
   if (!contentType.toLowerCase().includes("application/json")) return undefined;
   try {
-    const body = (await response.clone().json()) as { code?: unknown };
-    return typeof body.code === "string" ? body.code : undefined;
+    const body = (await response.clone().json()) as {
+      code?: unknown;
+      message?: unknown;
+      invalidInputs?: unknown;
+    };
+    const invalidInputs = Array.isArray(body.invalidInputs)
+      ? body.invalidInputs.flatMap((input) => {
+          if (
+            !input ||
+            typeof input !== "object" ||
+            typeof Reflect.get(input, "name") !== "string" ||
+            typeof Reflect.get(input, "message") !== "string"
+          ) {
+            return [];
+          }
+          const type = Reflect.get(input, "type");
+          return [
+            {
+              name: Reflect.get(input, "name") as string,
+              ...(typeof type === "string" ? { type } : {}),
+              message: Reflect.get(input, "message") as string,
+            },
+          ];
+        })
+      : [];
+    if (
+      typeof body.code !== "string" &&
+      typeof body.message !== "string" &&
+      invalidInputs.length === 0
+    ) {
+      return undefined;
+    }
+    return {
+      code: typeof body.code === "string" ? body.code : undefined,
+      message: typeof body.message === "string" ? body.message : undefined,
+      invalidInputs,
+    };
   } catch {
     return undefined;
   }
+}
+
+function formatGatewayErrorMessage(
+  error:
+    | {
+        message?: string;
+        invalidInputs: NaverCommerceInvalidInput[];
+      }
+    | undefined,
+) {
+  if (!error) return undefined;
+  const message = error.message?.trim().slice(0, 1000);
+  if (error.invalidInputs.length === 0) return message;
+  const details = error.invalidInputs
+    .map((input) => `${input.name}: ${input.message}`)
+    .join("; ")
+    .slice(0, 1500);
+  return [message, details].filter(Boolean).join(" - ");
 }
 
 async function parseJson(response: Response): Promise<unknown> {
@@ -438,6 +1059,34 @@ async function parseResponse<T>(
   message: string,
 ) {
   const parsed = schema.safeParse(await parseJson(response));
+  if (!parsed.success) {
+    throw new NaverCommerceError("invalid_response", message, response.status);
+  }
+  return parsed.data;
+}
+
+function assertNaverProductNo(value: string, label: string) {
+  if (!/^\d{1,20}$/.test(value)) {
+    throw new NaverCommerceError(
+      "request_failed",
+      `네이버 ${label} 번호 형식이 올바르지 않습니다.`,
+    );
+  }
+}
+
+async function parseListResponse<T>(
+  response: Response,
+  itemSchema: z.ZodType<T>,
+  keys: string[],
+  message: string,
+) {
+  const json = await parseJson(response);
+  let items: unknown = json;
+  if (!Array.isArray(items) && items && typeof items === "object") {
+    const object = items as Record<string, unknown>;
+    items = keys.map((key) => object[key]).find(Array.isArray);
+  }
+  const parsed = z.array(itemSchema).safeParse(items);
   if (!parsed.success) {
     throw new NaverCommerceError("invalid_response", message, response.status);
   }

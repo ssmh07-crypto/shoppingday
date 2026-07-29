@@ -84,7 +84,16 @@ const profile: NaverPublicationProfile = {
   deliveryInfo: {
     deliveryType: "DELIVERY",
     deliveryAttributeType: "NORMAL",
+    deliveryCompany: "HANJIN",
     deliveryFee: { deliveryFeeType: "FREE" },
+    claimDeliveryInfo: {
+      returnDeliveryCompanyPriorityType: "PRIMARY",
+      returnDeliveryFee: 3000,
+      exchangeDeliveryFee: 6000,
+      shippingAddressId: 101,
+      returnAddressId: 202,
+      freeReturnInsuranceYn: false,
+    },
   },
   afterServiceInfo: {
     afterServiceTelephoneNumber: "02-1234-5678",
@@ -128,7 +137,12 @@ describe("네이버 v2 상품 payload 변환", () => {
       detailAttribute: {
         sellerCodeInfo: { sellerManagementCode: "DOME-1234" },
         productAttributes: [
-          { attributeSeq: 10018883, attributeValueSeq: 10809926 },
+          {
+            attributeSeq: 10018883,
+            attributeValueSeq: 10809926,
+            attributeRealValue: "50",
+            attributeRealValueUnitCode: "A02109",
+          },
         ],
         seoInfo: {
           sellerTags: [{ text: "포스트잇" }, { text: "메모지" }],
@@ -167,7 +181,9 @@ describe("네이버 v2 상품 payload 변환", () => {
     const second = buildNaverProductPayload(source, {
       ...profile,
       deliveryInfo: {
+        claimDeliveryInfo: profile.deliveryInfo?.claimDeliveryInfo ?? {},
         deliveryFee: { deliveryFeeType: "FREE" },
+        deliveryCompany: "HANJIN",
         deliveryAttributeType: "NORMAL",
         deliveryType: "DELIVERY",
       },
@@ -176,6 +192,33 @@ describe("네이버 v2 상품 payload 변환", () => {
     expect(first.ok && second.ok && first.hash).toBe(
       second.ok ? second.hash : "",
     );
+  });
+
+  it("상품정보제공고시의 선택 입력 A/S 연락처는 하나만 전송한다", () => {
+    const result = buildNaverProductPayload(source, {
+      ...profile,
+      productInfoProvidedNotice: {
+        productInfoProvidedNoticeType: "ETC",
+        etc: {
+          itemName: "상품 상세 참조",
+          modelName: "상품 상세 참조",
+          afterServiceDirector: "판매자 문의 02-1234-5678",
+          customerServicePhoneNumber: "02-1234-5678",
+        },
+      },
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(
+      result.payload.originProduct.detailAttribute.productInfoProvidedNotice,
+    ).toMatchObject({
+      etc: { afterServiceDirector: "판매자 문의 02-1234-5678" },
+    });
+    expect(
+      result.payload.originProduct.detailAttribute.productInfoProvidedNotice
+        .etc,
+    ).not.toHaveProperty("customerServicePhoneNumber");
   });
 
   it("옵션 없는 상품은 단일 재고를 사용한다", () => {
@@ -220,6 +263,29 @@ describe("네이버 v2 상품 payload 변환", () => {
         "originProduct.detailAttribute.minorPurchasable",
         "smartstoreChannelProduct.naverShoppingRegistration",
         "smartstoreChannelProduct.channelProductDisplayStatusType",
+      ]),
+    );
+  });
+
+  it("택배 배송의 출고지·반품지·택배사 누락을 등록 전에 표시한다", () => {
+    const result = buildNaverProductPayload(source, {
+      ...profile,
+      deliveryInfo: {
+        deliveryType: "DELIVERY",
+        deliveryAttributeType: "NORMAL",
+        deliveryFee: { deliveryFeeType: "FREE" },
+        claimDeliveryInfo: {},
+      },
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.issues.map((issue) => issue.path)).toEqual(
+      expect.arrayContaining([
+        "originProduct.deliveryInfo.deliveryCompany",
+        "originProduct.deliveryInfo.claimDeliveryInfo.shippingAddressId",
+        "originProduct.deliveryInfo.claimDeliveryInfo.returnAddressId",
+        "originProduct.deliveryInfo.claimDeliveryInfo.returnDeliveryCompanyPriorityType",
       ]),
     );
   });
