@@ -173,6 +173,14 @@ export class CommerceApiManagedProductUpdater
         seoInfo?: Record<string, unknown>;
       };
     };
+    const originalAttributesByKey = new Map(
+      product.originProduct.detailAttribute.productAttributes.map(
+        (attribute) => [
+          `${attribute.attributeSeq}:${attribute.attributeValueSeq ?? ""}`,
+          attribute,
+        ],
+      ),
+    );
     const payload = {
       originProduct: {
         ...originProduct,
@@ -184,8 +192,19 @@ export class CommerceApiManagedProductUpdater
         detailAttribute: {
           ...originProduct.detailAttribute,
           productAttributes: input.naverAttributes.flatMap((attribute) => {
-            const realValue =
+            const originalAttribute = originalAttributesByKey.get(
+              `${attribute.attributeSeq}:${attribute.attributeValueSeq ?? ""}`,
+            );
+            const editedRealValue =
               attribute.minValue?.trim() || attribute.maxValue?.trim();
+            const realValue =
+              editedRealValue ||
+              (originalAttribute?.attributeRealValue === undefined
+                ? ""
+                : String(originalAttribute.attributeRealValue));
+            const unitCode =
+              attribute.unitCode ??
+              originalAttribute?.attributeRealValueUnitCode;
             if (attribute.attributeValueSeq == null && !realValue) return [];
             return [
               {
@@ -194,10 +213,10 @@ export class CommerceApiManagedProductUpdater
                 ...(realValue
                   ? {
                       attributeRealValue: realValue,
-                      ...(attribute.unitCode
+                      ...(unitCode
                         ? {
                             attributeRealValueUnitCode:
-                              attribute.unitCode,
+                              unitCode,
                           }
                         : {}),
                     }

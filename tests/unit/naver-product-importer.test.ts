@@ -76,7 +76,14 @@ describe("네이버 관리 상품 정보 가져오기", () => {
           name: "기존 상품명",
           salePrice: 12000,
           detailAttribute: {
-            productAttributes: [],
+            productAttributes: [
+              {
+                attributeSeq: 10014514,
+                attributeValueSeq: 10773738,
+                attributeRealValue: "250",
+                attributeRealValueUnitCode: "A02036",
+              },
+            ],
             seoInfo: { sellerTags: [{ text: "기존태그" }] },
           },
         },
@@ -98,7 +105,17 @@ describe("네이버 관리 상품 정보 가져오기", () => {
       salePrice: 15000,
       stockQuantity: 25,
       statusType: "SALE",
-      naverAttributes: [],
+      naverAttributes: [
+        {
+          attributeSeq: 10014514,
+          attributeName: "Size",
+          attributeValueSeq: 10773738,
+          value: "250A02036",
+          minValue: "",
+          maxValue: "",
+          unitCode: null,
+        },
+      ],
       originProductNo: "100000001",
     });
 
@@ -111,6 +128,14 @@ describe("네이버 관리 상품 정보 가져오기", () => {
           stockQuantity: 25,
           statusType: "SALE",
           detailAttribute: expect.objectContaining({
+            productAttributes: [
+              {
+                attributeSeq: 10014514,
+                attributeValueSeq: 10773738,
+                attributeRealValue: "250",
+                attributeRealValueUnitCode: "A02036",
+              },
+            ],
             seoInfo: { sellerTags: [{ text: "새태그" }, { text: "성장키워드" }] },
           }),
         }),
