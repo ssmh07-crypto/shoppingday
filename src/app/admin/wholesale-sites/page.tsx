@@ -2,6 +2,7 @@ import { requireAdminPage } from "@/lib/auth/admin";
 import { withDbReadRecovery, type Database } from "@/lib/db";
 import { WholesaleSiteRepository } from "@/modules/wholesale-sites/wholesale-site-repository";
 import { WholesaleSiteMemo } from "./wholesale-site-memo";
+import "./wholesale-sites.css";
 
 export const dynamic = "force-dynamic";
 

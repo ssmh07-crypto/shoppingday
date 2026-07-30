@@ -6,6 +6,7 @@ import { NaverStoreSettingsRepository } from "@/modules/channels/naver/naver-sto
 import { registrationDisplay } from "@/modules/sourcing/registration-display";
 import { createSourcingResearchService } from "@/modules/sourcing/sourcing-factory";
 import { RegistrationStartButton } from "./registration-start-button";
+import "../admin-operations.css";
 
 export const dynamic = "force-dynamic";
 

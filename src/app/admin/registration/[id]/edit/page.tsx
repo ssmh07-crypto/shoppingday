@@ -4,6 +4,7 @@ import { requireAdminPage } from "@/lib/auth/admin";
 import { withDbReadRecovery, type Database } from "@/lib/db";
 import { createSourcingResearchService } from "@/modules/sourcing/sourcing-factory";
 import { RegistrationProductEditor } from "./registration-product-editor";
+import "../../../admin-operations.css";
 
 export const dynamic = "force-dynamic";
 
