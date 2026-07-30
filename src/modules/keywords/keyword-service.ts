@@ -12,10 +12,12 @@ import {
   keywordReviewSchema,
   keywordRankObservationSchema,
   keywordRankLookupSchema,
+  browserKeywordRankObservationSchema,
   managedProductInputSchema,
   productAnalysisSchema,
   updateGeneratedTitleSchema,
   updateManagedProductSchema,
+  supplierAvailabilityUpdateSchema,
 } from "./schemas";
 import { extractSmartstoreProductNo, normalizeKeyword } from "./keyword-utils";
 import type {
@@ -269,6 +271,38 @@ export class KeywordManagementService {
     return this.get(ownerId, id);
   }
 
+  async recordBrowserRankObservation(
+    ownerId: string,
+    id: string,
+    raw: unknown,
+  ) {
+    const detail = await this.get(ownerId, id);
+    if (!detail.product.channelProductNo) {
+      throw new KeywordManagementError(
+        "naver_product_not_linked",
+        "네이버 채널 상품번호를 확인하지 못했습니다.",
+        409,
+      );
+    }
+    const input = browserKeywordRankObservationSchema.parse(raw);
+    const result = input.result;
+    await this.repository.addRankObservation(ownerId, id, {
+      keyword: input.keyword,
+      rank: result.rank,
+      checkedAt: new Date(result.observedAt),
+      note:
+        result.message ??
+        (result.status === "not_found"
+          ? `${result.checkedRange}위 이내 미노출`
+          : ""),
+      device: result.device,
+      resultStatus: result.status,
+      checkedRange: result.checkedRange,
+      source: "browser_observed",
+    });
+    return this.get(ownerId, id);
+  }
+
   async applyToNaver(ownerId: string, id: string, raw: unknown) {
     const detail = await this.get(ownerId, id);
     const input = applyManagedProductToNaverSchema.parse(raw);
@@ -393,6 +427,18 @@ export class KeywordManagementService {
     if (input.finalTitle) {
       await this.repository.saveFinalTitle(ownerId, id, input.finalTitle);
     }
+    return this.get(ownerId, id);
+  }
+
+  async recordSupplierAvailability(ownerId: string, id: string, raw: unknown) {
+    const input = supplierAvailabilityUpdateSchema.parse(raw);
+    const detail = await this.get(ownerId, id);
+    const productInput = managedProductInputSchema.parse({
+      ...detail.product.productInput,
+      supplierUrl: input.supplierUrl,
+      supplierAvailabilityCheck: input.result,
+    });
+    await this.repository.updateProductInput(ownerId, id, productInput);
     return this.get(ownerId, id);
   }
 

@@ -2141,6 +2141,60 @@ td small {
   color: var(--keyword-muted);
 }
 
+.keyword-rank-extension-status {
+  display: grid;
+  gap: 3px;
+}
+
+.keyword-supplier-stock-panel {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.7fr) minmax(280px, 1.5fr) auto;
+  align-items: end;
+  gap: 14px;
+  padding: 18px;
+  border: 1px solid var(--keyword-line);
+  border-radius: 18px;
+  background: #f8fafc;
+}
+
+.keyword-supplier-stock-panel > div:first-child,
+.keyword-supplier-stock-panel label,
+.keyword-supplier-stock-result {
+  display: grid;
+  gap: 6px;
+}
+
+.keyword-supplier-stock-panel input {
+  width: 100%;
+}
+
+.keyword-supplier-stock-result,
+.keyword-supplier-stock-help {
+  grid-column: 1 / -1;
+}
+
+.keyword-supplier-stock-result {
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.keyword-supplier-stock-result.status-sold_out,
+.keyword-supplier-stock-result.status-discontinued,
+.keyword-supplier-stock-result.status-failed {
+  border-left: 4px solid #c84d42;
+}
+
+.keyword-supplier-stock-result.status-partial_sold_out,
+.keyword-supplier-stock-result.status-auth_required,
+.keyword-supplier-stock-result.status-unknown {
+  border-left: 4px solid #c7872f;
+}
+
+.keyword-supplier-stock-result.status-available {
+  border-left: 4px solid #38835b;
+}
+
 .keyword-rank-entry .keyword-rank-not-found {
   grid-column: 1 / span 2;
   display: flex;
@@ -2187,6 +2241,16 @@ td small {
 }
 
 @media (max-width: 760px) {
+  .keyword-supplier-stock-panel {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+
+  .keyword-supplier-stock-result,
+  .keyword-supplier-stock-help {
+    grid-column: auto;
+  }
+
   .keyword-rank-entry {
     grid-template-columns: 1fr;
   }
@@ -3992,7 +4056,7 @@ td small {
   padding: 16px;
   border-bottom: 1px solid var(--keyword-line);
 }
-.keyword-section-title > div {
+.keyword-section-title > div:first-child {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -4717,6 +4781,35 @@ td small {
   flex-wrap: wrap;
   gap: 8px 12px;
   margin-top: 8px;
+}
+.keyword-supplier-bulk {
+  display: grid;
+  gap: 8px;
+  margin-top: 13px;
+}
+.keyword-supplier-bulk button {
+  width: 100%;
+  min-height: 36px;
+  padding: 8px 10px;
+  font-size: 12px;
+}
+.keyword-supplier-bulk button.secondary {
+  border: 1px solid #d5dbea;
+  background: #fff;
+  color: #344054;
+}
+.keyword-supplier-bulk small {
+  overflow: hidden;
+  color: var(--keyword-muted);
+  font-size: 11px;
+  line-height: 1.45;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.keyword-supplier-bulk progress {
+  width: 100%;
+  height: 7px;
+  accent-color: #2457d6;
 }
 .keyword-overview-copy a {
   font-size: 12px;

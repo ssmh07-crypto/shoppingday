@@ -286,6 +286,24 @@ export interface ManagedProductInput {
     fetchedAt: string;
     source: "naver_orders";
   };
+  supplierAvailabilityCheck?: {
+    provider: "zicgam";
+    status:
+      | "available"
+      | "partial_sold_out"
+      | "sold_out"
+      | "discontinued"
+      | "auth_required"
+      | "unknown"
+      | "failed";
+    productName: string | null;
+    checkedAt: string;
+    source: "chrome_extension";
+    url: string;
+    evidence: string[];
+    availableOptions: string[];
+    soldOutOptions: string[];
+  };
 }
 
 export interface ProductAnalysisData {

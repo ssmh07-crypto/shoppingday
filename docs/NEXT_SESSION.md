@@ -55,6 +55,43 @@
   `C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe`이며 다른 환경에서는
   `NAVER_RANK_BROWSER_EXECUTABLE`로 덮어쓸 수 있다.
 
+### Chrome 확장 프로그램 가격비교 PC 순위 조회
+
+- 저장소 `chrome-extension`에 개발자 모드로 설치하는 Manifest V3 확장 프로그램을
+  추가했다.
+- 성장상품관리의 `Chrome으로 PC 100위 조회` 버튼은 확장 프로그램이 연결된 경우에만
+  활성화된다. 사용자가 누르면 실제 Chrome에서 네이버쇼핑 가격비교 검색 탭을 열고
+  광고 표시 상품을 제외한 자연검색 상품을 최대 100위까지 확인한다.
+- 확장 프로그램은 DB·네이버 API Secret을 보유하지 않는다. 관측 결과는 로그인된
+  Shoppingday 페이지로 돌아오고 기존 관리자 세션을 사용하는
+  `/api/keyword-products/{id}/rank-observations/browser`에서 검증·저장한다.
+- Chrome 확장 프로그램만으로 실제 모바일 Chrome 환경을 보장할 수 없어 이번 버전은
+  PC만 지원한다. 기존 로컬 중계 PC·모바일 조회 경로는 보조 버튼으로 유지했다.
+- 설치 방법은 `chrome-extension/README.md`에 기록했다.
+- 현재 Codex 세션에는 연결 가능한 브라우저가 없어 실제 네이버 DOM 시각 검증은 하지
+  못했다. 테스트 상품으로 상품 카드 순서·광고 제외·대상 상품번호 식별을 반드시 한 번
+  확인해야 한다.
+- 공개 네이버 커머스 API 문서에는 상품 클릭을 발생시킨 유입 검색어 조회 API가
+  확인되지 않았다. 판매자센터 비공개 화면 자동 수집이나 추정 데이터는 추가하지 않았다.
+
+### 직감 위탁상품 품절·단종 확인
+
+- 성장상품 상세에 공급처 상품 URL과 `Chrome으로 이 상품만 확인` 기능을 추가했다.
+- 성장상품 목록에는 저장된 직감 URL 전체를 확인하는 `직감 전체 확인` 버튼을
+  추가했다. 전용 탭 하나를 재사용해 순차 조회하며 현재 상품 후 중단과 진행률을
+  제공한다.
+- 첫 지원 공급처는 `zicgam.com`이며 상품 상세 URL의 숫자 `product_no`만 허용한다.
+- 확장 프로그램은 로그인된 직감 탭에서 판매 가능, 일부 옵션 품절, 전체 품절, 단종,
+  로그인 필요, 판별 불가를 구분하고 근거·옵션명을 Shoppingday로 돌려준다.
+- 결과는 기존 성장 상품 `product_input.supplierAvailabilityCheck`에 마지막 확인값으로
+  저장한다. 이번 MVP에서는 별도 migration이나 자동 스마트스토어 품절 처리를 하지 않는다.
+- 예시 `product_no=3649`는 비로그인 접근 시 승인회원 안내 후 로그인으로 이동한다.
+  실제 상태는 승인된 직감 계정으로 로그인하고 확장 프로그램 0.3.0을 다시 로드한 뒤
+  확인해야 한다.
+- 현재 Codex 세션에는 연결 가능한 브라우저가 없어 로그인 후 실제 직감 DOM은 시각
+  검증하지 못했다. 첫 실사용 결과가 `unknown`이면 해당 페이지 DOM을 기준으로
+  `zicgam-stock-parser.js` selector를 보강한다.
+
 ### DB migration 0026
 
 - `products.source_title_keywords` JSONB 배열을 추가했다.
@@ -82,7 +119,7 @@
 
 - `npm run typecheck` 통과
 - `npm run lint` 통과
-- 전체 48개 테스트 파일, 271개 테스트 통과
+- 전체 50개 테스트 파일, 284개 테스트 통과
 - `npm run build` 통과
 - DB migration 적용 성공
 - Next.js 빌드에는 기존 `middleware` 파일 규칙 폐기 예정 경고만 남아 있다.

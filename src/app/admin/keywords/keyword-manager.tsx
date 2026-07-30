@@ -3,6 +3,7 @@
 import {
   useEffect,
   useMemo,
+  useRef,
   useState,
   type FormEvent,
   type KeyboardEvent,
@@ -28,6 +29,7 @@ import type {
   ManagedProductDetail,
   ManagedProductSummary,
   ProductAnalysis,
+  SupplierAvailabilityCheck,
 } from "@/modules/keywords/types";
 
 const NaverAttributeEditor = dynamic(
@@ -89,6 +91,22 @@ type ApiEnvelope<T> = {
   runtime?: RuntimeStatus;
   error?: { message?: string };
 };
+
+type ChromeRankResult = {
+  device: "pc";
+  status: "found" | "not_found" | "blocked" | "failed";
+  rank: number | null;
+  checkedRange: number;
+  observedAt: string;
+  message: string | null;
+};
+
+const RANK_EXTENSION_PING_EVENT = "shoppingday:rank-extension-ping";
+const RANK_EXTENSION_STATUS_EVENT = "shoppingday:rank-extension-status";
+const RANK_EXTENSION_REQUEST_EVENT = "shoppingday:rank-extension-request";
+const RANK_EXTENSION_RESULT_EVENT = "shoppingday:rank-extension-result";
+const SUPPLIER_CHECK_REQUEST_EVENT = "shoppingday:supplier-check-request";
+const SUPPLIER_CHECK_RESULT_EVENT = "shoppingday:supplier-check-result";
 
 export function KeywordManager({
   initialItems,
@@ -260,6 +278,29 @@ export function KeywordManager({
                 <h2>관리 상품</h2>
                 <span>{items.length.toLocaleString("ko-KR")}개</span>
               </div>
+              <SupplierBulkCheckPanel
+                items={items}
+                busy={busy}
+                onBusy={setBusy}
+                onSaved={(productId, nextDetail, result) => {
+                  setItems((current) =>
+                    current.map((item) =>
+                      item.id === productId
+                        ? {
+                            ...item,
+                            supplierUrl: result.url,
+                            supplierAvailabilityCheck: result,
+                          }
+                        : item,
+                    ),
+                  );
+                  if (activeId === productId) setDetail(nextDetail);
+                }}
+                onFeedback={(nextMessage, nextError) => {
+                  setMessage(nextMessage);
+                  setError(nextError);
+                }}
+              />
             </div>
             {items.map((item) => (
               <button
@@ -267,6 +308,7 @@ export function KeywordManager({
                 type="button"
                 className={activeId === item.id ? "active" : undefined}
                 onClick={() => void selectProduct(item.id)}
+                disabled={busy === "supplier-bulk-check"}
               >
                 <strong>{item.finalTitle || item.editableTitle || item.supplierTitle}</strong>
                 <span>키워드 {item.keywordCount}개 · 선택 {item.selectedKeywordCount}개</span>
@@ -362,6 +404,175 @@ export function KeywordManager({
         </div>
       </main>
     </>
+  );
+}
+
+function SupplierBulkCheckPanel({
+  items,
+  busy,
+  onBusy,
+  onSaved,
+  onFeedback,
+}: {
+  items: ManagedProductSummary[];
+  busy: string | null;
+  onBusy: (name: string | null) => void;
+  onSaved: (
+    productId: string,
+    detail: ManagedProductDetail,
+    result: SupplierAvailabilityCheck,
+  ) => void;
+  onFeedback: (message: string | null, error: string | null) => void;
+}) {
+  const [extensionAvailable, setExtensionAvailable] = useState(false);
+  const [progress, setProgress] = useState<{
+    completed: number;
+    total: number;
+    currentTitle: string;
+    failed: number;
+  } | null>(null);
+  const stopRequested = useRef(false);
+  const targets = useMemo(
+    () =>
+      items.filter((item) =>
+        isSupportedSupplierUrl(item.supplierUrl ?? ""),
+      ),
+    [items],
+  );
+  const running = busy === "supplier-bulk-check";
+
+  useEffect(() => {
+    function handleStatus(event: Event) {
+      const status = (
+        event as CustomEvent<{ available?: boolean }>
+      ).detail;
+      setExtensionAvailable(Boolean(status?.available));
+    }
+    window.addEventListener(RANK_EXTENSION_STATUS_EVENT, handleStatus);
+    window.dispatchEvent(new CustomEvent(RANK_EXTENSION_PING_EVENT));
+    return () =>
+      window.removeEventListener(RANK_EXTENSION_STATUS_EVENT, handleStatus);
+  }, []);
+
+  async function runBulkCheck() {
+    if (
+      !window.confirm(
+        `저장된 직감 상품 ${targets.length.toLocaleString("ko-KR")}개를 한 탭에서 순서대로 확인할까요?\n\n각 결과는 즉시 저장되며, 자동으로 스마트스토어 품절 처리는 하지 않습니다.`,
+      )
+    ) {
+      return;
+    }
+    stopRequested.current = false;
+    onBusy("supplier-bulk-check");
+    onFeedback(null, null);
+    setProgress({
+      completed: 0,
+      total: targets.length,
+      currentTitle: "",
+      failed: 0,
+    });
+    let completed = 0;
+    let failed = 0;
+    let stopReason: "auth" | "failed" | null = null;
+    try {
+      for (const [index, item] of targets.entries()) {
+        if (stopRequested.current) break;
+        const title =
+          item.finalTitle || item.editableTitle || item.supplierTitle;
+        setProgress({
+          completed,
+          total: targets.length,
+          currentTitle: title,
+          failed,
+        });
+        const result = await requestSupplierAvailabilityWithChrome(
+          item.supplierUrl!,
+          { background: true },
+        );
+        const response = await saveSupplierAvailability(
+          item.id,
+          item.supplierUrl!,
+          result,
+        );
+        onSaved(item.id, response.data!, result);
+        completed += 1;
+        if (result.status === "failed" || result.status === "unknown") {
+          failed += 1;
+        }
+        setProgress({
+          completed,
+          total: targets.length,
+          currentTitle: title,
+          failed,
+        });
+        if (result.status === "auth_required") {
+          stopReason = "auth";
+          break;
+        }
+        if (result.status === "failed") {
+          stopReason = "failed";
+          break;
+        }
+        if (index < targets.length - 1 && !stopRequested.current) {
+          await wait(3_000 + Math.floor(Math.random() * 2_000));
+        }
+      }
+      const stopped = stopRequested.current || stopReason !== null;
+      onFeedback(
+        stopped
+          ? `직감 전체 확인을 중단했습니다. ${completed.toLocaleString("ko-KR")}/${targets.length.toLocaleString("ko-KR")}개 결과는 저장했습니다.${stopReason === "auth" ? " 직감 로그인·회원 승인을 확인해 주세요." : stopReason === "failed" ? " 확장 프로그램과 직감 페이지 상태를 확인해 주세요." : ""}`
+          : `직감 상품 ${completed.toLocaleString("ko-KR")}개 확인을 완료했습니다.${failed ? ` 판정 불가·실패 ${failed.toLocaleString("ko-KR")}개를 확인해 주세요.` : ""}`,
+        null,
+      );
+    } catch (caught) {
+      onFeedback(
+        null,
+        `${completed.toLocaleString("ko-KR")}개까지 저장한 뒤 중단됐습니다. ${errorMessage(caught)}`,
+      );
+    } finally {
+      onBusy(null);
+    }
+  }
+
+  return (
+    <div className="keyword-supplier-bulk">
+      <button
+        type="button"
+        onClick={() => void runBulkCheck()}
+        disabled={
+          Boolean(busy) ||
+          !extensionAvailable ||
+          targets.length === 0
+        }
+      >
+        직감 전체 확인
+      </button>
+      {running && (
+        <button
+          type="button"
+          className="secondary"
+          onClick={() => {
+            stopRequested.current = true;
+          }}
+        >
+          현재 상품 후 중단
+        </button>
+      )}
+      <small>
+        {progress
+          ? `${progress.completed.toLocaleString("ko-KR")}/${progress.total.toLocaleString("ko-KR")}개${progress.currentTitle ? ` · ${progress.currentTitle}` : ""}`
+          : extensionAvailable
+            ? `확인 대상 ${targets.length.toLocaleString("ko-KR")}개`
+            : "확장 프로그램을 다시 로드해 주세요."}
+      </small>
+      {progress && (
+        <progress
+          aria-label="직감 전체 확인 진행률"
+          max={progress.total}
+          value={progress.completed}
+        />
+      )}
+    </div>
   );
 }
 
@@ -563,6 +774,11 @@ function KeywordProductDetail({
     null,
   );
   const [attributesOpen, setAttributesOpen] = useState(false);
+  const [supplierUrl, setSupplierUrl] = useState(
+    detail.product.productInput.supplierUrl,
+  );
+  const [supplierExtensionAvailable, setSupplierExtensionAvailable] =
+    useState(false);
   const optimizationSearchTags = optimizationTags;
   const titleKeywords = useMemo(
     () =>
@@ -662,6 +878,19 @@ function KeywordProductDetail({
       });
     return () => controller.abort();
   }, [attributesOpen, detail.product.productInput.naverCategoryId]);
+
+  useEffect(() => {
+    function handleStatus(event: Event) {
+      const status = (
+        event as CustomEvent<{ available?: boolean }>
+      ).detail;
+      setSupplierExtensionAvailable(Boolean(status?.available));
+    }
+    window.addEventListener(RANK_EXTENSION_STATUS_EVENT, handleStatus);
+    window.dispatchEvent(new CustomEvent(RANK_EXTENSION_PING_EVENT));
+    return () =>
+      window.removeEventListener(RANK_EXTENSION_STATUS_EVENT, handleStatus);
+  }, []);
 
   function resetOptimization() {
     const input = detail.product.productInput;
@@ -830,6 +1059,31 @@ function KeywordProductDetail({
     }
   }
 
+  async function checkSupplierAvailability() {
+    onBusy("supplier-stock-check");
+    onFeedback(null, null);
+    try {
+      const result = await requestSupplierAvailabilityWithChrome(
+        supplierUrl.trim(),
+      );
+      const response = await saveSupplierAvailability(
+        detail.product.id,
+        supplierUrl.trim(),
+        result,
+      );
+      onDetailChange(response.data!);
+      onFeedback(
+        `직감 공급처 상태를 '${supplierAvailabilityLabel(result.status)}'로 기록했습니다.`,
+        null,
+      );
+      await onRefreshList();
+    } catch (caught) {
+      onFeedback(null, errorMessage(caught));
+    } finally {
+      onBusy(null);
+    }
+  }
+
   return (
     <div className="keyword-detail-stack">
       <section className="keyword-card keyword-product-overview">
@@ -971,6 +1225,41 @@ function KeywordProductDetail({
               <h2>핵심 판매 정보 편집</h2>
               <p>자주 수정하는 정보만 먼저 확인하고 공식 속성은 필요할 때 펼칩니다.</p>
             </div>
+          </div>
+          <div className="keyword-supplier-stock-panel">
+            <div>
+              <span className="inventory-eyebrow">위탁 공급처</span>
+              <strong>품절·단종 확인</strong>
+              <small>
+                현재는 로그인된 Chrome에서 직감 상품 상세 페이지만 확인합니다.
+              </small>
+            </div>
+            <label>
+              <span>공급처 상품 URL</span>
+              <input
+                type="url"
+                value={supplierUrl}
+                onChange={(event) => setSupplierUrl(event.target.value)}
+                placeholder="https://zicgam.com/product/detail.html?product_no=..."
+              />
+            </label>
+            <button
+              type="button"
+              onClick={() => void checkSupplierAvailability()}
+              disabled={
+                Boolean(busy) ||
+                !supplierExtensionAvailable ||
+                !isSupportedSupplierUrl(supplierUrl)
+              }
+            >
+              {busy === "supplier-stock-check"
+                ? "직감 재고 확인 중…"
+                : "Chrome으로 이 상품만 확인"}
+            </button>
+            <SupplierAvailabilityResult
+              result={detail.product.productInput.supplierAvailabilityCheck}
+              extensionAvailable={supplierExtensionAvailable}
+            />
           </div>
           <div className="keyword-commerce-fields">
             <label className="keyword-title-editor wide">
@@ -1547,7 +1836,27 @@ function RankTrackingPanel({
   const [checkedAt, setCheckedAt] = useState(
     new Date().toISOString().slice(0, 10),
   );
+  const [rankExtension, setRankExtension] = useState<{
+    available: boolean;
+    version: string | null;
+  }>({ available: false, version: null });
   const observations = detail.rankObservations ?? [];
+
+  useEffect(() => {
+    function handleStatus(event: Event) {
+      const status = (
+        event as CustomEvent<{ available?: boolean; version?: string | null }>
+      ).detail;
+      setRankExtension({
+        available: Boolean(status?.available),
+        version: status?.version ?? null,
+      });
+    }
+    window.addEventListener(RANK_EXTENSION_STATUS_EVENT, handleStatus);
+    window.dispatchEvent(new CustomEvent(RANK_EXTENSION_PING_EVENT));
+    return () =>
+      window.removeEventListener(RANK_EXTENSION_STATUS_EVENT, handleStatus);
+  }, []);
 
   async function saveObservation() {
     onBusy("rank-save");
@@ -1591,6 +1900,41 @@ function RankTrackingPanel({
       onChange(response.data!);
       onFeedback(
         `"${keyword.trim()}"의 네이버쇼핑 PC·모바일 100위 이내 노출을 확인했습니다.`,
+        null,
+      );
+    } catch (caught) {
+      onFeedback(null, errorMessage(caught));
+    } finally {
+      onBusy(null);
+    }
+  }
+
+  async function observePcRankWithChrome() {
+    if (!detail.product.channelProductNo) {
+      onFeedback(null, "네이버 채널 상품번호를 확인하지 못했습니다.");
+      return;
+    }
+    onBusy("rank-extension-observe");
+    onFeedback(null, null);
+    try {
+      const result = await requestChromeRankObservation({
+        keyword,
+        channelProductNo: detail.product.channelProductNo,
+        smartstoreUrl: detail.product.smartstoreUrl,
+      });
+      const response = await api<ManagedProductDetail>(
+        `/api/keyword-products/${detail.product.id}/rank-observations/browser`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ keyword, result }),
+        },
+      );
+      onChange(response.data!);
+      onFeedback(
+        result.status === "found"
+          ? `"${keyword.trim()}"의 가격비교 PC 순위를 Chrome에서 확인했습니다.`
+          : `"${keyword.trim()}"의 가격비교 PC 조회 결과를 기록했습니다.`,
         null,
       );
     } catch (caught) {
@@ -1673,18 +2017,41 @@ function RankTrackingPanel({
         <div className="keyword-rank-auto-action">
           <button
             type="button"
-            onClick={() => void observeRanks()}
-            disabled={Boolean(busy) || !keyword.trim() || !rankLookupConfigured}
+            onClick={() => void observePcRankWithChrome()}
+            disabled={
+              Boolean(busy) || !keyword.trim() || !rankExtension.available
+            }
           >
-            {busy === "rank-observe"
-              ? "PC·모바일 조회 중…"
-              : "PC·모바일 100위 조회"}
+            {busy === "rank-extension-observe"
+              ? "Chrome PC 조회 중…"
+              : "Chrome으로 PC 100위 조회"}
           </button>
-          <small>
-            {rankLookupConfigured
-              ? "버튼을 누를 때만 공개 네이버쇼핑 검색 결과를 확인합니다."
-              : "순위 조회 중계 서버가 연결되지 않았습니다."}
-          </small>
+          {rankLookupConfigured && (
+            <button
+              type="button"
+              className="secondary"
+              onClick={() => void observeRanks()}
+              disabled={Boolean(busy) || !keyword.trim()}
+            >
+              {busy === "rank-observe"
+                ? "기존 조회 중…"
+                : "기존 PC·모바일 조회"}
+            </button>
+          )}
+          <div className="keyword-rank-extension-status">
+            <small>
+              {rankExtension.available
+                ? `Chrome 확장 프로그램 연결됨${
+                    rankExtension.version
+                      ? ` · v${rankExtension.version}`
+                      : ""
+                  }`
+                : "Chrome 확장 프로그램을 설치한 뒤 페이지를 새로고침해 주세요."}
+            </small>
+            <small>
+              광고를 제외한 가격비교 PC 공개 화면을 버튼을 누를 때만 확인합니다.
+            </small>
+          </div>
         </div>
         <label>
           <span>확인일</span>
@@ -1762,7 +2129,8 @@ function RankTrackingPanel({
       )}
       <small className="keyword-field-help">
         조회값은 네이버 공식 순위 데이터가 아니라 조회 시점의 공개 검색 화면 관측값입니다.
-        개인화·광고·검색 결과 변경에 따라 실제 노출과 다를 수 있습니다.
+        Chrome PC 조회는 가격비교 자연검색에서 광고를 제외하며, 검색 결과 변경이나
+        화면 구조에 따라 실제 노출과 다를 수 있습니다.
       </small>
     </section>
   );
@@ -2358,4 +2726,182 @@ async function api<T = unknown>(url: string, init?: RequestInit): Promise<ApiEnv
 
 function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : "요청을 처리하지 못했습니다.";
+}
+
+function SupplierAvailabilityResult({
+  result,
+  extensionAvailable,
+}: {
+  result?: SupplierAvailabilityCheck;
+  extensionAvailable: boolean;
+}) {
+  if (!result) {
+    return (
+      <small className="keyword-supplier-stock-help">
+        {extensionAvailable
+          ? "아직 공급처 상태를 확인하지 않았습니다."
+          : "Chrome 확장 프로그램을 설치한 뒤 페이지를 새로고침해 주세요."}
+      </small>
+    );
+  }
+  return (
+    <div className={`keyword-supplier-stock-result status-${result.status}`}>
+      <strong>{supplierAvailabilityLabel(result.status)}</strong>
+      <span>{result.productName ?? "상품명 확인 안 됨"}</span>
+      {result.evidence.map((item) => (
+        <small key={item}>{item}</small>
+      ))}
+      {result.soldOutOptions.length > 0 && (
+        <small>품절 옵션: {result.soldOutOptions.join(", ")}</small>
+      )}
+      <small>
+        마지막 확인: {new Date(result.checkedAt).toLocaleString("ko-KR")}
+      </small>
+    </div>
+  );
+}
+
+function supplierAvailabilityLabel(
+  status: SupplierAvailabilityCheck["status"],
+) {
+  return {
+    available: "판매 가능",
+    partial_sold_out: "일부 옵션 품절",
+    sold_out: "품절",
+    discontinued: "단종·판매 종료",
+    auth_required: "로그인·회원 승인 필요",
+    unknown: "판정 불가",
+    failed: "확인 실패",
+  }[status];
+}
+
+function isSupportedSupplierUrl(value: string) {
+  try {
+    const url = new URL(value);
+    return (
+      url.protocol === "https:" &&
+      url.hostname === "zicgam.com" &&
+      url.pathname === "/product/detail.html" &&
+      /^\d+$/.test(url.searchParams.get("product_no") ?? "")
+    );
+  } catch {
+    return false;
+  }
+}
+
+function requestSupplierAvailabilityWithChrome(
+  url: string,
+  options: { background?: boolean } = {},
+) {
+  if (!isSupportedSupplierUrl(url)) {
+    return Promise.reject(
+      new Error("직감 상품 상세 URL과 product_no를 확인해 주세요."),
+    );
+  }
+  const requestId =
+    globalThis.crypto?.randomUUID?.() ??
+    `supplier-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  return new Promise<SupplierAvailabilityCheck>((resolve, reject) => {
+    const timeout = window.setTimeout(() => {
+      cleanup();
+      reject(
+        new Error(
+          "공급처 상태 확인 응답이 없습니다. 직감 로그인 상태와 확장 프로그램을 확인해 주세요.",
+        ),
+      );
+    }, 90_000);
+    function cleanup() {
+      window.clearTimeout(timeout);
+      window.removeEventListener(SUPPLIER_CHECK_RESULT_EVENT, handleResult);
+    }
+    function handleResult(event: Event) {
+      const detail = (
+        event as CustomEvent<{
+          requestId?: string;
+          result?: SupplierAvailabilityCheck;
+        }>
+      ).detail;
+      if (detail?.requestId !== requestId || !detail.result) return;
+      cleanup();
+      resolve(detail.result);
+    }
+    window.addEventListener(SUPPLIER_CHECK_RESULT_EVENT, handleResult);
+    window.dispatchEvent(
+      new CustomEvent(SUPPLIER_CHECK_REQUEST_EVENT, {
+        detail: {
+          requestId,
+          url,
+          background: options.background === true,
+        },
+      }),
+    );
+  });
+}
+
+function saveSupplierAvailability(
+  productId: string,
+  supplierUrl: string,
+  result: SupplierAvailabilityCheck,
+) {
+  return api<ManagedProductDetail>(
+    `/api/keyword-products/${productId}/supplier-availability`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ supplierUrl, result }),
+    },
+  );
+}
+
+function wait(milliseconds: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
+}
+
+function requestChromeRankObservation(input: {
+  keyword: string;
+  channelProductNo: string;
+  smartstoreUrl: string;
+}) {
+  const requestId =
+    globalThis.crypto?.randomUUID?.() ??
+    `rank-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  return new Promise<ChromeRankResult>((resolve, reject) => {
+    const timeout = window.setTimeout(() => {
+      cleanup();
+      reject(
+        new Error(
+          "Chrome 순위 조회 응답이 없습니다. 네이버 탭의 차단 화면과 확장 프로그램 상태를 확인해 주세요.",
+        ),
+      );
+    }, 90_000);
+    function cleanup() {
+      window.clearTimeout(timeout);
+      window.removeEventListener(
+        RANK_EXTENSION_RESULT_EVENT,
+        handleResult,
+      );
+    }
+    function handleResult(event: Event) {
+      const detail = (
+        event as CustomEvent<{
+          requestId?: string;
+          result?: ChromeRankResult;
+        }>
+      ).detail;
+      if (detail?.requestId !== requestId || !detail.result) return;
+      cleanup();
+      resolve(detail.result);
+    }
+    window.addEventListener(RANK_EXTENSION_RESULT_EVENT, handleResult);
+    window.dispatchEvent(
+      new CustomEvent(RANK_EXTENSION_REQUEST_EVENT, {
+        detail: {
+          requestId,
+          keyword: input.keyword.trim(),
+          channelProductNo: input.channelProductNo,
+          smartstoreUrl: input.smartstoreUrl,
+        },
+      }),
+    );
+  });
 }
