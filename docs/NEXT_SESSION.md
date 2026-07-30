@@ -10,16 +10,78 @@
 
 ### 현재 Git·배포 상태
 
-- 작업 브랜치: `main`
-- 로컬과 `origin/main`의 최신 기능 커밋:
-  `bef3187` `add on-demand shopping rank tracking`
-- 직전 주요 커밋:
-  - `c51164b` `sync growth changes to registration products`
-  - `bb5838e` `fix sales refresh and surface title keywords`
-- `bef3187`까지 GitHub `main`에 푸시했다.
-- GitHub Actions 실행은 감지되지 않았다. GitHub 푸시와 연결된 외부 자동 배포의 완료
-  여부는 별도로 확인해야 한다.
+- 작업 브랜치: `agent/chrome-rank-and-stock-checks`
+- 원격 브랜치: `origin/agent/chrome-rank-and-stock-checks`
+- 최신 기능 커밋:
+  - `e603926` `support exact range attribute values`
+  - `3aa65fa` `integrate wholesale smartstore management`
+  - `c2efd5e` `reduce admin product worker cpu`
+  - `b88c321` `split admin styles and enforce css budgets`
+  - `c8f70c9` `add wholesale site memo`
+  - `5b38b9d` `show published sourcing registration details`
+  - `20d2e50` `recognize available Zicgam options`
+  - `4f68042` `add Chrome rank and supplier stock checks`
+- 위 기능 커밋은 모두 원격 기능 브랜치에 푸시했다.
+- `origin/main`은 현재 `7b620c9`이며 위 기능 브랜치는 아직 `main`에 병합하지 않았다.
+- 사용자는 Worker CPU 초과 최적화 후 운영 사이트에 다시 접속되는 것을 확인했다.
+  다만 이번 인수인계 갱신 시점에는 GitHub 푸시와 연결된 외부 자동 배포의 최신 완료
+  여부를 별도로 조회하지 않았다.
 - migration `0026_faulty_marvex.sql`은 `.env.local`이 가리키는 PostgreSQL DB에 적용했다.
+- 도매사이트 메모용 migration `0027_needy_maximus.sql`이 추가됐다. 현재 DB 적용 여부는
+  다음 세션 시작 시 확인하고, 미적용이면 기존 migration 절차로 적용한다.
+
+### Worker CPU·클라이언트 번들 최적화
+
+- Cloudflare Worker에서 `Error 1102 Worker exceeded resource limits`가 발생했다.
+- 관리자 전역 CSS를 상품 운영, 소싱, 도매사이트 메모 화면 단위 CSS로 분리하고
+  클라이언트 번들 예산 확인 스크립트를 보강했다.
+- `/admin/products`의 서버 조회와 클라이언트 목록 UI를 분리해 Worker가 한 요청에서
+  처리하는 모듈과 직렬화 범위를 줄였다.
+- 관리자 인증 경로는 Worker 내부에서 신뢰 헤더를 재사용하되 외부 요청이 같은 헤더를
+  위조하지 못하도록 middleware에서 제거·재설정한다.
+- 상품등록관리의 위탁상품은 약 6,173개를 한 번에 렌더링하지 않고 페이지당 100개만
+  조회한다. 목록 진입 시 네이버 API를 호출하지 않으며 실제 작업 버튼을 누를 때만
+  발행 상태를 검사한다.
+- 위 최적화 후 사용자가 운영 사이트 접속 복구를 확인했다. 이후 대량 목록 기능도
+  같은 원칙으로 서버 pagination과 요청형 외부 API 호출을 유지한다.
+
+### 상품등록관리·위탁상품관리 통합
+
+- 기존 `상품 관리` 명칭을 `위탁상품관리`로 변경했다.
+- `/admin/registration`은 `소싱조사 상품`과 `위탁상품` 탭으로 분리했다.
+- 위탁상품 탭은 공급처별 그룹과 공급처 필터를 제공하고 100개 단위로 페이지를
+  이동한다.
+- 소싱조사 및 위탁상품 행에서 네이버 `등록/변경`, `품절/판매재개`, `삭제`를 빠르게
+  실행할 수 있다. 실제 네이버 변경은 확인창을 거쳐 요청한다.
+- 소싱 등록 상품이 이미 발행된 경우 스마트스토어 등록 완료 상태, 채널상품번호와
+  실제 등록 판매가를 목록에 표시한다.
+- `/admin/wholesale-sites`에 도매사이트 링크, 이름, 설명을 추가·수정·삭제하고 새
+  탭에서 여는 간단한 메모 페이지를 추가했다. 저장 테이블은
+  `wholesale_site_links`, migration은 `0027_needy_maximus.sql`이다.
+
+### 스마트스토어 역동기화·할인·태그
+
+- 등록된 상품 편집 화면의 `스마트스토어 정보 불러오기`는 판매자센터에서 직접 바꾼
+  상품명, 판매가, 즉시 할인율, 카테고리, 검색 태그와 공식 상품 속성을 Shoppingday
+  편집 데이터로 역동기화한다.
+- 역동기화는 배송 정책, 상세설명, 이미지, 옵션을 덮어쓰지 않는다. 원격 재고는 결과
+  안내에만 표시하며 현재 로컬 재고 필드에는 저장하지 않는다.
+- 저장하지 않은 로컬 편집값이 있으면 역동기화를 막아 덮어쓰기를 방지한다.
+- 네이버 판매 정책에 `즉시 할인율`을 추가했다. 예상 할인가를 화면에 표시하고
+  등록·수정 payload의 `customerBenefit.immediateDiscountPolicy`로 전송한다.
+- 검색 태그는 네이버 추천 태그 API에서 동일 문구의 공식 태그 코드를 찾아
+  `{code, text}`로 전송한다. 태그사전에 있는 단어가 코드 없는 사용자 태그처럼
+  등록되던 문제를 수정했다.
+
+### 범위형 사이즈 속성
+
+- 욕실화처럼 범위형 사이즈 속성에 후보 구간과 정확한 실제값이 모두 필요한 경우,
+  `사이즈 구간` 드롭다운과 `사이즈 실제값`, 단위를 함께 표시한다.
+- 등록 준비 판정과 서버 검증에서도 필수 범위형 속성은 구간
+  `attributeValueSeq`와 실제값을 모두 요구한다.
+- 네이버 payload에는 선택 구간과 `attributeRealValue`를 함께 전송하며, 실제값은
+  단위 코드가 없는 경우에도 누락하지 않는다.
+- 스마트스토어에서 역동기화한 실제 사이즈도 같은 편집 구조의 실제값으로 보존한다.
 
 ### 성장상품관리 최신 기능
 
@@ -86,8 +148,17 @@
 - 결과는 기존 성장 상품 `product_input.supplierAvailabilityCheck`에 마지막 확인값으로
   저장한다. 이번 MVP에서는 별도 migration이나 자동 스마트스토어 품절 처리를 하지 않는다.
 - 예시 `product_no=3649`는 비로그인 접근 시 승인회원 안내 후 로그인으로 이동한다.
-  실제 상태는 승인된 직감 계정으로 로그인하고 확장 프로그램 0.3.0을 다시 로드한 뒤
+  실제 상태는 승인된 직감 계정으로 로그인하고 확장 프로그램 0.3.1을 다시 로드한 뒤
   확인해야 한다.
+- `Chrome으로 이 상품만 확인`과 `직감 전체 확인` 버튼은 확장 프로그램 상태 이벤트를
+  받지 못하면 의도적으로 비활성화된다. GitHub 푸시나 사이트 배포만으로 개발자 모드의
+  압축해제 확장 프로그램이 갱신되지는 않는다.
+- 비활성 상태에서는 `chrome://extensions`에서
+  `Shoppingday 순위·공급처 상태 확인`을 다시 로드하고 Shoppingday 페이지도 강력
+  새로고침한다. 확장 프로그램이 없으면 저장소의 `chrome-extension` 폴더를
+  압축해제 확장 프로그램으로 다시 선택한다.
+- 직감의 활성 옵션 버튼에 품절 문구가 없을 때 구매 가능 옵션으로 인식하도록
+  파서를 보강했다.
 - 현재 Codex 세션에는 연결 가능한 브라우저가 없어 로그인 후 실제 직감 DOM은 시각
   검증하지 못했다. 첫 실사용 결과가 `unknown`이면 해당 페이지 DOM을 기준으로
   `zicgam-stock-parser.js` selector를 보강한다.
@@ -119,17 +190,20 @@
 
 - `npm run typecheck` 통과
 - `npm run lint` 통과
-- 전체 50개 테스트 파일, 284개 테스트 통과
+- 전체 57개 테스트 파일, 301개 테스트 통과
 - `npm run build` 통과
-- DB migration 적용 성공
+- migration `0026` 적용 성공. 신규 `0027` 적용 여부는 다음 세션에서 확인한다.
 - Next.js 빌드에는 기존 `middleware` 파일 규칙 폐기 예정 경고만 남아 있다.
+- 브라우저 연결이 없어 최신 화면의 자동 시각 캡처 검수는 수행하지 못했다. 속성
+  입력, 네이버 빠른 작업, 할인율과 태그 처리는 jsdom 상호작용 및 단위 테스트로
+  검증했다.
 
 ### 다음 세션 시작 확인
 
 ```powershell
 cd C:\Users\ssmh0\shoppingday
-git switch main
-git pull --ff-only origin main
+git switch agent/chrome-rank-and-stock-checks
+git pull --ff-only origin agent/chrome-rank-and-stock-checks
 git status --short --branch
 
 Get-ScheduledTask -TaskName "Shoppingday Naver Quick Tunnel"
@@ -148,15 +222,25 @@ Get-CimInstance Win32_Process |
 
 ### 다음 우선 확인 사항
 
-1. 운영 성장상품관리 화면에서 소싱 상품명 키워드가 표시되는지 확인한다. 과거 상품은
-   연결된 등록상품과 소싱조사 기록이 있어야 복원된다.
-2. 본인 테스트 상품과 키워드로 `PC·모바일 100위 조회`를 한 번 실행해 실제 네이버
-   검색 화면에서 상품 카드 식별과 PC·모바일 결과 저장을 확인한다.
-3. 조회 실패 시 중계 서버 로그와 네이버 접근 제한 여부를 먼저 보고, 화면 구조 변경이
-   확인된 경우에만 Playwright 선택자를 수정한다. 차단 우회 기능은 추가하지 않는다.
-4. GitHub 푸시 후 외부 자동 배포가 실제 완료됐는지 운영 URL에서 확인한다.
-5. 성장관리 제외 기능은 등록상품과 스마트스토어 상품을 삭제하지 않는지 테스트
-   상품으로 확인한다.
+1. `chrome://extensions`에서 Shoppingday 확장 프로그램 0.3.1을 다시 로드하고 운영
+   페이지를 강력 새로고침해 성장상품관리의 품절·단종 확인 버튼이 활성화되는지
+   확인한다.
+2. 승인된 직감 계정으로 로그인한 뒤 욕실화 공급처 URL을 개별 확인해 판매 가능,
+   일부 옵션 품절 또는 전체 품절 결과와 근거가 저장되는지 확인한다. 판정 결과만으로
+   스마트스토어 상태를 자동 변경하지 않는다.
+3. 욕실화 편집 화면에서 사이즈 구간과 정확한 `280mm` 실제값을 함께 입력해 저장하고,
+   발행 payload와 스마트스토어센터 결과를 확인한다.
+4. 스마트스토어센터에서 욕실화 상품명·판매가·할인율·태그·속성을 직접 수정한 뒤
+   `스마트스토어 정보 불러오기`로 Shoppingday에 역동기화되는지 확인한다.
+5. 상품등록관리의 소싱조사/위탁상품 탭, 공급처 필터, 100개 pagination과
+   등록·변경·품절·판매재개·삭제 버튼을 테스트 상품으로 확인한다. 삭제는 복구할 수
+   없으므로 별도 테스트 상품에서만 수행한다.
+6. DB에 `wholesale_site_links` 테이블이 있는지 확인하고 없으면 migration `0027`을
+   적용한 뒤 도매사이트 메모 추가·변경·삭제를 확인한다.
+7. 외부 자동 배포가 최신 `e603926`까지 반영했는지 운영 URL과 배포 로그에서 확인한다.
+   Worker 1102가 재발하면 먼저 요청 경로와 CPU 로그를 확인하고 대량 데이터를 한 번에
+   렌더링하거나 목록 진입 시 외부 API를 호출하는 경로가 생겼는지 점검한다.
+8. 기능 브랜치를 `main`에 병합할 시점과 방법은 사용자 확인 후 진행한다.
 
 ## 2026-07-29 종료 시점 인수인계
 
