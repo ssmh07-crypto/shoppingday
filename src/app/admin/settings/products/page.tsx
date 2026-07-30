@@ -18,7 +18,9 @@ export default async function ProductSettingsPage({
   return withDbReadRecovery(async (database) => {
     const user = await requireAdminPage(database);
     const params = await searchParams;
-    const stores = await new NaverStoreSettingsRepository(database).list(user.id);
+    const stores = await new NaverStoreSettingsRepository(database).list(
+      user.id,
+    );
     const selectedStore =
       stores.find((store) => store.id === params.storeConnectionId) ??
       stores.find((store) => store.isDefault) ??
@@ -37,10 +39,10 @@ export default async function ProductSettingsPage({
       <main className="product-settings-page">
         <div className="product-settings-shell">
           <Link href="/admin/products" className="product-settings-back">
-            ← 상품 관리
+            ← 위탁상품관리
           </Link>
           <header className="product-settings-heading">
-            <span>상품 관리</span>
+            <span>위탁상품관리</span>
             <h1>상품 처리 설정</h1>
           </header>
           <ProductSettingsForm initial={settings} />

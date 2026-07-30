@@ -89,8 +89,8 @@ export function ProductListView({
       <main className="inventory-main">
         <section className="inventory-heading">
           <div>
-            <span className="inventory-eyebrow">상품 운영</span>
-            <h1>상품 관리</h1>
+            <span className="inventory-eyebrow">위탁상품 운영</span>
+            <h1>위탁상품관리</h1>
             <p>친구도매에서 가져온 상품을 확인하고 판매 정보를 편집하세요.</p>
           </div>
           <ProductSyncControl mode="changes" />

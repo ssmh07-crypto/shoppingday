@@ -5,8 +5,12 @@ import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 
 const navigation = [
-  { href: "/admin/products", label: "상품 관리", icon: "box" },
-  { href: "/admin/products/import", label: "상품 가져오기", icon: "download" },
+  { href: "/admin/products", label: "위탁상품관리", icon: "box" },
+  {
+    href: "/admin/products/import",
+    label: "위탁상품 가져오기",
+    icon: "download",
+  },
   { href: "/admin/keywords", label: "성장 상품 관리", icon: "trend" },
   { href: "/admin/sourcing", label: "소싱 조사", icon: "search" },
   { href: "/admin/wholesale-sites", label: "도매사이트 메모", icon: "link" },

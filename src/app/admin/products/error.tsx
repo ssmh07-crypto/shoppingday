@@ -29,7 +29,7 @@ export default function ProductsError({
         <button type="button" onClick={reset}>
           다시 불러오기
         </button>
-        <Link href="/admin/products">상품 목록으로 이동</Link>
+        <Link href="/admin/products">위탁상품 목록으로 이동</Link>
       </div>
     </main>
   );

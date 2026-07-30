@@ -81,6 +81,7 @@ const source: NaverProductPayloadSource = {
 };
 
 const profile: NaverPublicationProfile = {
+  immediateDiscountPercent: 10,
   deliveryInfo: {
     deliveryType: "DELIVERY",
     deliveryAttributeType: "NORMAL",
@@ -126,6 +127,11 @@ describe("네이버 v2 상품 payload 변환", () => {
       name: "레트로 메모 포스트잇",
       salePrice: 12_000,
       stockQuantity: 5,
+      customerBenefit: {
+        immediateDiscountPolicy: {
+          discountMethod: { value: 10, unitType: "PERCENT" },
+        },
+      },
       images: {
         representativeImage: {
           url: "https://shop-phinf.pstatic.net/primary.jpg",

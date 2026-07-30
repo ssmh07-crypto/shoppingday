@@ -42,7 +42,7 @@ async function renderPage(database: Database, researchId: string) {
             <span>소싱 등록 전용 편집</span>
             <h1>{research.sourcingKeyword || "새 소싱 상품"}</h1>
             <p>
-              이 초안은 일반 상품관리에 표시되지 않습니다. 상품명과 태그를
+              이 초안은 위탁상품관리에 표시되지 않습니다. 상품명과 태그를
               확정하고 카테고리·속성·이미지·판매 정책을 확인하세요.
             </p>
           </div>

@@ -85,11 +85,15 @@ const providedNoticeFieldSchema = z.object({
 const providedNoticeSchema = z.object({
   productInfoProvidedNoticeType: z.string().min(1),
   productInfoProvidedNoticeTypeName: z.string().min(1),
-  productInfoProvidedNoticeContents: z.array(providedNoticeFieldSchema).default([]),
+  productInfoProvidedNoticeContents: z
+    .array(providedNoticeFieldSchema)
+    .default([]),
 });
 const providedNoticesSchema = z.array(providedNoticeSchema);
 const uploadedImageSchema = z.object({ url: z.string().url() });
-const uploadedImagesSchema = z.object({ images: z.array(uploadedImageSchema).min(1).max(10) });
+const uploadedImagesSchema = z.object({
+  images: z.array(uploadedImageSchema).min(1).max(10),
+});
 const createdProductSchema = z.object({
   originProductNo: z.union([z.string(), z.number().int()]).transform(String),
   smartstoreChannelProductNo: z
@@ -111,6 +115,19 @@ const channelProductSellerTagSchema = z.looseObject({
   code: z.number().int().optional(),
   text: z.string().trim().min(1),
 });
+const recommendedSellerTagSchema = z.object({
+  code: z.number().int(),
+  text: z.string().trim().min(1),
+});
+const recommendedSellerTagsSchema = z
+  .union([
+    z.array(recommendedSellerTagSchema),
+    z.object({ tags: z.array(recommendedSellerTagSchema) }),
+    z.object({ data: z.array(recommendedSellerTagSchema) }),
+  ])
+  .transform((value) =>
+    Array.isArray(value) ? value : "tags" in value ? value.tags : value.data,
+  );
 const channelProductDeliveryInfoSchema = z.record(z.string(), z.json());
 const channelProductSchema = z.looseObject({
   originProductNo: z
@@ -139,6 +156,20 @@ const channelProductSchema = z.looseObject({
         })
         .optional(),
     }),
+    customerBenefit: z
+      .looseObject({
+        immediateDiscountPolicy: z
+          .looseObject({
+            discountMethod: z
+              .looseObject({
+                value: z.number(),
+                unitType: z.string(),
+              })
+              .optional(),
+          })
+          .optional(),
+      })
+      .optional(),
   }),
   smartstoreChannelProduct: z.looseObject({}).optional(),
 });
@@ -194,13 +225,15 @@ const changedProductOrderMoreSchema = z
   })
   .optional();
 const changedProductOrdersEnvelopeSchema = z.object({
-  data: z.union([
-    z.array(changedProductOrderSchema),
-    z.object({
-      lastChangeStatuses: z.array(changedProductOrderSchema).default([]),
-      more: changedProductOrderMoreSchema,
-    }),
-  ]).optional(),
+  data: z
+    .union([
+      z.array(changedProductOrderSchema),
+      z.object({
+        lastChangeStatuses: z.array(changedProductOrderSchema).default([]),
+        more: changedProductOrderMoreSchema,
+      }),
+    ])
+    .optional(),
 });
 const productOrderInfoSchema = z.object({
   order: z.object({
@@ -236,9 +269,8 @@ export type NaverCommerceUploadedImage = z.infer<typeof uploadedImageSchema>;
 export type NaverCommerceCreatedProduct = z.infer<
   typeof relayedCreatedProductSchema
 >;
-export type NaverCommerceChannelProduct = z.infer<
-  typeof channelProductSchema
->;
+export type NaverCommerceChannelProduct = z.infer<typeof channelProductSchema>;
+export type NaverCommerceSellerTag = z.infer<typeof recommendedSellerTagSchema>;
 export type NaverCommerceSellerAddress = z.infer<typeof sellerAddressSchema>;
 export type NaverCommerceDeliveryBundleGroup = z.infer<
   typeof deliveryBundleGroupSchema
@@ -362,6 +394,22 @@ export async function parseNaverCommerceChannelProduct(response: Response) {
   );
 }
 
+export async function parseNaverCommerceRecommendedSellerTags(
+  response: Response,
+) {
+  const parsed = recommendedSellerTagsSchema.safeParse(
+    await parseJson(response),
+  );
+  if (!parsed.success) {
+    throw new NaverCommerceError(
+      "invalid_response",
+      "네이버 추천 태그 응답 형식이 올바르지 않습니다.",
+      response.status,
+    );
+  }
+  return parsed.data;
+}
+
 export async function parseNaverCommerceSellerAddresses(response: Response) {
   return parseListResponse(
     response,
@@ -409,9 +457,7 @@ export async function parseNaverCommerceChangedProductOrders(
     return { productOrderIds: data.map((item) => item.productOrderId) };
   }
   return {
-    productOrderIds: data.lastChangeStatuses.map(
-      (item) => item.productOrderId,
-    ),
+    productOrderIds: data.lastChangeStatuses.map((item) => item.productOrderId),
     ...(data.more ? { more: data.more } : {}),
   };
 }
@@ -469,6 +515,10 @@ export async function createNaverCommerceSignature(
 
 export class NaverCommerceClient {
   private token?: { value: string; expiresAt: number };
+  private readonly sellerTagCache = new Map<
+    string,
+    NaverCommerceSellerTag | null
+  >();
 
   constructor(
     private readonly config: NaverCommerceConfig,
@@ -534,7 +584,9 @@ export class NaverCommerceClient {
   }
 
   async fetchProvidedNotices(categoryId?: string) {
-    const url = new URL(`${this.config.apiUrl}/v1/products-for-provided-notice`);
+    const url = new URL(
+      `${this.config.apiUrl}/v1/products-for-provided-notice`,
+    );
     if (categoryId) url.searchParams.set("categoryId", categoryId);
     return parseNaverCommerceProvidedNotices(await this.authorizedFetch(url));
   }
@@ -559,6 +611,16 @@ export class NaverCommerceClient {
       `${this.config.apiUrl}/v2/products/channel-products/${channelProductNo}`,
     );
     return parseNaverCommerceChannelProduct(await this.authorizedFetch(url));
+  }
+
+  async fetchRecommendTags(keyword: string) {
+    const normalizedKeyword = keyword.trim();
+    if (!normalizedKeyword) return [];
+    const url = new URL(`${this.config.apiUrl}/v2/tags/recommend-tags`);
+    url.searchParams.set("keyword", normalizedKeyword);
+    return parseNaverCommerceRecommendedSellerTags(
+      await this.authorizedFetch(url),
+    );
   }
 
   async fetchSellerAddresses() {
@@ -642,9 +704,10 @@ export class NaverCommerceClient {
   }
 
   async createProduct(payload: NaverProductPayload) {
+    const resolvedPayload = await this.resolveSellerTags(payload);
     const response = await this.authorizedJsonPost(
       new URL(`${this.config.apiUrl}/v2/products`),
-      payload,
+      resolvedPayload,
     );
     const parsed = await parseResponse(
       response,
@@ -659,12 +722,13 @@ export class NaverCommerceClient {
 
   async updateProduct(originProductNo: string, payload: NaverProductPayload) {
     assertNaverProductNo(originProductNo, "원상품");
+    const resolvedPayload = await this.resolveSellerTags(payload);
     const response = await this.authorizedJsonRequest(
       "PUT",
       new URL(
         `${this.config.apiUrl}/v2/products/origin-products/${originProductNo}`,
       ),
-      payload,
+      resolvedPayload,
     );
     const parsed = await parseResponse(
       response,
@@ -713,6 +777,39 @@ export class NaverCommerceClient {
       ),
     );
     return { success: true as const };
+  }
+
+  private async resolveSellerTags(
+    payload: NaverProductPayload,
+  ): Promise<NaverProductPayload> {
+    const seoInfo = payload.originProduct?.detailAttribute?.seoInfo;
+    if (!seoInfo?.sellerTags.length) return payload;
+    const sellerTags = await Promise.all(
+      seoInfo.sellerTags.map(async (tag) => {
+        if (tag.code !== undefined) return tag;
+        const key = normalizeSellerTag(tag.text);
+        let recommended = this.sellerTagCache.get(key);
+        if (recommended === undefined) {
+          const candidates = await this.fetchRecommendTags(tag.text);
+          recommended =
+            candidates.find(
+              (candidate) => normalizeSellerTag(candidate.text) === key,
+            ) ?? null;
+          this.sellerTagCache.set(key, recommended);
+        }
+        return recommended ?? { text: tag.text };
+      }),
+    );
+    return {
+      ...payload,
+      originProduct: {
+        ...payload.originProduct,
+        detailAttribute: {
+          ...payload.originProduct.detailAttribute,
+          seoInfo: { ...seoInfo, sellerTags },
+        },
+      },
+    };
   }
 
   private async authorizedFetch(
@@ -958,7 +1055,11 @@ function logNaverRequestTiming(input: {
   started: number;
 }) {
   const durationMs = Math.round(performance.now() - input.started);
-  if (durationMs < 1_000 && !input.errorCode && (input.responseStatus ?? 0) < 400)
+  if (
+    durationMs < 1_000 &&
+    !input.errorCode &&
+    (input.responseStatus ?? 0) < 400
+  )
     return;
   logger.info("naver_api_request_timing", {
     transport: input.transport,
@@ -1075,6 +1176,10 @@ function assertNaverProductNo(value: string, label: string) {
       `네이버 ${label} 번호 형식이 올바르지 않습니다.`,
     );
   }
+}
+
+function normalizeSellerTag(value: string) {
+  return value.normalize("NFKC").replace(/\s+/g, "").toLocaleLowerCase("ko-KR");
 }
 
 async function parseListResponse<T>(

@@ -21,6 +21,7 @@ export const naverDeliveryInfoSchema = jsonObjectSchema;
 
 const policyFields = {
   singleStockQuantity: z.number().int().min(0).max(99_999_999).nullable(),
+  immediateDiscountPercent: z.number().int().min(1).max(99).nullable(),
   deliveryInfo: jsonObjectSchema.nullable(),
   afterServiceInfo: z
     .object({
@@ -42,9 +43,7 @@ const policyFields = {
   taxType: z.enum(["TAX", "DUTYFREE", "SMALL"]).nullable(),
   minorPurchasable: z.boolean().nullable(),
   naverShoppingRegistration: z.boolean().nullable(),
-  channelProductDisplayStatusType: z
-    .enum(["ON", "SUSPENSION"])
-    .nullable(),
+  channelProductDisplayStatusType: z.enum(["ON", "SUSPENSION"]).nullable(),
 } satisfies z.ZodRawShape;
 
 export const naverPublicationPolicySchema = z.object(policyFields);
@@ -54,6 +53,7 @@ export const naverPublicationPolicyOverridesSchema = z
 
 export const emptyNaverPublicationPolicy: NaverPublicationPolicyData = {
   singleStockQuantity: null,
+  immediateDiscountPercent: null,
   deliveryInfo: null,
   afterServiceInfo: null,
   originAreaInfo: null,

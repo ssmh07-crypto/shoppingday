@@ -1,6 +1,7 @@
 import type { ProductRow } from "@/lib/db/schema";
 import {
   draftInputSchema,
+  draftStorageInputSchema,
   imagesFromSupplier,
   optionsFromSupplier,
   readyErrors,
@@ -24,6 +25,15 @@ export interface NaverRequirementLoader {
     }>;
   }>;
 }
+
+export type NaverProductSyncInput = {
+  draftVersion: number;
+  title: string;
+  searchTags: string[];
+  sellingPrice?: number | null;
+  naverCategoryId: string;
+  naverAttributes: DraftInput["naverAttributes"];
+};
 
 export class ProductEditService {
   constructor(
@@ -111,6 +121,41 @@ export class ProductEditService {
         "product_title_saved",
         {},
         status === "ready" ? current.product.readyAt : null,
+      ),
+    );
+  }
+  async syncFromNaver(
+    id: string,
+    ownerId: string,
+    remote: NaverProductSyncInput,
+  ) {
+    const current = await this.get(id, ownerId);
+    const input = draftStorageInputSchema.parse({
+      draftVersion: remote.draftVersion,
+      title: remote.title,
+      sourceTitleKeywords: current.product.sourceTitleKeywords,
+      searchTags: remote.searchTags,
+      sellingPrice: remote.sellingPrice ?? current.product.sellingPrice,
+      currency: current.product.currency,
+      description: current.product.description,
+      categoryId: current.product.categoryId,
+      naverCategoryId: remote.naverCategoryId,
+      selectedImages: current.product.selectedImages,
+      editedOptions: current.product.editedOptions,
+      naverAttributes: remote.naverAttributes,
+    });
+    validateSourcingTitle(current.supplier.code, input.title);
+    const changed = changedFields(current.product, input);
+    return this.handle(
+      await this.repo.save(
+        id,
+        ownerId,
+        input,
+        current.product.status,
+        changed,
+        "product_synced_from_naver",
+        {},
+        current.product.readyAt,
       ),
     );
   }

@@ -100,7 +100,7 @@ export function ImportForm() {
           </div>
           <div className="row" style={{ marginTop: 20 }}>
             <Link className="button secondary" href="/admin/products">
-              상품 목록으로 이동
+              위탁상품 목록으로 이동
             </Link>
             <Link
               className="button"

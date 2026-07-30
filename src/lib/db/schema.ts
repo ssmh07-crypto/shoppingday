@@ -249,6 +249,7 @@ export type DatabaseJsonObject = { [key: string]: DatabaseJsonValue };
 
 export interface NaverPublicationPolicyData {
   singleStockQuantity: number | null;
+  immediateDiscountPercent: number | null;
   deliveryInfo: DatabaseJsonObject | null;
   afterServiceInfo: {
     afterServiceTelephoneNumber: string;
@@ -385,12 +386,12 @@ export const products = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     ownerId: uuid("owner_id").references(() => userProfiles.userId),
     status: productStatusEnum("status").notNull().default("draft"),
-      title: text("title").notNull().default(""),
-      sourceTitleKeywords: jsonb("source_title_keywords")
-        .$type<string[]>()
-        .notNull()
-        .default([]),
-      searchTags: jsonb("search_tags").$type<string[]>().notNull().default([]),
+    title: text("title").notNull().default(""),
+    sourceTitleKeywords: jsonb("source_title_keywords")
+      .$type<string[]>()
+      .notNull()
+      .default([]),
+    searchTags: jsonb("search_tags").$type<string[]>().notNull().default([]),
     sellingPrice: integer("selling_price"),
     currency: text("currency").notNull().default("KRW"),
     description: text("description").notNull().default(""),
@@ -517,9 +518,7 @@ export const naverDeliveryPolicyTemplates = pgTable(
       .references(() => naverStoreConnections.id, { onDelete: "cascade" }),
     policyCode: text("policy_code").notNull(),
     name: text("name").notNull(),
-    deliveryInfo: jsonb("delivery_info")
-      .$type<DatabaseJsonObject>()
-      .notNull(),
+    deliveryInfo: jsonb("delivery_info").$type<DatabaseJsonObject>().notNull(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -589,6 +588,7 @@ export const channelPublicationPolicies = pgTable(
       .notNull()
       .default({
         singleStockQuantity: null,
+        immediateDiscountPercent: null,
         deliveryInfo: null,
         afterServiceInfo: null,
         originAreaInfo: null,
@@ -641,11 +641,9 @@ export const productPublicationPolicyOverrides = pgTable(
       .defaultNow(),
   },
   (table) => [
-    uniqueIndex("product_publication_policy_overrides_product_channel_store_uidx").on(
-      table.productId,
-      table.channel,
-      table.storeConnectionId,
-    ),
+    uniqueIndex(
+      "product_publication_policy_overrides_product_channel_store_uidx",
+    ).on(table.productId, table.channel, table.storeConnectionId),
     check(
       "product_publication_policy_overrides_channel_check",
       sql`${table.channel} in ('naver')`,
@@ -667,8 +665,9 @@ export const productPublications = pgTable(
     status: productPublicationStatusEnum("status").notNull(),
     originProductNo: text("origin_product_no"),
     channelProductNo: text("channel_product_no"),
-    remoteStatusType: text("remote_status_type")
-      .$type<"SALE" | "OUTOFSTOCK" | "SUSPENSION" | "DELETE">(),
+    remoteStatusType: text("remote_status_type").$type<
+      "SALE" | "OUTOFSTOCK" | "SUSPENSION" | "DELETE"
+    >(),
     lastPayloadHash: text("last_payload_hash"),
     attemptedPayloadHash: text("attempted_payload_hash").notNull(),
     lastRequestId: uuid("last_request_id").notNull(),

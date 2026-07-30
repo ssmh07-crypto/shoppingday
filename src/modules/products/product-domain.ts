@@ -147,7 +147,7 @@ export const naverAttributesSchema = z
       keys.add(key);
     });
   });
-export const draftInputSchema = z.object({
+export const draftStorageInputSchema = z.object({
   draftVersion: z.number().int().positive(),
   title: z.string().trim().max(PRODUCT_LIMITS.title),
   sourceTitleKeywords: z
@@ -181,9 +181,12 @@ export const draftInputSchema = z.object({
     .transform(normalizeImages),
   editedOptions: editedOptionsSchema,
   naverAttributes: naverAttributesSchema,
-}).superRefine((input, context) => {
-  addSearchTagQualityIssues(context, input.searchTags, input.title);
 });
+export const draftInputSchema = draftStorageInputSchema.superRefine(
+  (input, context) => {
+    addSearchTagQualityIssues(context, input.searchTags, input.title);
+  },
+);
 export type DraftInput = z.infer<typeof draftInputSchema>;
 
 export function normalizeTags(tags: string[]) {

@@ -63,6 +63,30 @@ export class SourcingResearchRepository {
             and ${productPublications.channel} = 'naver'
             and ${productPublications.status} = 'published'
         )`,
+        publicationStatus: sql<string | null>`(
+          select ${productPublications.status}
+          from ${productPublications}
+          where ${productPublications.productId} = ${products.id}
+            and ${productPublications.channel} = 'naver'
+          order by ${productPublications.updatedAt} desc
+          limit 1
+        )`,
+        channelProductNo: sql<string | null>`(
+          select ${productPublications.channelProductNo}
+          from ${productPublications}
+          where ${productPublications.productId} = ${products.id}
+            and ${productPublications.channel} = 'naver'
+          order by ${productPublications.updatedAt} desc
+          limit 1
+        )`,
+        remoteStatusType: sql<string | null>`(
+          select ${productPublications.remoteStatusType}
+          from ${productPublications}
+          where ${productPublications.productId} = ${products.id}
+            and ${productPublications.channel} = 'naver'
+          order by ${productPublications.updatedAt} desc
+          limit 1
+        )`,
         updatedAt: sourcingResearches.updatedAt,
       })
       .from(sourcingResearches)
@@ -156,8 +180,13 @@ export class SourcingResearchRepository {
         .for("update");
       if (!current) return row;
 
-      const changedFields = (["title", "sourceTitleKeywords", "searchTags", "sellingPrice"] as const)
-        .filter((field) => JSON.stringify(current[field]) !== JSON.stringify(registrationInput[field]));
+      const changedFields = (
+        ["title", "sourceTitleKeywords", "searchTags", "sellingPrice"] as const
+      ).filter(
+        (field) =>
+          JSON.stringify(current[field]) !==
+          JSON.stringify(registrationInput[field]),
+      );
       // Once registration editing has started, the user's selected title,
       // tags, and price take precedence over later sourcing-note changes.
       if (current.status === "draft" && changedFields.length) {
@@ -183,8 +212,12 @@ export class SourcingResearchRepository {
           entityId: row.registrationProductId,
           action: "sourcing_registration_draft_synced",
           changedFields: [...changedFields],
-          oldValues: Object.fromEntries(changedFields.map((field) => [field, current[field]])),
-          newValues: Object.fromEntries(changedFields.map((field) => [field, updatedProduct![field]])),
+          oldValues: Object.fromEntries(
+            changedFields.map((field) => [field, current[field]]),
+          ),
+          newValues: Object.fromEntries(
+            changedFields.map((field) => [field, updatedProduct![field]]),
+          ),
           requestId: randomUUID(),
         });
       }
@@ -192,7 +225,10 @@ export class SourcingResearchRepository {
       const [supplierLink] = await tx
         .select({ supplierProductId: productSupplierLinks.supplierProductId })
         .from(productSupplierLinks)
-        .innerJoin(supplierProducts, eq(supplierProducts.id, productSupplierLinks.supplierProductId))
+        .innerJoin(
+          supplierProducts,
+          eq(supplierProducts.id, productSupplierLinks.supplierProductId),
+        )
         .innerJoin(suppliers, eq(suppliers.id, supplierProducts.supplierId))
         .where(
           and(
@@ -207,9 +243,10 @@ export class SourcingResearchRepository {
           .update(supplierProducts)
           .set({
             originalName: registrationInput.originalName,
-            supplierPrice: registrationInput.supplierPrice === null
-              ? null
-              : String(registrationInput.supplierPrice),
+            supplierPrice:
+              registrationInput.supplierPrice === null
+                ? null
+                : String(registrationInput.supplierPrice),
             updatedAt: new Date(),
           })
           .where(eq(supplierProducts.id, supplierLink.supplierProductId));
