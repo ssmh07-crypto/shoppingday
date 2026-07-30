@@ -85,6 +85,31 @@ export const userProfiles = pgTable("user_profiles", {
     .defaultNow(),
 });
 
+export const wholesaleSiteLinks = pgTable(
+  "wholesale_site_links",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    ownerId: uuid("owner_id")
+      .notNull()
+      .references(() => userProfiles.userId, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    url: text("url").notNull(),
+    description: text("description").notNull().default(""),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("wholesale_site_links_owner_updated_idx").on(
+      table.ownerId,
+      table.updatedAt,
+    ),
+  ],
+);
+
 export const productProcessingSettings = pgTable(
   "product_processing_settings",
   {
