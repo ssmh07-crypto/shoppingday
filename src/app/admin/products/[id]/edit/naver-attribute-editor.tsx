@@ -63,9 +63,10 @@ export function NaverAttributeEditor({
               {attribute.attributeName}
               <small>{attributeTypeLabel(type)}</small>
             </legend>
-            {type === "RANGE" && !options.length ? (
+            {type === "RANGE" ? (
               <RangeAttribute
                 attribute={attribute}
+                options={options}
                 units={units}
                 value={selected[0]}
                 onChange={(next) =>
@@ -165,11 +166,13 @@ export function NaverAttributeEditor({
 
 function RangeAttribute({
   attribute,
+  options,
   units,
   value,
   onChange,
 }: {
   attribute: NaverAttributeDefinition;
+  options: NaverAttributeCandidate[];
   units: Array<{ id: string; unitCodeName: string }>;
   value?: NaverProductAttribute;
   onChange: (value: NaverProductAttribute) => void;
@@ -183,27 +186,78 @@ function RangeAttribute({
   };
   return (
     <div className="drawer-naver-range-inputs">
-      <input
-        type="text"
-        inputMode="decimal"
-        aria-label={`${attribute.attributeName} 최소값`}
-        placeholder="최소값"
-        value={current.minValue}
-        onChange={(event) =>
-          onChange({ ...current, minValue: event.target.value })
-        }
-      />
-      <span>~</span>
-      <input
-        type="text"
-        inputMode="decimal"
-        aria-label={`${attribute.attributeName} 최대값`}
-        placeholder="최대값"
-        value={current.maxValue}
-        onChange={(event) =>
-          onChange({ ...current, maxValue: event.target.value })
-        }
-      />
+      {options.length > 0 && (
+        <select
+          aria-label={`${attribute.attributeName} 구간`}
+          value={current.attributeValueSeq ?? ""}
+          onChange={(event) => {
+            const option = options.find(
+              (item) =>
+                item.attributeValueSeq === Number(event.target.value),
+            );
+            onChange({
+              ...current,
+              attributeValueSeq: option?.attributeValueSeq ?? null,
+              unitCode:
+                current.unitCode ??
+                option?.minAttributeValueUnitCode ??
+                option?.maxAttributeValueUnitCode ??
+                attribute.representativeUnitCode ??
+                null,
+            });
+          }}
+        >
+          <option value="">구간을 선택해 주세요</option>
+          {options.map((option) => (
+            <option
+              key={option.attributeValueSeq}
+              value={option.attributeValueSeq}
+            >
+              {candidateLabel(option, units, "RANGE")}
+            </option>
+          ))}
+        </select>
+      )}
+      {options.length > 0 ? (
+        <input
+          type="text"
+          inputMode="decimal"
+          aria-label={`${attribute.attributeName} 실제값`}
+          placeholder="정확한 값"
+          value={current.minValue}
+          onChange={(event) =>
+            onChange({
+              ...current,
+              minValue: event.target.value,
+              maxValue: "",
+            })
+          }
+        />
+      ) : (
+        <>
+          <input
+            type="text"
+            inputMode="decimal"
+            aria-label={`${attribute.attributeName} 최소값`}
+            placeholder="최소값"
+            value={current.minValue}
+            onChange={(event) =>
+              onChange({ ...current, minValue: event.target.value })
+            }
+          />
+          <span>~</span>
+          <input
+            type="text"
+            inputMode="decimal"
+            aria-label={`${attribute.attributeName} 최대값`}
+            placeholder="최대값"
+            value={current.maxValue}
+            onChange={(event) =>
+              onChange({ ...current, maxValue: event.target.value })
+            }
+          />
+        </>
+      )}
       {attribute.unitUsable && (
         <select
           aria-label={`${attribute.attributeName} 단위`}

@@ -1252,7 +1252,7 @@ export function ProductEditor({
         categoryRequirements &&
         categoryRequirements.requiredAttributes.every((attribute) =>
           isNaverAttributeComplete(
-            attribute.attributeSeq,
+            attribute,
             categoryRequirements.attributeValues,
             form.naverAttributes,
           ),
@@ -2545,22 +2545,25 @@ function NaverAttributesPanel({
 }
 
 function isNaverAttributeComplete(
-  attributeSeq: number,
+  attribute: CategoryRequirements["requiredAttributes"][number],
   candidates: CategoryRequirements["attributeValues"],
   selected: NaverProductAttribute[],
 ) {
   const attributeCandidates = candidates.filter(
-    (candidate) => candidate.attributeSeq === attributeSeq,
+    (candidate) => candidate.attributeSeq === attribute.attributeSeq,
   );
   const attributeSelections = selected.filter(
-    (value) => value.attributeSeq === attributeSeq,
+    (value) => value.attributeSeq === attribute.attributeSeq,
   );
   return attributeCandidates.length
-    ? attributeSelections.some((value) =>
-        attributeCandidates.some(
-          (candidate) =>
-            candidate.attributeValueSeq === value.attributeValueSeq,
-        ),
+    ? attributeSelections.some(
+        (value) =>
+          attributeCandidates.some(
+            (candidate) =>
+              candidate.attributeValueSeq === value.attributeValueSeq,
+          ) &&
+          (attribute.attributeClassificationType !== "RANGE" ||
+            Boolean(value.minValue.trim() || value.maxValue.trim())),
       )
     : attributeSelections.some((value) => value.minValue || value.maxValue);
 }

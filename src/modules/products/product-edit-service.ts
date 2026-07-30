@@ -18,7 +18,11 @@ import type { ProductEditRepository } from "./product-edit-repository";
 
 export interface NaverRequirementLoader {
   get(categoryId: string): Promise<{
-    requiredAttributes: Array<{ attributeSeq: number; attributeName: string }>;
+    requiredAttributes: Array<{
+      attributeSeq: number;
+      attributeName: string;
+      attributeClassificationType?: "SINGLE_SELECT" | "MULTI_SELECT" | "RANGE";
+    }>;
     attributeValues: Array<{
       attributeSeq: number;
       attributeValueSeq: number;
@@ -177,11 +181,16 @@ export class ProductEditService {
             (value) => value.attributeSeq === attribute.attributeSeq,
           );
           return candidates.length
-            ? !selected.some((value) =>
-                candidates.some(
-                  (candidate) =>
-                    candidate.attributeValueSeq === value.attributeValueSeq,
-                ),
+            ? !selected.some(
+                (value) =>
+                  candidates.some(
+                    (candidate) =>
+                      candidate.attributeValueSeq === value.attributeValueSeq,
+                  ) &&
+                  (attribute.attributeClassificationType !== "RANGE" ||
+                    Boolean(
+                      value.minValue.trim() || value.maxValue.trim(),
+                    )),
               )
             : !selected.some((value) => value.minValue || value.maxValue);
         });

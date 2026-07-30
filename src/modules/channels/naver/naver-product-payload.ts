@@ -381,11 +381,13 @@ function mapAttributes(
       {
         attributeSeq: attribute.attributeSeq,
         attributeValueSeq: attribute.attributeValueSeq,
-        ...(attribute.unitCode && (attribute.minValue || attribute.maxValue)
+        ...(attribute.minValue.trim() || attribute.maxValue.trim()
           ? {
               attributeRealValue:
                 attribute.minValue.trim() || attribute.maxValue.trim(),
-              attributeRealValueUnitCode: attribute.unitCode,
+              ...(attribute.unitCode
+                ? { attributeRealValueUnitCode: attribute.unitCode }
+                : {}),
             }
           : {}),
       },

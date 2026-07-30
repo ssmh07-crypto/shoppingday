@@ -70,6 +70,10 @@ function setup(
       requiredAttributes: Array<{
         attributeSeq: number;
         attributeName: string;
+        attributeClassificationType?:
+          | "SINGLE_SELECT"
+          | "MULTI_SELECT"
+          | "RANGE";
       }>;
       attributeValues: Array<{
         attributeSeq: number;
@@ -228,6 +232,47 @@ describe("상품 편집 서비스", () => {
     await service.markReady("p1", "u1", {
       ...draft,
       naverAttributes: [{ ...selection, attributeValueSeq: 100 }],
+    });
+    expect(repo.save).toHaveBeenCalledTimes(1);
+  });
+  it("범위형 필수 속성은 구간과 실제값을 모두 요구한다", async () => {
+    const requirements = {
+      get: vi.fn().mockResolvedValue({
+        requiredAttributes: [
+          {
+            attributeSeq: 20,
+            attributeName: "사이즈",
+            attributeClassificationType: "RANGE" as const,
+          },
+        ],
+        attributeValues: [
+          { attributeSeq: 20, attributeValueSeq: 10773738 },
+        ],
+      }),
+    };
+    const { service, repo } = setup(undefined, requirements);
+    const selectedRange = {
+      attributeSeq: 20,
+      attributeValueSeq: 10773738,
+      minValue: "",
+      maxValue: "",
+      unitCode: "A02036",
+    };
+
+    await expect(
+      service.markReady("p1", "u1", {
+        ...draft,
+        naverAttributes: [selectedRange],
+      }),
+    ).rejects.toMatchObject({
+      code: "product_validation",
+      errors: { naverAttributes: expect.stringContaining("사이즈") },
+    });
+    expect(repo.save).not.toHaveBeenCalled();
+
+    await service.markReady("p1", "u1", {
+      ...draft,
+      naverAttributes: [{ ...selectedRange, minValue: "280" }],
     });
     expect(repo.save).toHaveBeenCalledTimes(1);
   });

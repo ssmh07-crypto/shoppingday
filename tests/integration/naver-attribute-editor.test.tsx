@@ -38,6 +38,27 @@ describe("네이버 필수 속성 입력", () => {
       '"unitCode":"A02036"',
     );
   });
+
+  it("범위형 사이즈는 구간과 정확한 실제값을 함께 입력한다", () => {
+    render(<RangeHarness />);
+
+    fireEvent.change(screen.getByRole("combobox", { name: "사이즈 구간" }), {
+      target: { value: "10773738" },
+    });
+    fireEvent.change(screen.getByRole("textbox", { name: "사이즈 실제값" }), {
+      target: { value: "280" },
+    });
+
+    expect(screen.getByTestId("range-attributes")).toHaveTextContent(
+      '"attributeValueSeq":10773738',
+    );
+    expect(screen.getByTestId("range-attributes")).toHaveTextContent(
+      '"minValue":"280"',
+    );
+    expect(screen.getByTestId("range-attributes")).toHaveTextContent(
+      '"unitCode":"A02036"',
+    );
+  });
 });
 
 function Harness() {
@@ -81,6 +102,39 @@ function Harness() {
         onChange={setValue}
       />
       <output data-testid="attributes">{JSON.stringify(value)}</output>
+    </>
+  );
+}
+
+function RangeHarness() {
+  const [value, setValue] = useState<NaverProductAttribute[]>([]);
+  return (
+    <>
+      <NaverAttributeEditor
+        attributes={[
+          {
+            attributeSeq: 4,
+            attributeName: "사이즈",
+            attributeClassificationType: "RANGE",
+            unitUsable: true,
+            representativeUnitCode: "A02036",
+          },
+        ]}
+        candidates={[
+          {
+            attributeSeq: 4,
+            attributeValueSeq: 10773738,
+            minAttributeValue: "275",
+            maxAttributeValue: "285",
+            minAttributeValueUnitCode: "A02036",
+            maxAttributeValueUnitCode: "A02036",
+          },
+        ]}
+        units={[{ id: "A02036", unitCodeName: "mm" }]}
+        value={value}
+        onChange={setValue}
+      />
+      <output data-testid="range-attributes">{JSON.stringify(value)}</output>
     </>
   );
 }
