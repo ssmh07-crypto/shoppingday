@@ -3455,6 +3455,10 @@ td small {
   background: #dcfae6;
   color: #087443;
 }
+.registration-badge.published {
+  background: #dcfae6;
+  color: #067647;
+}
 .registration-start-action {
   display: grid;
   gap: 5px;

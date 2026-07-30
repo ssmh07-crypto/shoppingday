@@ -5,6 +5,7 @@ import type { Database } from "@/lib/db";
 import {
   productSupplierLinks,
   productAuditLogs,
+  productPublications,
   products,
   sourcingResearches,
   supplierProducts,
@@ -55,6 +56,13 @@ export class SourcingResearchRepository {
         productStatus: products.status,
         productTitle: products.title,
         productSellingPrice: products.sellingPrice,
+        smartstorePublished: sql<boolean>`exists (
+          select 1
+          from ${productPublications}
+          where ${productPublications.productId} = ${products.id}
+            and ${productPublications.channel} = 'naver'
+            and ${productPublications.status} = 'published'
+        )`,
         updatedAt: sourcingResearches.updatedAt,
       })
       .from(sourcingResearches)

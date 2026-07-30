@@ -3,6 +3,7 @@ import { requireAdminPage } from "@/lib/auth/admin";
 import { withDbReadRecovery, type Database } from "@/lib/db";
 import { isNaverCommerceConfigured } from "@/modules/channels/naver/naver-category-service";
 import { NaverStoreSettingsRepository } from "@/modules/channels/naver/naver-store-settings-repository";
+import { registrationDisplay } from "@/modules/sourcing/registration-display";
 import { createSourcingResearchService } from "@/modules/sourcing/sourcing-factory";
 import { RegistrationStartButton } from "./registration-start-button";
 
@@ -94,7 +95,7 @@ async function renderPage(database: Database) {
                   <th>소싱 아이템</th>
                   <th>검색수</th>
                   <th>6개월 매출</th>
-                  <th>예상 판매가</th>
+                  <th>판매가</th>
                   <th>등록 상태</th>
                   <th>관리</th>
                 </tr>
@@ -110,12 +111,9 @@ async function renderPage(database: Database) {
                     </td>
                     <td>{formatNumber(item.monthlySearchVolume)}</td>
                     <td>{formatRevenue(item.sixMonthRevenue)}</td>
-                    <td>{formatWon(item.expectedSellingPrice)}</td>
+                    <td>{formatWon(registrationDisplay(item).sellingPrice)}</td>
                     <td>
-                      <RegistrationStatus
-                        status={item.productStatus}
-                        productId={item.registrationProductId}
-                      />
+                      <RegistrationStatus display={registrationDisplay(item)} />
                     </td>
                     <td>
                       {item.registrationProductId ? (
@@ -150,23 +148,13 @@ async function renderPage(database: Database) {
 }
 
 function RegistrationStatus({
-  status,
-  productId,
+  display,
 }: {
-  status: string | null;
-  productId: string | null;
+  display: ReturnType<typeof registrationDisplay>;
 }) {
-  if (!productId)
-    return <span className="registration-badge waiting">초안 생성 전</span>;
-  const labels: Record<string, string> = {
-    draft: "입력 대기",
-    editing: "편집 중",
-    ready: "등록 준비 완료",
-    archived: "보관",
-  };
   return (
-    <span className={`registration-badge ${status ?? "draft"}`}>
-      {labels[status ?? "draft"] ?? status}
+    <span className={`registration-badge ${display.statusClassName}`}>
+      {display.statusLabel}
     </span>
   );
 }
