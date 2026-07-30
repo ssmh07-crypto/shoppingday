@@ -86,6 +86,16 @@
       });
     }
 
+    if (optionState.available.length) {
+      return makeResult(requestUrl, "available", {
+        productName,
+        evidence: [
+          `선택 가능한 상품 옵션 ${optionState.available.length}개를 확인했습니다.`,
+        ],
+        availableOptions: optionState.available,
+      });
+    }
+
     const purchaseButton = Array.from(
       root.querySelectorAll(
         "#btnBuy, .xans-product-action a, .xans-product-action button, [onclick*='product_submit']",

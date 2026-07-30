@@ -120,4 +120,37 @@ describe("Zicgam dropship availability parser", () => {
 
     expect(result.status).toBe("available");
   });
+
+  it("records available when selectable options exist without a recognized purchase button", () => {
+    document.body.innerHTML = `
+      <section class="xans-product-detail">
+        <div class="infoArea">
+          <h2>국산 두툼 욕실화 280mm 4color</h2>
+          <div class="xans-product-option">
+            <select id="product_option_id1">
+              <option value="*">옵션 선택</option>
+              <option value="SAND">샌드</option>
+              <option value="IVORY">아이보리</option>
+              <option value="GREEN">그린</option>
+              <option value="CHARCOAL">차콜</option>
+            </select>
+          </div>
+        </div>
+      </section>
+    `;
+
+    const result = parserGlobal.ShoppingdayZicgamStockParser.inspect(
+      document,
+      { pathname: "/product/detail.html" },
+      productUrl,
+    );
+
+    expect(result.status).toBe("available");
+    expect(result.availableOptions).toEqual([
+      "샌드",
+      "아이보리",
+      "그린",
+      "차콜",
+    ]);
+  });
 });
