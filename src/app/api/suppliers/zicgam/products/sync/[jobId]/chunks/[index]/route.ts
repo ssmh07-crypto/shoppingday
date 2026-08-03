@@ -1,12 +1,11 @@
 import { NextResponse } from "next/server";
 import {
+  createZicgamSignedUpload,
   isZicgamJobId,
-  uploadZicgamChunk,
   verifyZicgamUploadToken,
-  ZICGAM_CHUNK_LIMIT,
 } from "@/modules/suppliers/zicgam/zicgam-batch-storage";
 
-export async function PUT(
+export async function POST(
   request: Request,
   context: { params: Promise<{ jobId: string; index: string }> },
 ) {
@@ -42,19 +41,6 @@ export async function PUT(
       { status: 401 },
     );
   }
-  const contentLength = Number(request.headers.get("content-length") ?? "0");
-  if (!contentLength || contentLength > ZICGAM_CHUNK_LIMIT || !request.body) {
-    return NextResponse.json(
-      {
-        success: false,
-        error: {
-          code: "payload_too_large",
-          message: "직감 수집 청크 크기를 확인해 주세요.",
-        },
-      },
-      { status: 413 },
-    );
-  }
-  await uploadZicgamChunk(jobId, index, request.body);
-  return NextResponse.json({ success: true, index });
+  const signedUpload = await createZicgamSignedUpload(jobId, index);
+  return NextResponse.json({ success: true, index, ...signedUpload });
 }
