@@ -92,7 +92,7 @@ export function ZicgamFullImport() {
     };
   }, [requestId]);
 
-  const extensionReady = extension.available && isMinimumVersion(extension.version, "0.4.2");
+  const extensionReady = extension.available && isMinimumVersion(extension.version, "0.4.3");
   const running = ["starting", "discovering", "importing", "stopping"].includes(phase);
   const percent = useMemo(() => {
     const total = progress?.total ?? 0;
@@ -139,7 +139,7 @@ export function ZicgamFullImport() {
       <p className={`notice${extensionReady ? "" : " error"}`}>
         {extensionReady
           ? `Chrome 확장 프로그램 ${extension.version ?? ""} 연결됨`
-          : `Chrome 확장 프로그램 0.4.2 이상이 필요합니다${extension.version ? ` (현재 ${extension.version})` : ""}. 확장을 다시 로드하고 이 페이지를 강력 새로고침해 주세요.`}
+          : `Chrome 확장 프로그램 0.4.3 이상이 필요합니다${extension.version ? ` (현재 ${extension.version})` : ""}. 확장을 다시 로드하고 이 페이지를 강력 새로고침해 주세요.`}
       </p>
       {phase === "discovering" && (
         <p className="notice">

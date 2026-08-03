@@ -3,6 +3,7 @@
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 type CatalogParser = {
+  findAllProductsListUrl(root: Document, baseUrl: string): string | null;
   discoverPage(root: Document, baseUrl: string): {
     productUrls: string[];
     listUrls: string[];
@@ -37,6 +38,36 @@ beforeEach(() => {
 });
 
 describe("Zicgam full catalog parser", () => {
+  it("selects only the all-products catalog entry from the home navigation", () => {
+    document.body.innerHTML = `
+      <nav id="category">
+        <a href="/product/list.html?cate_no=24">전체상품</a>
+        <a href="/product/list.html?cate_no=48">욕실용품</a>
+        <a href="/product/list.html?cate_no=77">품절상품</a>
+      </nav>
+    `;
+
+    expect(
+      parserGlobal.ShoppingdayZicgamCatalogParser.findAllProductsListUrl(
+        document,
+        "https://zicgam.com/index.html",
+      ),
+    ).toBe("https://zicgam.com/product/list.html?cate_no=24");
+  });
+
+  it("does not guess another category when an all-products link is absent", () => {
+    document.body.innerHTML = `
+      <nav id="category"><a href="/product/list.html?cate_no=48">욕실용품</a></nav>
+    `;
+
+    expect(
+      parserGlobal.ShoppingdayZicgamCatalogParser.findAllProductsListUrl(
+        document,
+        "https://zicgam.com/index.html",
+      ),
+    ).toBeNull();
+  });
+
   it("discovers and deduplicates category, pagination, and product links", () => {
     document.body.innerHTML = `
       <ul class="prdList">

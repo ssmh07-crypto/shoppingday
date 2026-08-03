@@ -73,7 +73,18 @@ async function runCatalogImport() {
 }
 
 async function discoverCatalog(request) {
-  const queue = [request.startUrl];
+  const entryPage = await fetchDocument(request.startUrl);
+  const allProductsUrl =
+    ShoppingdayZicgamCatalogParser.findAllProductsListUrl(
+      entryPage.document,
+      entryPage.url,
+    );
+  if (!allProductsUrl) {
+    throw new Error(
+      "직감 홈에서 전체상품 목록 주소를 찾지 못해 작업을 중단했습니다.",
+    );
+  }
+  const queue = [allProductsUrl];
   const visited = new Set();
   const products = new Map();
   while (queue.length) {
@@ -83,9 +94,7 @@ async function discoverCatalog(request) {
     const url = queue.shift();
     if (!url || visited.has(url)) continue;
     visited.add(url);
-    const page = url === location.href
-      ? { document, url: location.href }
-      : await fetchDocument(url);
+    const page = await fetchDocument(url);
     if (
       new URL(page.url).pathname.includes("/member/login") ||
       page.document.querySelector("form[action*='/member/login'], input[name='member_id']")

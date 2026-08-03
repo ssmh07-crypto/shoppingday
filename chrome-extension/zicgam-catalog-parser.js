@@ -39,6 +39,22 @@
     };
   }
 
+  function findAllProductsListUrl(root, baseUrl) {
+    for (const anchor of root.querySelectorAll("a[href]")) {
+      const label = normalizeText(
+        `${anchor.textContent ?? ""} ${anchor.getAttribute("title") ?? ""} ${anchor.querySelector("img")?.getAttribute("alt") ?? ""}`,
+      );
+      if (!/^(전체\s*(?:상품|보기)|ALL(?:\s*PRODUCTS?)?)$/i.test(label)) {
+        continue;
+      }
+      const url = safeUrl(anchor.getAttribute("href"), baseUrl);
+      if (!url || url.hostname !== "zicgam.com") continue;
+      const listUrl = canonicalListUrl(url);
+      if (listUrl) return listUrl;
+    }
+    return null;
+  }
+
   function extractProduct(root, pageUrl, stockParser) {
     const url = new URL(pageUrl);
     const externalProductId = productNo(url);
@@ -223,6 +239,7 @@
 
   globalThis.ShoppingdayZicgamCatalogParser = {
     discoverPage,
+    findAllProductsListUrl,
     extractProduct,
     productNo,
   };
