@@ -30,7 +30,11 @@ chrome.tabs.onRemoved.addListener((tabId) => {
 async function handleMessage(message, sender) {
   if (message?.type === "shoppingday.rank.ping") {
     assertShoppingdaySender(sender);
-    return { ok: true, version: chrome.runtime.getManifest().version };
+    return {
+      ok: true,
+      version: chrome.runtime.getManifest().version,
+      catalog: await getCatalogStatus(sender.tab?.id),
+    };
   }
 
   if (message?.type === "shoppingday.rank.request") {
@@ -151,6 +155,12 @@ async function handleMessage(message, sender) {
         payload: request,
         createdAt: Date.now(),
         cancelled: false,
+        latest: {
+          type: "shoppingday.zicgam.catalog.starting",
+          progress: null,
+          updatedAt: Date.now(),
+        },
+        stats: { created: 0, updated: 0, unchanged: 0, failed: 0 },
       },
     });
     await chrome.tabs.update(tab.id, { url: request.startUrl, active: true });
@@ -188,7 +198,7 @@ async function handleMessage(message, sender) {
       return { ok: false, message: "직감 전체 가져오기 요청이 만료되었습니다." };
     }
     if (pending.cancelled) return { ok: false, cancelled: true };
-    const response = await chrome.tabs.sendMessage(pending.sourceTabId, {
+    const forwarded = {
       type: message.type,
       requestId: pending.requestId,
       product: message.product,
@@ -196,12 +206,47 @@ async function handleMessage(message, sender) {
       summary: message.summary,
       url: message.url,
       message: message.message,
+    };
+    let updatedPending = {
+      ...pending,
+      latest: catalogStatusSnapshot(forwarded),
+    };
+    if (message.type === "shoppingday.zicgam.catalog.item_failed") {
+      updatedPending = {
+        ...updatedPending,
+        stats: {
+          ...pending.stats,
+          failed: Number(pending.stats?.failed ?? 0) + 1,
+        },
+      };
+    }
+    await chrome.storage.session.set({
+      [pendingKey(workerTabId)]: updatedPending,
     });
-    if (
-      message.type === "shoppingday.zicgam.catalog.complete" ||
-      message.type === "shoppingday.zicgam.catalog.failed"
-    ) {
-      await chrome.storage.session.remove(pendingKey(workerTabId));
+    const needsPageResponse =
+      message.type === "shoppingday.zicgam.catalog.product" ||
+      message.type === "shoppingday.zicgam.catalog.discovery_complete";
+    const response = needsPageResponse
+      ? await sendCatalogMessageWithRetry(pending.sourceTabId, forwarded)
+      : await chrome.tabs.sendMessage(pending.sourceTabId, forwarded).catch(() => null);
+    if (message.type === "shoppingday.zicgam.catalog.product" && response?.result?.action) {
+      const action = response.result.action;
+      const stats = {
+        ...updatedPending.stats,
+        [action]: Number(updatedPending.stats?.[action] ?? 0) + 1,
+      };
+      updatedPending = {
+        ...updatedPending,
+        stats,
+        latest: catalogStatusSnapshot({
+          ...forwarded,
+          type: "shoppingday.zicgam.catalog.product_saved",
+          result: response.result,
+        }),
+      };
+      await chrome.storage.session.set({
+        [pendingKey(workerTabId)]: updatedPending,
+      });
     }
     return response?.ok === false
       ? response
@@ -326,6 +371,44 @@ async function getPending(tabId) {
     return null;
   }
   return pending;
+}
+
+async function getCatalogStatus(sourceTabId) {
+  if (!sourceTabId) return null;
+  const tab = await findCatalogTab(sourceTabId);
+  const pending = await getPending(tab?.id);
+  if (!pending || pending.kind !== "zicgam_catalog" || pending.cancelled) return null;
+  return {
+    active: true,
+    requestId: pending.requestId,
+    latest: pending.latest ?? null,
+    stats: pending.stats ?? null,
+  };
+}
+
+function catalogStatusSnapshot(message) {
+  return {
+    type: message.type,
+    progress: message.progress ?? null,
+    summary: message.summary ?? null,
+    url: message.url ?? null,
+    message: message.message ?? null,
+    result: message.result ?? null,
+    updatedAt: Date.now(),
+  };
+}
+
+async function sendCatalogMessageWithRetry(tabId, message) {
+  let lastError = null;
+  for (let attempt = 0; attempt < 15; attempt += 1) {
+    try {
+      return await chrome.tabs.sendMessage(tabId, message);
+    } catch (error) {
+      lastError = error;
+      await new Promise((resolve) => setTimeout(resolve, 1_000));
+    }
+  }
+  throw lastError ?? new Error("Shoppingday 가져오기 화면에 연결하지 못했습니다.");
 }
 
 function pendingKey(tabId) {

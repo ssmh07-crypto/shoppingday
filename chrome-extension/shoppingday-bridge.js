@@ -151,6 +151,14 @@ async function reportStatus() {
         },
       }),
     );
+    if (response?.catalog?.active && response.catalog.latest) {
+      dispatchCatalogProgress(response.catalog.requestId, {
+        ...catalogProgressDetail(response.catalog.latest),
+        counts: response.catalog.stats,
+        restored: true,
+        updatedAt: response.catalog.latest.updatedAt,
+      });
+    }
   } catch {
     window.dispatchEvent(
       new CustomEvent(STATUS_EVENT, {
@@ -208,7 +216,7 @@ async function saveCatalogProduct(message) {
       progress: message.progress,
       result: body,
     });
-    return { ok: true };
+    return { ok: true, result: body };
   } catch (error) {
     const detail = {
       phase: "item_failed",
@@ -222,16 +230,34 @@ async function saveCatalogProduct(message) {
 
 function catalogProgressDetail(message) {
   const suffix = message.type.split(".").at(-1);
+  if (suffix === "starting") {
+    return { phase: "starting", message: "직감 전체 가져오기를 시작하고 있습니다." };
+  }
   if (suffix === "discovery") return { phase: "discovering", progress: message.progress };
-  if (suffix === "import_started" || suffix === "item_started") {
+  if (suffix === "discovery_complete") {
+    return {
+      phase: "discovery_complete",
+      progress: message.progress,
+      message: "전체상품 목록 확인을 마쳤습니다.",
+    };
+  }
+  if (
+    suffix === "import_started" ||
+    suffix === "item_started" ||
+    suffix === "product" ||
+    suffix === "product_saved"
+  ) {
     return {
       phase: "importing",
       progress: message.progress,
+      result: message.result,
       url: message.url,
       message:
         suffix === "import_started"
           ? "상품 상세 정보 저장을 시작합니다."
-          : `${message.progress?.current ?? 0}번째 상품 상세 정보를 확인하고 있습니다.`,
+          : suffix === "product_saved"
+            ? `${message.progress?.processed ?? 0}개 상품 저장을 완료했습니다.`
+            : `${message.progress?.current ?? (message.progress?.processed ?? 0) + 1}번째 상품 상세 정보를 확인하고 있습니다.`,
     };
   }
   if (suffix === "item_failed") {

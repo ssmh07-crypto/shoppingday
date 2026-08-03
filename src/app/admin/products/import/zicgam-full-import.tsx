@@ -21,6 +21,9 @@ interface CatalogProgressDetail {
   requestId?: string;
   phase?: string;
   message?: string;
+  restored?: boolean;
+  updatedAt?: number;
+  counts?: { created: number; updated: number; unchanged: number; failed: number };
   progress?: {
     listPages?: number;
     currentPage?: number;
@@ -63,8 +66,14 @@ export function ZicgamFullImport() {
     function onProgress(event: Event) {
       const detail = (event as CustomEvent<CatalogProgressDetail>).detail;
       if (!detail || (requestId && detail.requestId !== requestId)) return;
-      setLastActivityAt(Date.now());
+      if (!requestId && detail.requestId) setRequestId(detail.requestId);
+      setLastActivityAt(detail.updatedAt ?? Date.now());
+      if (detail.counts) setCounts(detail.counts);
       if (detail.progress) setProgress(detail.progress);
+      if (detail.phase === "starting") {
+        setPhase("starting");
+        setMessage(detail.message ?? "직감 전체 가져오기를 시작하고 있습니다.");
+      }
       if (detail.phase === "discovering") setPhase("discovering");
       if (detail.phase === "discovery_complete") {
         setPhase("discovering");
@@ -77,10 +86,14 @@ export function ZicgamFullImport() {
         setImportStartedAt((current) => current ?? Date.now());
         if (detail.message) setMessage(detail.message);
         const action = detail.result?.action;
-        if (action) setCounts((current) => ({ ...current, [action]: current[action] + 1 }));
+        if (action && !detail.restored) {
+          setCounts((current) => ({ ...current, [action]: current[action] + 1 }));
+        }
       }
       if (detail.phase === "item_failed") {
-        setCounts((current) => ({ ...current, failed: current.failed + 1 }));
+        if (!detail.restored) {
+          setCounts((current) => ({ ...current, failed: current.failed + 1 }));
+        }
         setMessage(detail.message ?? "일부 상품을 가져오지 못했습니다.");
       }
       if (detail.phase === "complete") {
@@ -107,7 +120,7 @@ export function ZicgamFullImport() {
     };
   }, [requestId]);
 
-  const extensionReady = extension.available && isMinimumVersion(extension.version, "0.4.6");
+  const extensionReady = extension.available && isMinimumVersion(extension.version, "0.4.7");
   const running = ["starting", "discovering", "importing", "stopping"].includes(phase);
   useEffect(() => {
     if (!running) return;
@@ -171,7 +184,7 @@ export function ZicgamFullImport() {
       <p className={`notice${extensionReady ? "" : " error"}`}>
         {extensionReady
           ? `Chrome 확장 프로그램 ${extension.version ?? ""} 연결됨`
-          : `Chrome 확장 프로그램 0.4.6 이상이 필요합니다${extension.version ? ` (현재 ${extension.version})` : ""}. 확장을 다시 로드하고 이 페이지를 강력 새로고침해 주세요.`}
+          : `Chrome 확장 프로그램 0.4.7 이상이 필요합니다${extension.version ? ` (현재 ${extension.version})` : ""}. 확장을 다시 로드하고 이 페이지를 강력 새로고침해 주세요.`}
       </p>
       {phase === "discovering" && (
         <p className="notice">
