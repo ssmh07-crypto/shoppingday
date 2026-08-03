@@ -72,17 +72,19 @@ Next.js 16 `proxy.ts`는 Node middleware로 빌드되어 현재 OpenNext에서 �
 
 직감은 공식 API나 엑셀 내보내기를 제공하지 않으므로 서버에서 계정 정보를 보관해
 크롤링하지 않는다. 사용자가 승인 계정으로 로그인한 Chrome에서 확장 프로그램이
-카테고리·목록 페이지를 탐색하고 상품 상세를 한 건씩 읽는다. 확장 프로그램 0.5.0부터
+카테고리·목록 페이지를 탐색하고 상품 상세를 한 건씩 읽는다. 확장 프로그램 0.5.1부터
 상세 결과를 20개 단위 gzip 청크로 묶어 비공개 Supabase Storage의
-`zicgam-imports/{job_id}` 경로에 올린다. 청크 업로드는 작업 ID에 한정된 HMAC 토큰을
-검증하며, 브라우저나 저장 객체에 서비스 역할 키를 노출하지 않는다.
+`zicgam-imports/{job_id}` 경로에 올린다. Worker는 작업 ID에 한정된 HMAC 토큰을 검증해
+2시간 유효한 Supabase signed-upload URL만 발급하고, 청크 본문은 Chrome이 Storage로
+직접 전송한다. 브라우저나 저장 객체에는 서비스 역할 키를 노출하지 않는다. 서명 발급과
+직접 업로드의 429·5xx·네트워크 오류는 제한된 지수 백오프로 재시도한다.
 
 수집이 끝나면 Shoppingday가 `zicgam-import.yml` GitHub Actions 워크플로를 실행한다.
 Actions는 청크를 내려받아 스키마를 검증하고 DB에 직접 저장하며, 20개마다
 `supplier_sync_jobs` 진행률을 갱신한다. 성공한 작업의 임시 청크는 삭제하고 실패한
-작업의 청크는 원인 확인을 위해 보존한다. 이 구조는 상품마다 Cloudflare
-Worker에서 인증·DB 저장을 실행하던 경로를 시작 1회, 청크 업로드, 실행 요청 1회로
-줄인다.
+작업의 청크는 원인 확인을 위해 보존한다. 이 구조는 상품마다 Cloudflare Worker에서
+인증·DB 저장하거나 압축 본문을 중계하지 않고, Worker에는 작업 시작·서명 발급·Actions
+실행처럼 작은 요청만 보낸다.
 
 직감 `product_no`를 공급처 외부 상품번호로 사용한다. 신규 상품은 기존
 `supplier_products`·`products`·`product_supplier_links` 구조로 가져오고, 재실행 시

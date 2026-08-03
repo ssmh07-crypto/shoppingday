@@ -1,9 +1,10 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
 import { resetEnvCacheForTests } from "@/lib/env/server";
 import {
+  createZicgamSignedUpload,
   createZicgamUploadToken,
   isZicgamJobId,
   verifyZicgamUploadToken,
@@ -20,6 +21,10 @@ beforeEach(() => {
   vi.stubEnv("USE_MOCK_EXTERNAL_APIS", "false");
   vi.stubEnv("SUPABASE_SERVICE_ROLE_KEY", "test-service-role-key");
   resetEnvCacheForTests();
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
 });
 
 describe("Zicgam batch storage", () => {
@@ -41,5 +46,27 @@ describe("Zicgam batch storage", () => {
       verifyZicgamUploadToken("123e4567-e89b-42d3-a456-426614174001", token),
     ).resolves.toBe(false);
     await expect(verifyZicgamUploadToken(jobId, "invalid-token")).resolves.toBe(false);
+  });
+
+  it("creates a direct signed upload URL without proxying the chunk body", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          url: `/object/upload/sign/zicgam-imports/${jobId}/00003.json.gz?token=signed-token`,
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(createZicgamSignedUpload(jobId, 3)).resolves.toEqual({
+      signedUrl: `https://example.supabase.co/storage/v1/object/upload/sign/zicgam-imports/${jobId}/00003.json.gz?token=signed-token`,
+      apiKey: "test-anon-key",
+      path: `${jobId}/00003.json.gz`,
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      `https://example.supabase.co/storage/v1/object/upload/sign/zicgam-imports/${jobId}/00003.json.gz`,
+      expect.objectContaining({ method: "POST", body: "{}" }),
+    );
   });
 });

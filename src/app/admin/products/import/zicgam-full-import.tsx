@@ -189,7 +189,7 @@ export function ZicgamFullImport() {
     };
   }, []);
 
-  const extensionReady = extension.available && isMinimumVersion(extension.version, "0.5.0");
+  const extensionReady = extension.available && isMinimumVersion(extension.version, "0.5.1");
   const running = ["starting", "discovering", "capturing", "importing", "queued", "stopping"].includes(phase);
   useEffect(() => {
     if (!running) return;
@@ -253,7 +253,7 @@ export function ZicgamFullImport() {
       <p className={`notice${extensionReady ? "" : " error"}`}>
         {extensionReady
           ? `Chrome 확장 프로그램 ${extension.version ?? ""} 연결됨`
-          : `Chrome 확장 프로그램 0.5.0 이상이 필요합니다${extension.version ? ` (현재 ${extension.version})` : ""}. 확장을 다시 로드하고 이 페이지를 강력 새로고침해 주세요.`}
+          : `Chrome 확장 프로그램 0.5.1 이상이 필요합니다${extension.version ? ` (현재 ${extension.version})` : ""}. 확장을 다시 로드하고 이 페이지를 강력 새로고침해 주세요.`}
       </p>
       {phase === "discovering" && (
         <p className="notice">

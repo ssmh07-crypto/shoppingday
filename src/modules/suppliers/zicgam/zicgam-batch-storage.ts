@@ -2,7 +2,6 @@ import "server-only";
 import { getServerEnv } from "@/lib/env/server";
 
 export const ZICGAM_IMPORT_BUCKET = "zicgam-imports";
-export const ZICGAM_CHUNK_LIMIT = 5 * 1024 * 1024;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export function isZicgamJobId(value: string) {
@@ -47,11 +46,7 @@ export async function verifyZicgamUploadToken(jobId: string, token: string) {
   );
 }
 
-export async function uploadZicgamChunk(
-  jobId: string,
-  index: number,
-  body: ReadableStream<Uint8Array>,
-) {
+export async function createZicgamSignedUpload(jobId: string, index: number) {
   const env = getServerEnv();
   if (!env.SUPABASE_SERVICE_ROLE_KEY) {
     throw new Error("zicgam_storage_not_configured");
@@ -61,23 +56,28 @@ export async function uploadZicgamChunk(
     .map(encodeURIComponent)
     .join("/");
   const response = await fetch(
-    `${env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/${ZICGAM_IMPORT_BUCKET}/${path}`,
+    `${env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/upload/sign/${ZICGAM_IMPORT_BUCKET}/${path}`,
     {
       method: "POST",
       headers: {
         apikey: env.SUPABASE_SERVICE_ROLE_KEY,
         authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
-        "content-type": "application/gzip",
+        "content-type": "application/json",
         "x-upsert": "true",
       },
-      body,
-      // Required by Node's fetch implementation; ignored by workerd.
-      duplex: "half",
-    } as RequestInit & { duplex: "half" },
+      body: "{}",
+    },
   );
   if (!response.ok) {
-    throw new Error(`zicgam_chunk_upload_failed:${response.status}`);
+    throw new Error(`zicgam_signed_upload_failed:${response.status}`);
   }
+  const result = (await response.json()) as { url?: string };
+  if (!result.url) throw new Error("zicgam_signed_upload_url_missing");
+  return {
+    signedUrl: `${env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1${result.url}`,
+    apiKey: env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+    path: zicgamChunkPath(jobId, index),
+  };
 }
 
 function bytesToBase64Url(bytes: Uint8Array) {

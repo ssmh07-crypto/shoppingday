@@ -239,23 +239,13 @@ async function uploadCatalogBatchChunk(message) {
       throw new Error("직감 수집 청크가 올바르지 않습니다.");
     }
     const compressed = await gzipJson(products);
-    const response = await fetch(
-      `/api/suppliers/zicgam/products/sync/${encodeURIComponent(jobId)}/chunks/${chunkIndex}`,
-      {
-        method: "PUT",
-        headers: {
-          "content-type": "application/gzip",
-          "x-zicgam-upload-token": uploadToken,
-        },
-        credentials: "same-origin",
-        body: compressed,
-        signal: AbortSignal.timeout(60_000),
-      },
+    const signed = await requestSignedChunkUpload(
+      jobId,
+      uploadToken,
+      chunkIndex,
+      message,
     );
-    const body = await response.json().catch(() => null);
-    if (!response.ok || !body?.success) {
-      throw new Error(body?.error?.message ?? `직감 청크 업로드 HTTP ${response.status}`);
-    }
+    await uploadSignedChunk(signed, compressed, chunkIndex, message);
     dispatchCatalogProgress(message.requestId, {
       phase: "capturing",
       progress: message.progress,
@@ -265,6 +255,80 @@ async function uploadCatalogBatchChunk(message) {
   } catch (error) {
     return { ok: false, message: error instanceof Error ? error.message : "직감 수집 파일을 업로드하지 못했습니다." };
   }
+}
+
+async function requestSignedChunkUpload(jobId, uploadToken, chunkIndex, message) {
+  const retryDelays = [0, 2_000, 5_000, 10_000, 20_000];
+  let lastError = "서명 URL 요청 실패";
+  for (let attempt = 0; attempt < retryDelays.length; attempt += 1) {
+    if (retryDelays[attempt]) {
+      dispatchCatalogProgress(message.requestId, {
+        phase: "capturing",
+        progress: message.progress,
+        message: `수집 파일 ${chunkIndex + 1} 업로드 준비를 재시도합니다 (${attempt}/${retryDelays.length - 1}).`,
+      });
+      await wait(retryDelays[attempt]);
+    }
+    try {
+      const response = await fetch(
+        `/api/suppliers/zicgam/products/sync/${encodeURIComponent(jobId)}/chunks/${chunkIndex}`,
+        {
+          method: "POST",
+          headers: { "x-zicgam-upload-token": uploadToken },
+          credentials: "same-origin",
+          signal: AbortSignal.timeout(30_000),
+        },
+      );
+      const body = await response.json().catch(() => null);
+      if (response.ok && body?.success && body.signedUrl && body.apiKey) return body;
+      lastError = body?.error?.message ?? `서명 URL HTTP ${response.status}`;
+      if (response.status !== 429 && response.status < 500) break;
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : lastError;
+    }
+  }
+  throw new Error(lastError);
+}
+
+async function uploadSignedChunk(signed, compressed, chunkIndex, message) {
+  const retryDelays = [0, 2_000, 5_000, 10_000, 20_000];
+  let lastError = "Supabase Storage 업로드 실패";
+  for (let attempt = 0; attempt < retryDelays.length; attempt += 1) {
+    if (retryDelays[attempt]) {
+      dispatchCatalogProgress(message.requestId, {
+        phase: "capturing",
+        progress: message.progress,
+        message: `수집 파일 ${chunkIndex + 1} 직접 업로드를 재시도합니다 (${attempt}/${retryDelays.length - 1}).`,
+      });
+      await wait(retryDelays[attempt]);
+    }
+    try {
+      const form = new FormData();
+      form.append("cacheControl", "3600");
+      form.append("", compressed, `${String(chunkIndex).padStart(5, "0")}.json.gz`);
+      const response = await fetch(signed.signedUrl, {
+        method: "PUT",
+        headers: {
+          apikey: signed.apiKey,
+          authorization: `Bearer ${signed.apiKey}`,
+          "x-upsert": "true",
+        },
+        body: form,
+        signal: AbortSignal.timeout(60_000),
+      });
+      if (response.ok) return;
+      const body = await response.json().catch(() => null);
+      lastError = body?.message ?? body?.error ?? `Supabase Storage HTTP ${response.status}`;
+      if (response.status !== 429 && response.status < 500) break;
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : lastError;
+    }
+  }
+  throw new Error(lastError);
+}
+
+function wait(milliseconds) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
 async function dispatchCatalogBatch(message) {
