@@ -4,8 +4,10 @@ import { join, relative } from "node:path";
 
 const buildDirectory = join(process.cwd(), ".next");
 const appChunksDirectory = join(buildDirectory, "static", "chunks", "app");
+const cssDirectory = join(buildDirectory, "static", "css");
 const maximumRouteBytes = 80 * 1024;
 const maximumDynamicBytes = 120 * 1024;
+const maximumCssBytes = 112 * 1024;
 const check = process.argv.includes("--check");
 
 async function filesBelow(directory) {
@@ -46,6 +48,10 @@ async function main() {
   const dynamicMeasurements = await Promise.all(
     dynamicFiles.map((file) => measurement(join(buildDirectory, file))),
   );
+  const cssFiles = (await filesBelow(cssDirectory)).filter((file) =>
+    file.endsWith(".css"),
+  );
+  const cssMeasurements = await Promise.all(cssFiles.map(measurement));
 
   const print = (label, rows) => {
     console.log(label);
@@ -59,6 +65,7 @@ async function main() {
   };
   print("Route client chunks", routeMeasurements);
   print("Lazy client chunks", dynamicMeasurements);
+  print("CSS chunks", cssMeasurements);
 
   if (!check) return;
   const violations = [
@@ -68,6 +75,9 @@ async function main() {
     ...dynamicMeasurements
       .filter((entry) => entry.bytes > maximumDynamicBytes)
       .map((entry) => `lazy:${entry.file}`),
+    ...cssMeasurements
+      .filter((entry) => entry.bytes > maximumCssBytes)
+      .map((entry) => `css:${entry.file}`),
   ];
   if (violations.length) {
     throw new Error(`Client bundle budget exceeded: ${violations.join(", ")}`);

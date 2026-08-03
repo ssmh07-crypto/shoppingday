@@ -8,6 +8,7 @@ import { NaverCategorySyncButton } from "./naver-category-sync-button";
 import { NaverStoreSettingsForm } from "./naver-store-settings-form";
 import { NaverDeliveryPolicyManager } from "./naver-delivery-policy-manager";
 import { NaverDeliveryAddressBookManager } from "./naver-delivery-address-book-manager";
+import "../../admin-operations.css";
 
 export const dynamic = "force-dynamic";
 

@@ -15,11 +15,20 @@ describe("네이버 관리 상품 정보 가져오기", () => {
       fetchChannelProduct: vi.fn().mockResolvedValue({
         originProduct: {
           leafCategoryId: "50000805",
+          customerBenefit: {
+            immediateDiscountPolicy: {
+              discountMethod: { value: 12, unitType: "PERCENT" },
+            },
+          },
           name: "린넨 여름 원피스",
           detailAttribute: {
             productAttributes: [
               { attributeSeq: 10, attributeValueSeq: 100 },
-              { attributeSeq: 20, attributeRealValue: "95", attributeRealValueUnitCode: "cm" },
+              {
+                attributeSeq: 20,
+                attributeRealValue: "95",
+                attributeRealValueUnitCode: "cm",
+              },
             ],
             seoInfo: {
               sellerTags: [
@@ -34,9 +43,15 @@ describe("네이버 관리 상품 정보 가져오기", () => {
         { attributeSeq: 10, attributeName: "소재" },
         { attributeSeq: 20, attributeName: "사이즈" },
       ]),
-      fetchProductAttributeValues: vi.fn().mockResolvedValue([
-        { attributeSeq: 10, attributeValueSeq: 100, minAttributeValue: "린넨" },
-      ]),
+      fetchProductAttributeValues: vi
+        .fn()
+        .mockResolvedValue([
+          {
+            attributeSeq: 10,
+            attributeValueSeq: 100,
+            minAttributeValue: "린넨",
+          },
+        ]),
     };
     const categories = {
       findLeafByIds: vi.fn().mockResolvedValue([
@@ -56,6 +71,7 @@ describe("네이버 관리 상품 정보 가져오기", () => {
     await expect(importer.import("1234567890")).resolves.toMatchObject({
       currentTitle: "린넨 여름 원피스",
       categoryId: "50000805",
+      immediateDiscountPercent: 12,
       category: "패션의류>여성의류>원피스",
       materials: ["린넨"],
       sizes: ["95cm"],
@@ -137,7 +153,9 @@ describe("네이버 관리 상품 정보 가져오기", () => {
                 attributeRealValueUnitCode: "A02036",
               },
             ],
-            seoInfo: { sellerTags: [{ text: "새태그" }, { text: "성장키워드" }] },
+            seoInfo: {
+              sellerTags: [{ text: "새태그" }, { text: "성장키워드" }],
+            },
           }),
         }),
         smartstoreChannelProduct: expect.objectContaining({
@@ -213,11 +231,7 @@ describe("네이버 관리 상품 정보 가져오기", () => {
       fetchLastChangedProductOrders: vi
         .fn()
         .mockRejectedValueOnce(
-          new NaverCommerceError(
-            "request_failed",
-            "Too many requests",
-            429,
-          ),
+          new NaverCommerceError("request_failed", "Too many requests", 429),
         )
         .mockResolvedValue({ productOrderIds: [] }),
       fetchProductOrders: vi.fn().mockResolvedValue([]),

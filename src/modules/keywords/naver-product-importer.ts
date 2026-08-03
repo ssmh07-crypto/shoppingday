@@ -20,6 +20,7 @@ export interface ImportedNaverProductData {
   target: string;
   seasons: string[];
   salePrice?: number | null;
+  immediateDiscountPercent?: number | null;
   stockQuantity?: number | null;
   statusType?: string;
   representativeImageUrl?: string;
@@ -55,9 +56,7 @@ export interface NaverManagedProductSalesReader {
   ): Promise<ManagedProductSalesSummary>;
 }
 
-export class CommerceApiManagedProductImporter
-  implements NaverManagedProductImporter
-{
+export class CommerceApiManagedProductImporter implements NaverManagedProductImporter {
   constructor(
     private readonly client: NaverCategoriesClient,
     private readonly categories: NaverCategoryRepository,
@@ -101,7 +100,7 @@ export class CommerceApiManagedProductImporter
             value,
             minValue:
               selected.attributeRealValue === undefined
-                ? metadataValue?.minAttributeValue ?? ""
+                ? (metadataValue?.minAttributeValue ?? "")
                 : String(selected.attributeRealValue),
             maxValue: metadataValue?.maxAttributeValue ?? "",
             unitCode:
@@ -113,7 +112,8 @@ export class CommerceApiManagedProductImporter
         ];
       },
     );
-    const category = categoryRows[0]?.wholeCategoryName ?? origin.leafCategoryId;
+    const category =
+      categoryRows[0]?.wholeCategoryName ?? origin.leafCategoryId;
     const searchTags = unique(
       origin.detailAttribute.seoInfo?.sellerTags.map((tag) => tag.text) ?? [],
     );
@@ -130,17 +130,19 @@ export class CommerceApiManagedProductImporter
       target: valuesFor(attributes, /대상|성별|사용자/)[0] ?? "",
       seasons: valuesFor(attributes, /계절|시즌/),
       salePrice: origin.salePrice ?? null,
+      immediateDiscountPercent:
+        origin.customerBenefit?.immediateDiscountPolicy?.discountMethod
+          ?.unitType === "PERCENT"
+          ? origin.customerBenefit.immediateDiscountPolicy.discountMethod.value
+          : null,
       stockQuantity: origin.stockQuantity ?? null,
       statusType: origin.statusType ?? "",
-      representativeImageUrl:
-        origin.images?.representativeImage?.url ?? "",
+      representativeImageUrl: origin.images?.representativeImage?.url ?? "",
     };
   }
 }
 
-export class CommerceApiManagedProductUpdater
-  implements NaverManagedProductUpdater
-{
+export class CommerceApiManagedProductUpdater implements NaverManagedProductUpdater {
   constructor(private readonly client: NaverCategoriesClient) {}
 
   async apply(
@@ -156,8 +158,7 @@ export class CommerceApiManagedProductUpdater
     },
   ) {
     const product = await this.client.fetchChannelProduct(channelProductNo);
-    const originProductNo =
-      input.originProductNo ?? product.originProductNo;
+    const originProductNo = input.originProductNo ?? product.originProductNo;
     if (
       !originProductNo ||
       !product.smartstoreChannelProduct ||
@@ -215,8 +216,7 @@ export class CommerceApiManagedProductUpdater
                       attributeRealValue: realValue,
                       ...(unitCode
                         ? {
-                            attributeRealValueUnitCode:
-                              unitCode,
+                            attributeRealValueUnitCode: unitCode,
                           }
                         : {}),
                     }
@@ -236,9 +236,7 @@ export class CommerceApiManagedProductUpdater
   }
 }
 
-export class CommerceApiManagedProductSalesReader
-  implements NaverManagedProductSalesReader
-{
+export class CommerceApiManagedProductSalesReader implements NaverManagedProductSalesReader {
   constructor(
     private readonly client: NaverCategoriesClient,
     private readonly now: () => Date = () => new Date(),

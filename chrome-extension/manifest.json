@@ -1,0 +1,53 @@
+{
+  "manifest_version": 3,
+  "name": "Shoppingday 순위·공급처 상태 확인",
+  "description": "네이버쇼핑 PC 순위 확인과 직감 위탁상품의 전체 가져오기·품절 점검을 로그인된 Chrome에서 실행합니다.",
+  "version": "0.5.0",
+  "permissions": ["storage"],
+  "host_permissions": [
+    "https://search.shopping.naver.com/*",
+    "https://zicgam.com/*",
+    "https://shoppingday.ssmh07.workers.dev/*",
+    "http://localhost/*",
+    "http://127.0.0.1/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "Shoppingday 순위·공급처 상태 확인"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://shoppingday.ssmh07.workers.dev/admin/*",
+        "http://localhost/admin/*",
+        "http://127.0.0.1/admin/*"
+      ],
+      "js": ["shoppingday-bridge.js"],
+      "run_at": "document_start"
+    },
+    {
+      "matches": ["https://search.shopping.naver.com/search/*"],
+      "js": ["rank-parser.js", "naver-rank-reader.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://zicgam.com/product/detail.html*",
+        "https://zicgam.com/member/login.html*"
+      ],
+      "js": ["zicgam-stock-parser.js", "zicgam-stock-reader.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://zicgam.com/*"],
+      "js": [
+        "zicgam-stock-parser.js",
+        "zicgam-catalog-parser.js",
+        "zicgam-catalog-reader.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ]
+}

@@ -213,7 +213,7 @@ describe("성장 상품 키워드 관리 화면", () => {
     expect(screen.getByLabelText("확인 키워드")).toHaveValue("여성 원피스");
   });
 
-  it("버튼을 누를 때만 PC와 모바일 100위 순위를 조회한다", async () => {
+  it("기존 중계 버튼을 누를 때만 PC와 모바일 100위 순위를 조회한다", async () => {
     const nextDetail: ManagedProductDetail = {
       ...detail,
       rankObservations: [
@@ -256,7 +256,7 @@ describe("성장 상품 키워드 관리 화면", () => {
     openTab("변경·순위 이력");
 
     fireEvent.click(
-      screen.getByRole("button", { name: "PC·모바일 100위 조회" }),
+      screen.getByRole("button", { name: "기존 PC·모바일 조회" }),
     );
 
     await waitFor(() =>
@@ -271,6 +271,271 @@ describe("성장 상품 키워드 관리 화면", () => {
     expect(await screen.findByText("모바일")).toBeVisible();
     expect(screen.getByText("100위 내 미노출")).toBeVisible();
     expect(screen.getByText("37위")).toBeVisible();
+  });
+
+  it("Chrome 확장 프로그램으로 관측한 가격비교 PC 순위를 저장한다", async () => {
+    const nextDetail: ManagedProductDetail = {
+      ...detail,
+      rankObservations: [
+        {
+          id: "rank-extension-pc",
+          keyword: "여성 원피스",
+          rank: 18,
+          device: "pc",
+          resultStatus: "found",
+          checkedRange: 18,
+          checkedAt: new Date("2026-07-30T12:00:00.000Z"),
+          note: "",
+          source: "browser_observed",
+        },
+      ],
+    };
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        Response.json({ success: true, data: nextDetail }),
+      );
+    vi.stubGlobal("fetch", fetcher);
+    renderManager({
+      mockMode: false,
+      searchAdConfigured: true,
+      apiHubConfigured: false,
+      rankLookupConfigured: false,
+    });
+    openTab("변경·순위 이력");
+
+    fireEvent(
+      window,
+      new CustomEvent("shoppingday:rank-extension-status", {
+        detail: { available: true, version: "0.1.0" },
+      }),
+    );
+    expect(screen.getByText(/Chrome 확장 프로그램 연결됨/)).toBeVisible();
+
+    window.addEventListener(
+      "shoppingday:rank-extension-request",
+      (event) => {
+        const request = (event as CustomEvent<{ requestId: string }>).detail;
+        window.dispatchEvent(
+          new CustomEvent("shoppingday:rank-extension-result", {
+            detail: {
+              requestId: request.requestId,
+              result: {
+                device: "pc",
+                status: "found",
+                rank: 18,
+                checkedRange: 18,
+                observedAt: "2026-07-30T12:00:00.000Z",
+                message: null,
+              },
+            },
+          }),
+        );
+      },
+      { once: true },
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Chrome으로 PC 100위 조회" }),
+    );
+
+    await waitFor(() =>
+      expect(fetcher).toHaveBeenCalledWith(
+        "/api/keyword-products/product-1/rank-observations/browser",
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({
+            keyword: "여성 원피스",
+            result: {
+              device: "pc",
+              status: "found",
+              rank: 18,
+              checkedRange: 18,
+              observedAt: "2026-07-30T12:00:00.000Z",
+              message: null,
+            },
+          }),
+        }),
+      ),
+    );
+    expect(await screen.findByText("18위")).toBeVisible();
+  });
+
+  it("로그인된 Chrome에서 직감 위탁상품의 일부 옵션 품절을 확인해 저장한다", async () => {
+    const supplierUrl =
+      "https://zicgam.com/product/detail.html?product_no=3649&cate_no=48&display_group=1";
+    const supplierAvailabilityCheck = {
+      provider: "zicgam" as const,
+      status: "partial_sold_out" as const,
+      productName: "직감 테스트 상품",
+      checkedAt: "2026-07-30T13:00:00.000Z",
+      source: "chrome_extension" as const,
+      url: supplierUrl,
+      evidence: ["품절 옵션 1개", "선택 가능 옵션 1개"],
+      availableOptions: ["레드"],
+      soldOutOptions: ["블루 [품절]"],
+    };
+    const nextDetail: ManagedProductDetail = {
+      ...detail,
+      product: {
+        ...detail.product,
+        productInput: {
+          ...detail.product.productInput,
+          supplierUrl,
+          supplierAvailabilityCheck,
+        },
+      },
+    };
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        Response.json({ success: true, data: nextDetail }),
+      )
+      .mockResolvedValueOnce(
+        Response.json({
+          success: true,
+          items: [
+            {
+              ...summary,
+              supplierUrl,
+              supplierAvailabilityCheck,
+            },
+          ],
+        }),
+      );
+    vi.stubGlobal("fetch", fetcher);
+    renderManager({
+      mockMode: false,
+      searchAdConfigured: true,
+      apiHubConfigured: false,
+      rankLookupConfigured: false,
+    });
+
+    fireEvent(
+      window,
+      new CustomEvent("shoppingday:rank-extension-status", {
+        detail: { available: true, version: "0.2.0" },
+      }),
+    );
+    fireEvent.change(screen.getByLabelText("공급처 상품 URL"), {
+      target: { value: supplierUrl },
+    });
+    window.addEventListener(
+      "shoppingday:supplier-check-request",
+      (event) => {
+        const request = (event as CustomEvent<{ requestId: string }>).detail;
+        window.dispatchEvent(
+          new CustomEvent("shoppingday:supplier-check-result", {
+            detail: {
+              requestId: request.requestId,
+              result: supplierAvailabilityCheck,
+            },
+          }),
+        );
+      },
+      { once: true },
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Chrome으로 이 상품만 확인" }),
+    );
+
+    await waitFor(() =>
+      expect(fetcher).toHaveBeenCalledWith(
+        "/api/keyword-products/product-1/supplier-availability",
+        expect.objectContaining({
+          method: "PATCH",
+          body: JSON.stringify({
+            supplierUrl,
+            result: supplierAvailabilityCheck,
+          }),
+        }),
+      ),
+    );
+    expect(await screen.findByText("일부 옵션 품절")).toBeVisible();
+    expect(screen.getByText(/블루 \[품절\]/)).toBeVisible();
+  });
+
+  it("직감 공급처 상품 전체를 버튼 한 번으로 순차 확인한다", async () => {
+    const supplierUrl =
+      "https://zicgam.com/product/detail.html?product_no=3649&cate_no=48&display_group=1";
+    const result = {
+      provider: "zicgam" as const,
+      status: "available" as const,
+      productName: "직감 테스트 상품",
+      checkedAt: "2026-07-30T14:00:00.000Z",
+      source: "chrome_extension" as const,
+      url: supplierUrl,
+      evidence: ["구매 가능한 상품 버튼을 확인했습니다."],
+      availableOptions: ["레드"],
+      soldOutOptions: [],
+    };
+    const targetSummary = { ...summary, supplierUrl };
+    const nextDetail: ManagedProductDetail = {
+      ...detail,
+      product: {
+        ...detail.product,
+        productInput: {
+          ...detail.product.productInput,
+          supplierUrl,
+          supplierAvailabilityCheck: result,
+        },
+      },
+    };
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        Response.json({ success: true, data: nextDetail }),
+      );
+    vi.stubGlobal("fetch", fetcher);
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    renderManager(
+      {
+        mockMode: false,
+        searchAdConfigured: true,
+        apiHubConfigured: false,
+      },
+      { items: [targetSummary] },
+    );
+    fireEvent(
+      window,
+      new CustomEvent("shoppingday:rank-extension-status", {
+        detail: { available: true, version: "0.3.0" },
+      }),
+    );
+    window.addEventListener(
+      "shoppingday:supplier-check-request",
+      (event) => {
+        const request = (
+          event as CustomEvent<{
+            requestId: string;
+            background: boolean;
+          }>
+        ).detail;
+        expect(request.background).toBe(true);
+        window.dispatchEvent(
+          new CustomEvent("shoppingday:supplier-check-result", {
+            detail: { requestId: request.requestId, result },
+          }),
+        );
+      },
+      { once: true },
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "직감 전체 확인" }),
+    );
+
+    await waitFor(() =>
+      expect(fetcher).toHaveBeenCalledWith(
+        "/api/keyword-products/product-1/supplier-availability",
+        expect.objectContaining({
+          method: "PATCH",
+          body: JSON.stringify({ supplierUrl, result }),
+        }),
+      ),
+    );
+    expect(
+      await screen.findByText("직감 상품 1개 확인을 완료했습니다."),
+    ).toBeVisible();
   });
 
   it("최종 확인 후 상품명과 검색 태그를 스마트스토어에 반영한다", async () => {
@@ -392,20 +657,26 @@ describe("성장 상품 키워드 관리 화면", () => {
   });
 });
 
-function renderManager(runtime: {
-  mockMode: boolean;
-  searchAdConfigured: boolean;
-  apiHubConfigured: boolean;
-  rankLookupConfigured?: boolean;
-} = {
-  mockMode: true,
-  searchAdConfigured: false,
-  apiHubConfigured: false,
-}) {
+function renderManager(
+  runtime: {
+    mockMode: boolean;
+    searchAdConfigured: boolean;
+    apiHubConfigured: boolean;
+    rankLookupConfigured?: boolean;
+  } = {
+    mockMode: true,
+    searchAdConfigured: false,
+    apiHubConfigured: false,
+  },
+  options: {
+    items?: ManagedProductSummary[];
+    detail?: ManagedProductDetail | null;
+  } = {},
+) {
   render(
     <KeywordManager
-      initialItems={[summary]}
-      initialDetail={detail}
+      initialItems={options.items ?? [summary]}
+      initialDetail={options.detail === undefined ? detail : options.detail}
       initialRuntime={runtime}
     />,
   );

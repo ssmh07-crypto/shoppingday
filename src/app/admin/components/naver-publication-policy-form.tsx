@@ -14,8 +14,9 @@ export function NaverPublicationPolicyForm({
   mode,
   endpoint,
   initialDefaults,
-  initialOverrides = {},
+  initialOverrides,
   categoryId,
+  salePrice,
   onSaved,
 }: {
   mode: "default" | "product";
@@ -23,12 +24,15 @@ export function NaverPublicationPolicyForm({
   initialDefaults: NaverPublicationPolicyData;
   initialOverrides?: NaverPublicationPolicyOverrides;
   categoryId?: string | null;
+  salePrice?: number | null;
   onSaved?: () => void;
 }) {
   const [defaults, setDefaults] = useState(initialDefaults);
-  const [overrides, setOverrides] = useState(initialOverrides);
+  const [overrides, setOverrides] = useState(initialOverrides ?? {});
   const [baseline, setBaseline] = useState(() =>
-    JSON.stringify(mode === "default" ? initialDefaults : initialOverrides),
+    JSON.stringify(
+      mode === "default" ? initialDefaults : (initialOverrides ?? {}),
+    ),
   );
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
@@ -80,7 +84,9 @@ export function NaverPublicationPolicyForm({
       });
       const body = await response.json().catch(() => null);
       if (!response.ok) {
-        throw new Error(body?.error?.message ?? "판매 정책을 저장하지 못했습니다.");
+        throw new Error(
+          body?.error?.message ?? "판매 정책을 저장하지 못했습니다.",
+        );
       }
       if (mode === "default") {
         setDefaults(body.policy);
@@ -93,7 +99,11 @@ export function NaverPublicationPolicyForm({
       setMessage("네이버 판매 정책을 저장했습니다.");
       onSaved?.();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "판매 정책을 저장하지 못했습니다.");
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : "판매 정책을 저장하지 못했습니다.",
+      );
     } finally {
       setSaving(false);
     }
@@ -114,9 +124,7 @@ export function NaverPublicationPolicyForm({
           </label>
         )}
       </div>
-      <fieldset disabled={inherited(key)}>
-        {content}
-      </fieldset>
+      <fieldset disabled={inherited(key)}>{content}</fieldset>
       {inherited(key) && <small>채널 기본값을 사용합니다.</small>}
     </div>
   );
@@ -144,12 +152,56 @@ export function NaverPublicationPolicyForm({
           />,
         )}
         {wrap(
+          "immediateDiscountPercent",
+          "즉시 할인율",
+          <div className="naver-policy-stack">
+            <label>
+              <span>할인율 (%)</span>
+              <input
+                aria-label="즉시 할인율"
+                type="number"
+                inputMode="numeric"
+                min={1}
+                max={99}
+                placeholder="할인 없음"
+                value={policy.immediateDiscountPercent ?? ""}
+                onChange={(event) =>
+                  setValue(
+                    "immediateDiscountPercent",
+                    event.target.value === ""
+                      ? null
+                      : Number(event.target.value),
+                  )
+                }
+              />
+            </label>
+            <small>
+              비워 두면 할인하지 않습니다. 판매가는 정상가로 유지되고 네이버
+              즉시할인으로 적용됩니다.
+            </small>
+            {salePrice && policy.immediateDiscountPercent && (
+              <strong>
+                예상 할인 판매가{" "}
+                {discountedPrice(
+                  salePrice,
+                  policy.immediateDiscountPercent,
+                ).toLocaleString("ko-KR")}
+                원
+              </strong>
+            )}
+          </div>,
+        )}
+        {wrap(
           "taxType",
           "부가가치세 유형",
           <select
             value={policy.taxType ?? ""}
             onChange={(event) =>
-              setValue("taxType", (event.target.value || null) as NaverPublicationPolicyData["taxType"])
+              setValue(
+                "taxType",
+                (event.target.value ||
+                  null) as NaverPublicationPolicyData["taxType"],
+              )
             }
           >
             <option value="">선택</option>
@@ -182,7 +234,8 @@ export function NaverPublicationPolicyForm({
             onChange={(event) =>
               setValue(
                 "channelProductDisplayStatusType",
-                (event.target.value || null) as NaverPublicationPolicyData["channelProductDisplayStatusType"],
+                (event.target.value ||
+                  null) as NaverPublicationPolicyData["channelProductDisplayStatusType"],
               )
             }
           >
@@ -202,7 +255,8 @@ export function NaverPublicationPolicyForm({
               onChange={(event) =>
                 setValue("afterServiceInfo", {
                   afterServiceTelephoneNumber: event.target.value,
-                  afterServiceGuideContent: policy.afterServiceInfo?.afterServiceGuideContent ?? "",
+                  afterServiceGuideContent:
+                    policy.afterServiceInfo?.afterServiceGuideContent ?? "",
                 })
               }
             />
@@ -212,7 +266,8 @@ export function NaverPublicationPolicyForm({
               value={policy.afterServiceInfo?.afterServiceGuideContent ?? ""}
               onChange={(event) =>
                 setValue("afterServiceInfo", {
-                  afterServiceTelephoneNumber: policy.afterServiceInfo?.afterServiceTelephoneNumber ?? "",
+                  afterServiceTelephoneNumber:
+                    policy.afterServiceInfo?.afterServiceTelephoneNumber ?? "",
                   afterServiceGuideContent: event.target.value,
                 })
               }
@@ -231,7 +286,9 @@ export function NaverPublicationPolicyForm({
                   "originAreaInfo",
                   event.target.value
                     ? {
-                        originAreaCode: event.target.value as NonNullable<NaverPublicationPolicyData["originAreaInfo"]>["originAreaCode"],
+                        originAreaCode: event.target.value as NonNullable<
+                          NaverPublicationPolicyData["originAreaInfo"]
+                        >["originAreaCode"],
                         plural: policy.originAreaInfo?.plural ?? false,
                       }
                     : null,
@@ -251,7 +308,10 @@ export function NaverPublicationPolicyForm({
                 placeholder="수입사"
                 value={policy.originAreaInfo.importer ?? ""}
                 onChange={(event) =>
-                  setValue("originAreaInfo", { ...policy.originAreaInfo!, importer: event.target.value })
+                  setValue("originAreaInfo", {
+                    ...policy.originAreaInfo!,
+                    importer: event.target.value,
+                  })
                 }
               />
             )}
@@ -260,7 +320,10 @@ export function NaverPublicationPolicyForm({
                 placeholder="원산지 표시 내용"
                 value={policy.originAreaInfo.content ?? ""}
                 onChange={(event) =>
-                  setValue("originAreaInfo", { ...policy.originAreaInfo!, content: event.target.value })
+                  setValue("originAreaInfo", {
+                    ...policy.originAreaInfo!,
+                    content: event.target.value,
+                  })
                 }
               />
             )}
@@ -283,8 +346,16 @@ export function NaverPublicationPolicyForm({
       </div>
       <div className="naver-policy-savebar">
         <span role="status">{message}</span>
-        <button type="button" disabled={!dirty || saving} onClick={() => void save()}>
-          {saving ? "저장 중…" : mode === "default" ? "기본 정책 저장" : "상품별 정책 저장"}
+        <button
+          type="button"
+          disabled={!dirty || saving}
+          onClick={() => void save()}
+        >
+          {saving
+            ? "저장 중…"
+            : mode === "default"
+              ? "기본 정책 저장"
+              : "상품별 정책 저장"}
         </button>
       </div>
     </div>
@@ -301,13 +372,21 @@ function NullableBooleanSelect({
   return (
     <select
       value={value === null ? "" : String(value)}
-      onChange={(event) => onChange(event.target.value === "" ? null : event.target.value === "true")}
+      onChange={(event) =>
+        onChange(
+          event.target.value === "" ? null : event.target.value === "true",
+        )
+      }
     >
       <option value="">선택</option>
       <option value="true">허용</option>
       <option value="false">허용하지 않음</option>
     </select>
   );
+}
+
+function discountedPrice(salePrice: number, discountPercent: number) {
+  return Math.floor((salePrice * (100 - discountPercent)) / 100);
 }
 
 type ProvidedNoticeType = {
@@ -329,41 +408,64 @@ function ProvidedNoticeInput({
 }: {
   categoryId?: string | null;
   value: NaverPublicationPolicyData["productInfoProvidedNotice"];
-  onChange: (value: NaverPublicationPolicyData["productInfoProvidedNotice"]) => void;
+  onChange: (
+    value: NaverPublicationPolicyData["productInfoProvidedNotice"],
+  ) => void;
 }) {
   const [types, setTypes] = useState<ProvidedNoticeType[]>([]);
   const [status, setStatus] = useState("고시 상품군을 불러오는 중입니다.");
 
   useEffect(() => {
     const controller = new AbortController();
-    const query = categoryId ? `?categoryId=${encodeURIComponent(categoryId)}` : "";
+    const query = categoryId
+      ? `?categoryId=${encodeURIComponent(categoryId)}`
+      : "";
     void fetch(`/api/integrations/naver/provided-notices${query}`, {
       signal: controller.signal,
       cache: "no-store",
     })
       .then(async (response) => {
         const body = await response.json().catch(() => null);
-        if (!response.ok) throw new Error(body?.error?.message ?? "고시 상품군을 불러오지 못했습니다.");
+        if (!response.ok)
+          throw new Error(
+            body?.error?.message ?? "고시 상품군을 불러오지 못했습니다.",
+          );
         setTypes(body.data ?? []);
-        setStatus(body.stale ? "릴레이 연결 문제로 마지막 조회 결과를 표시합니다." : "");
+        setStatus(
+          body.stale ? "릴레이 연결 문제로 마지막 조회 결과를 표시합니다." : "",
+        );
       })
       .catch((error) => {
         if (controller.signal.aborted) return;
-        setStatus(error instanceof Error ? error.message : "고시 상품군을 불러오지 못했습니다.");
+        setStatus(
+          error instanceof Error
+            ? error.message
+            : "고시 상품군을 불러오지 못했습니다.",
+        );
       });
     return () => controller.abort();
   }, [categoryId]);
 
   const selected = types.find(
-    (item) => item.productInfoProvidedNoticeType === value?.productInfoProvidedNoticeType,
+    (item) =>
+      item.productInfoProvidedNoticeType ===
+      value?.productInfoProvidedNoticeType,
   );
-  const bodyKey = selected ? noticeBodyKey(selected.productInfoProvidedNoticeType) : "";
-  const body = bodyKey && value && typeof value[bodyKey] === "object" && !Array.isArray(value[bodyKey])
-    ? (value[bodyKey] as DatabaseJsonObject)
-    : {};
+  const bodyKey = selected
+    ? noticeBodyKey(selected.productInfoProvidedNoticeType)
+    : "";
+  const body =
+    bodyKey &&
+    value &&
+    typeof value[bodyKey] === "object" &&
+    !Array.isArray(value[bodyKey])
+      ? (value[bodyKey] as DatabaseJsonObject)
+      : {};
 
   function select(type: string) {
-    const next = types.find((item) => item.productInfoProvidedNoticeType === type);
+    const next = types.find(
+      (item) => item.productInfoProvidedNoticeType === type,
+    );
     if (!next) {
       onChange(null);
       return;
@@ -383,7 +485,10 @@ function ProvidedNoticeInput({
       >
         <option value="">선택</option>
         {types.map((item) => (
-          <option key={item.productInfoProvidedNoticeType} value={item.productInfoProvidedNoticeType}>
+          <option
+            key={item.productInfoProvidedNoticeType}
+            value={item.productInfoProvidedNoticeType}
+          >
             {item.productInfoProvidedNoticeTypeName}
           </option>
         ))}
@@ -394,15 +499,22 @@ function ProvidedNoticeInput({
           <span>{field.fieldDescription || field.fieldName}</span>
           <input
             maxLength={field.fieldMaxLength || undefined}
-            value={typeof body[field.fieldName] === "string" ? String(body[field.fieldName]) : ""}
+            value={
+              typeof body[field.fieldName] === "string"
+                ? String(body[field.fieldName])
+                : ""
+            }
             onChange={(event) =>
               onChange({
-                productInfoProvidedNoticeType: selected.productInfoProvidedNoticeType,
+                productInfoProvidedNoticeType:
+                  selected.productInfoProvidedNoticeType,
                 [bodyKey]: { ...body, [field.fieldName]: event.target.value },
               })
             }
           />
-          {field.fieldAddDescription && <small>{field.fieldAddDescription}</small>}
+          {field.fieldAddDescription && (
+            <small>{field.fieldAddDescription}</small>
+          )}
         </label>
       ))}
     </div>
@@ -410,5 +522,7 @@ function ProvidedNoticeInput({
 }
 
 function noticeBodyKey(type: string) {
-  return type.toLowerCase().replace(/_([a-z])/g, (_, character: string) => character.toUpperCase());
+  return type
+    .toLowerCase()
+    .replace(/_([a-z])/g, (_, character: string) => character.toUpperCase());
 }

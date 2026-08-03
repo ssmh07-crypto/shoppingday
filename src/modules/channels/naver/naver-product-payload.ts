@@ -44,6 +44,11 @@ export type NaverProductPayload = {
     salePrice: number;
     stockQuantity: number;
     deliveryInfo: JsonObject;
+    customerBenefit?: {
+      immediateDiscountPolicy: {
+        discountMethod: { value: number; unitType: "PERCENT" };
+      };
+    };
     detailAttribute: {
       afterServiceInfo: NonNullable<
         NaverPublicationProfile["afterServiceInfo"]
@@ -57,7 +62,7 @@ export type NaverProductPayload = {
       >;
       taxType: NonNullable<NaverPublicationProfile["taxType"]>;
       minorPurchasable: boolean;
-      seoInfo?: { sellerTags: Array<{ text: string }> };
+      seoInfo?: { sellerTags: Array<{ code?: number; text: string }> };
     };
   };
   smartstoreChannelProduct: {
@@ -267,6 +272,18 @@ export function buildNaverProductPayload(
       salePrice: source.sellingPrice!,
       stockQuantity: stockQuantity!,
       deliveryInfo: profile.deliveryInfo!,
+      ...(profile.immediateDiscountPercent
+        ? {
+            customerBenefit: {
+              immediateDiscountPolicy: {
+                discountMethod: {
+                  value: profile.immediateDiscountPercent,
+                  unitType: "PERCENT",
+                },
+              },
+            },
+          }
+        : {}),
       detailAttribute: {
         afterServiceInfo: profile.afterServiceInfo!,
         originAreaInfo: profile.originAreaInfo!,
@@ -364,11 +381,13 @@ function mapAttributes(
       {
         attributeSeq: attribute.attributeSeq,
         attributeValueSeq: attribute.attributeValueSeq,
-        ...(attribute.unitCode && (attribute.minValue || attribute.maxValue)
+        ...(attribute.minValue.trim() || attribute.maxValue.trim()
           ? {
               attributeRealValue:
                 attribute.minValue.trim() || attribute.maxValue.trim(),
-              attributeRealValueUnitCode: attribute.unitCode,
+              ...(attribute.unitCode
+                ? { attributeRealValueUnitCode: attribute.unitCode }
+                : {}),
             }
           : {}),
       },
@@ -581,8 +600,7 @@ function validateDeliveryInfo(
   } else {
     if (!positiveInteger(claim.shippingAddressId)) {
       issues.push({
-        path:
-          "originProduct.deliveryInfo.claimDeliveryInfo.shippingAddressId",
+        path: "originProduct.deliveryInfo.claimDeliveryInfo.shippingAddressId",
         code: "required",
         message: "스마트스토어 출고지를 선택해야 합니다.",
       });
@@ -600,8 +618,7 @@ function validateDeliveryInfo(
       )
     ) {
       issues.push({
-        path:
-          "originProduct.deliveryInfo.claimDeliveryInfo.returnDeliveryCompanyPriorityType",
+        path: "originProduct.deliveryInfo.claimDeliveryInfo.returnDeliveryCompanyPriorityType",
         code: "required",
         message: "반품 택배사 계약을 선택해야 합니다.",
       });

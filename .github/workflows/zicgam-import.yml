@@ -1,0 +1,51 @@
+name: 직감 상품 가져오기
+
+on:
+  workflow_dispatch:
+    inputs:
+      job_id:
+        description: Shoppingday 직감 가져오기 작업 ID
+        required: true
+        type: string
+      chunk_count:
+        description: 업로드된 수집 파일 청크 수
+        required: true
+        type: string
+
+concurrency:
+  group: zicgam-product-import
+  cancel-in-progress: false
+
+jobs:
+  import:
+    name: 직감 상품 DB 저장
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      contents: read
+    env:
+      SYNC_JOB_ID: ${{ inputs.job_id }}
+      SYNC_CHUNK_COUNT: ${{ inputs.chunk_count }}
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      DOME_API_ID: ${{ secrets.DOME_API_ID }}
+      DOME_API_KEY: ${{ secrets.DOME_API_KEY }}
+      DOME_API_MOCK_MODE: "false"
+
+    steps:
+      - name: 저장소 가져오기
+        uses: actions/checkout@v4
+
+      - name: Node.js 설정
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: 의존성 설치
+        run: npm clean-install --progress=false
+
+      - name: 직감 상품 저장
+        run: npm run import:zicgam

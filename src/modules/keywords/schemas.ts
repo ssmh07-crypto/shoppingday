@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { naverShoppingRankResultSchema } from "@/modules/channels/naver/naver-shopping-rank";
 import { keywordLimits } from "./config";
 import { addSearchTagQualityIssues } from "./search-tag-quality";
 
@@ -24,6 +25,49 @@ const managedProductSalesSummarySchema = z.object({
   fetchedAt: z.string().datetime(),
   source: z.literal("naver_orders"),
 });
+const zicgamProductUrlSchema = z
+  .url()
+  .max(2_000)
+  .refine((value) => zicgamProductNo(value) !== null, {
+    message: "직감 상품 상세 URL과 product_no를 확인해 주세요.",
+  });
+
+export const supplierAvailabilityCheckSchema = z.object({
+  provider: z.literal("zicgam"),
+  status: z.enum([
+    "available",
+    "partial_sold_out",
+    "sold_out",
+    "discontinued",
+    "auth_required",
+    "unknown",
+    "failed",
+  ]),
+  productName: z.string().trim().max(300).nullable(),
+  checkedAt: z.string().datetime(),
+  source: z.literal("chrome_extension"),
+  url: zicgamProductUrlSchema,
+  evidence: z.array(z.string().trim().min(1).max(300)).max(20),
+  availableOptions: z.array(z.string().trim().min(1).max(200)).max(100),
+  soldOutOptions: z.array(z.string().trim().min(1).max(200)).max(100),
+});
+
+export const supplierAvailabilityUpdateSchema = z
+  .object({
+    supplierUrl: zicgamProductUrlSchema,
+    result: supplierAvailabilityCheckSchema,
+  })
+  .superRefine((input, context) => {
+    if (
+      zicgamProductNo(input.supplierUrl) !== zicgamProductNo(input.result.url)
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["result", "url"],
+        message: "요청한 상품과 확인 결과의 product_no가 일치하지 않습니다.",
+      });
+    }
+  });
 
 export const managedProductInputSchema = z.object({
   supplierTitle: z
@@ -52,6 +96,7 @@ export const managedProductInputSchema = z.object({
   statusType: z.string().trim().max(30).optional(),
   representativeImageUrl: z.url().optional(),
   salesSummary: managedProductSalesSummarySchema.optional(),
+  supplierAvailabilityCheck: supplierAvailabilityCheckSchema.optional(),
 });
 
 export const createManagedProductSchema = z.object({
@@ -71,6 +116,36 @@ export const keywordRankObservationSchema = z.object({
 
 export const keywordRankLookupSchema = z.object({
   keyword: z.string().trim().min(1).max(100),
+});
+
+export const browserKeywordRankObservationSchema = z.object({
+  keyword: z.string().trim().min(1).max(100),
+  result: naverShoppingRankResultSchema.extend({
+    device: z.literal("pc"),
+  }),
+}).superRefine((input, context) => {
+  const { result } = input;
+  if (result.status === "found" && result.rank === null) {
+    context.addIssue({
+      code: "custom",
+      path: ["result", "rank"],
+      message: "발견 결과에는 실제 순위가 필요합니다.",
+    });
+  }
+  if (result.status !== "found" && result.rank !== null) {
+    context.addIssue({
+      code: "custom",
+      path: ["result", "rank"],
+      message: "미노출·차단·실패 결과에는 순위를 저장할 수 없습니다.",
+    });
+  }
+  if (result.rank !== null && result.checkedRange < result.rank) {
+    context.addIssue({
+      code: "custom",
+      path: ["result", "checkedRange"],
+      message: "확인 범위는 발견 순위보다 작을 수 없습니다.",
+    });
+  }
 });
 
 export const applyManagedProductToNaverSchema = z.object({
@@ -153,3 +228,19 @@ export const updateGeneratedTitleSchema = z.object({
 });
 
 export type CreateManagedProductInput = z.infer<typeof createManagedProductSchema>;
+
+function zicgamProductNo(value: string) {
+  try {
+    const url = new URL(value);
+    const productNo = url.searchParams.get("product_no");
+    return url.protocol === "https:" &&
+      url.hostname === "zicgam.com" &&
+      url.pathname === "/product/detail.html" &&
+      productNo &&
+      /^\d+$/.test(productNo)
+      ? productNo
+      : null;
+  } catch {
+    return null;
+  }
+}

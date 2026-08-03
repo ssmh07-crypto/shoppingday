@@ -1,0 +1,218 @@
+/* Wholesale site memo */
+.wholesale-site-page {
+  min-height: 100vh;
+  padding: 34px clamp(20px, 4vw, 56px);
+  background: #f5f7fb;
+}
+.wholesale-site-heading,
+.wholesale-site-toolbar,
+.wholesale-site-card,
+.wholesale-site-card-actions,
+.wholesale-site-editor-actions {
+  display: flex;
+  align-items: center;
+}
+.wholesale-site-heading {
+  justify-content: space-between;
+  gap: 24px;
+  max-width: 1120px;
+  margin: 0 auto 22px;
+}
+.wholesale-site-heading h1 {
+  margin: 6px 0;
+  color: #172033;
+  font-size: clamp(26px, 3vw, 36px);
+}
+.wholesale-site-heading p,
+.wholesale-site-toolbar p {
+  margin: 0;
+  color: #667085;
+}
+.wholesale-site-heading > strong {
+  border-radius: 999px;
+  padding: 8px 12px;
+  background: #e9efff;
+  color: #2457d6;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.wholesale-site-memo {
+  max-width: 1120px;
+  margin: 0 auto;
+  overflow: hidden;
+  border: 1px solid #dfe4ee;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 8px 24px #1f29370a;
+}
+.wholesale-site-toolbar {
+  justify-content: space-between;
+  gap: 18px;
+  padding: 20px 22px;
+  border-bottom: 1px solid #e7eaf0;
+}
+.wholesale-site-toolbar h2 {
+  margin: 0 0 4px;
+  color: #172033;
+  font-size: 18px;
+}
+.wholesale-site-toolbar p {
+  font-size: 13px;
+}
+.wholesale-site-toolbar button,
+.wholesale-site-editor-actions button,
+.wholesale-site-empty button {
+  min-height: 38px;
+  border: 0;
+  border-radius: 8px;
+  padding: 0 14px;
+  background: #2457d6;
+  color: #fff;
+  font-weight: 800;
+  cursor: pointer;
+}
+.wholesale-site-toolbar button:disabled,
+.wholesale-site-editor-actions button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.wholesale-site-editor {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.7fr) minmax(280px, 1.3fr);
+  gap: 14px;
+  padding: 20px 22px;
+  border-bottom: 1px solid #e7eaf0;
+  background: #f9fafc;
+}
+.wholesale-site-editor label {
+  display: grid;
+  gap: 7px;
+}
+.wholesale-site-editor label > span {
+  color: #344054;
+  font-size: 12px;
+  font-weight: 800;
+}
+.wholesale-site-editor .wide,
+.wholesale-site-editor-actions {
+  grid-column: 1 / -1;
+}
+.wholesale-site-editor input,
+.wholesale-site-editor textarea {
+  width: 100%;
+  border: 1px solid #d0d5dd;
+  border-radius: 8px;
+  padding: 10px 11px;
+  background: #fff;
+  color: #172033;
+  font: inherit;
+  box-sizing: border-box;
+}
+.wholesale-site-editor textarea {
+  resize: vertical;
+  line-height: 1.55;
+}
+.wholesale-site-editor-actions {
+  gap: 8px;
+}
+.wholesale-site-editor-actions .secondary,
+.wholesale-site-card-actions .secondary {
+  border: 1px solid #d0d5dd;
+  background: #fff;
+  color: #344054;
+}
+.wholesale-site-message {
+  margin: 0;
+  padding: 12px 22px;
+  border-bottom: 1px solid #e7eaf0;
+  background: #f0fdf4;
+  color: #087443;
+  font-size: 13px;
+  font-weight: 700;
+}
+.wholesale-site-list {
+  display: grid;
+}
+.wholesale-site-card {
+  justify-content: space-between;
+  gap: 20px;
+  padding: 19px 22px;
+  border-bottom: 1px solid #edf0f5;
+}
+.wholesale-site-card:last-child {
+  border-bottom: 0;
+}
+.wholesale-site-card-main {
+  min-width: 0;
+}
+.wholesale-site-card-main > a {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 9px;
+  color: #1d4ed8;
+  text-decoration: none;
+}
+.wholesale-site-card-main > a:hover strong {
+  text-decoration: underline;
+}
+.wholesale-site-card-main > a strong {
+  color: #172033;
+  font-size: 16px;
+}
+.wholesale-site-card-main > a span,
+.wholesale-site-card-main small {
+  font-size: 11px;
+}
+.wholesale-site-card-main small {
+  display: block;
+  max-width: 760px;
+  margin-top: 5px;
+  overflow: hidden;
+  color: #667085;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wholesale-site-card-main p {
+  margin: 10px 0 0;
+  color: #475467;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+.wholesale-site-card-actions {
+  flex: none;
+  gap: 7px;
+}
+.wholesale-site-card-actions button {
+  min-height: 34px;
+  border-radius: 7px;
+  padding: 0 11px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.wholesale-site-card-actions .danger {
+  color: #b42318;
+}
+.wholesale-site-empty {
+  display: grid;
+  justify-items: center;
+  gap: 12px;
+  padding: 48px 20px;
+  color: #667085;
+}
+@media (max-width: 720px) {
+  .wholesale-site-page {
+    padding: 24px 14px;
+  }
+  .wholesale-site-heading,
+  .wholesale-site-toolbar,
+  .wholesale-site-card {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .wholesale-site-editor {
+    grid-template-columns: 1fr;
+  }
+  .wholesale-site-card-actions button {
+    flex: 1;
+  }
+}

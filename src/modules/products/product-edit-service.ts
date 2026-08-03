@@ -1,6 +1,7 @@
 import type { ProductRow } from "@/lib/db/schema";
 import {
   draftInputSchema,
+  draftStorageInputSchema,
   imagesFromSupplier,
   optionsFromSupplier,
   readyErrors,
@@ -17,13 +18,26 @@ import type { ProductEditRepository } from "./product-edit-repository";
 
 export interface NaverRequirementLoader {
   get(categoryId: string): Promise<{
-    requiredAttributes: Array<{ attributeSeq: number; attributeName: string }>;
+    requiredAttributes: Array<{
+      attributeSeq: number;
+      attributeName: string;
+      attributeClassificationType?: "SINGLE_SELECT" | "MULTI_SELECT" | "RANGE";
+    }>;
     attributeValues: Array<{
       attributeSeq: number;
       attributeValueSeq: number;
     }>;
   }>;
 }
+
+export type NaverProductSyncInput = {
+  draftVersion: number;
+  title: string;
+  searchTags: string[];
+  sellingPrice?: number | null;
+  naverCategoryId: string;
+  naverAttributes: DraftInput["naverAttributes"];
+};
 
 export class ProductEditService {
   constructor(
@@ -114,6 +128,41 @@ export class ProductEditService {
       ),
     );
   }
+  async syncFromNaver(
+    id: string,
+    ownerId: string,
+    remote: NaverProductSyncInput,
+  ) {
+    const current = await this.get(id, ownerId);
+    const input = draftStorageInputSchema.parse({
+      draftVersion: remote.draftVersion,
+      title: remote.title,
+      sourceTitleKeywords: current.product.sourceTitleKeywords,
+      searchTags: remote.searchTags,
+      sellingPrice: remote.sellingPrice ?? current.product.sellingPrice,
+      currency: current.product.currency,
+      description: current.product.description,
+      categoryId: current.product.categoryId,
+      naverCategoryId: remote.naverCategoryId,
+      selectedImages: current.product.selectedImages,
+      editedOptions: current.product.editedOptions,
+      naverAttributes: remote.naverAttributes,
+    });
+    validateSourcingTitle(current.supplier.code, input.title);
+    const changed = changedFields(current.product, input);
+    return this.handle(
+      await this.repo.save(
+        id,
+        ownerId,
+        input,
+        current.product.status,
+        changed,
+        "product_synced_from_naver",
+        {},
+        current.product.readyAt,
+      ),
+    );
+  }
   async markReady(id: string, ownerId: string, raw: unknown) {
     const input = draftInputSchema.parse(raw);
     const current = await this.get(id, ownerId);
@@ -132,11 +181,16 @@ export class ProductEditService {
             (value) => value.attributeSeq === attribute.attributeSeq,
           );
           return candidates.length
-            ? !selected.some((value) =>
-                candidates.some(
-                  (candidate) =>
-                    candidate.attributeValueSeq === value.attributeValueSeq,
-                ),
+            ? !selected.some(
+                (value) =>
+                  candidates.some(
+                    (candidate) =>
+                      candidate.attributeValueSeq === value.attributeValueSeq,
+                  ) &&
+                  (attribute.attributeClassificationType !== "RANGE" ||
+                    Boolean(
+                      value.minValue.trim() || value.maxValue.trim(),
+                    )),
               )
             : !selected.some((value) => value.minValue || value.maxValue);
         });

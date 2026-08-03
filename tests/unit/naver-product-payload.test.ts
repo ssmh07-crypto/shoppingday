@@ -81,6 +81,7 @@ const source: NaverProductPayloadSource = {
 };
 
 const profile: NaverPublicationProfile = {
+  immediateDiscountPercent: 10,
   deliveryInfo: {
     deliveryType: "DELIVERY",
     deliveryAttributeType: "NORMAL",
@@ -126,6 +127,11 @@ describe("네이버 v2 상품 payload 변환", () => {
       name: "레트로 메모 포스트잇",
       salePrice: 12_000,
       stockQuantity: 5,
+      customerBenefit: {
+        immediateDiscountPolicy: {
+          discountMethod: { value: 10, unitType: "PERCENT" },
+        },
+      },
       images: {
         representativeImage: {
           url: "https://shop-phinf.pstatic.net/primary.jpg",
@@ -192,6 +198,34 @@ describe("네이버 v2 상품 payload 변환", () => {
     expect(first.ok && second.ok && first.hash).toBe(
       second.ok ? second.hash : "",
     );
+  });
+
+  it("단위가 없는 범위형 속성도 선택값과 실제값을 함께 전송한다", () => {
+    const result = buildNaverProductPayload(
+      {
+        ...source,
+        naverAttributes: [
+          {
+            attributeSeq: 10018883,
+            attributeValueSeq: 10809926,
+            minValue: "280",
+            maxValue: "",
+            unitCode: null,
+          },
+        ],
+      },
+      profile,
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(
+      result.payload.originProduct.detailAttribute.productAttributes,
+    ).toContainEqual({
+      attributeSeq: 10018883,
+      attributeValueSeq: 10809926,
+      attributeRealValue: "280",
+    });
   });
 
   it("상품정보제공고시의 선택 입력 A/S 연락처는 하나만 전송한다", () => {

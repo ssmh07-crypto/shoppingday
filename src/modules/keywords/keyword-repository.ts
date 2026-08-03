@@ -151,7 +151,7 @@ export class DrizzleKeywordManagementRepository
   }
 
   async list(ownerId: string) {
-    return this.database
+    const rows = await this.database
       .select({
         id: keywordManagedProducts.id,
         smartstoreUrl: keywordManagedProducts.smartstoreUrl,
@@ -165,6 +165,7 @@ export class DrizzleKeywordManagementRepository
         keywordCount: sql<number>`count(${keywordCandidates.id})::int`,
         selectedKeywordCount: sql<number>`count(${keywordCandidates.id}) filter (where ${keywordCandidates.isSelected} = true)::int`,
         updatedAt: keywordManagedProducts.updatedAt,
+        productInput: keywordManagedProducts.productInput,
       })
       .from(keywordManagedProducts)
       .leftJoin(
@@ -174,6 +175,11 @@ export class DrizzleKeywordManagementRepository
       .where(eq(keywordManagedProducts.ownerId, ownerId))
       .groupBy(keywordManagedProducts.id)
       .orderBy(desc(keywordManagedProducts.updatedAt));
+    return rows.map(({ productInput, ...row }) => ({
+      ...row,
+      supplierUrl: productInput.supplierUrl,
+      supplierAvailabilityCheck: productInput.supplierAvailabilityCheck,
+    }));
   }
 
   async find(ownerId: string, id: string): Promise<ManagedProductDetail | null> {

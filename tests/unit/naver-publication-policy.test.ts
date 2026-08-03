@@ -17,6 +17,7 @@ describe("네이버 판매 정책", () => {
     const defaults = {
       ...emptyNaverPublicationPolicy,
       singleStockQuantity: 20,
+      immediateDiscountPercent: 10,
       taxType: "TAX" as const,
       minorPurchasable: true,
       naverShoppingRegistration: true,
@@ -26,11 +27,13 @@ describe("네이버 판매 정책", () => {
     expect(
       mergeNaverPublicationPolicy(defaults, {
         singleStockQuantity: 3,
+        immediateDiscountPercent: 15,
         minorPurchasable: false,
       }),
     ).toEqual({
       ...defaults,
       singleStockQuantity: 3,
+      immediateDiscountPercent: 15,
       minorPurchasable: false,
     });
   });
@@ -47,6 +50,7 @@ describe("네이버 판매 정책", () => {
     expect(() =>
       naverPublicationPolicyOverridesSchema.parse({
         singleStockQuantity: -1,
+        immediateDiscountPercent: 100,
         taxType: "UNKNOWN",
       }),
     ).toThrow();

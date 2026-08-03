@@ -40,6 +40,7 @@ export interface ManagedProductInput {
   statusType?: string;
   representativeImageUrl?: string;
   salesSummary?: ManagedProductSalesSummary;
+  supplierAvailabilityCheck?: SupplierAvailabilityCheck;
 }
 
 export interface NaverRegisteredAttribute {
@@ -57,6 +58,25 @@ export interface ManagedProductSalesSummary {
   thirtyDays: number;
   fetchedAt: string;
   source: "naver_orders";
+}
+
+export interface SupplierAvailabilityCheck {
+  provider: "zicgam";
+  status:
+    | "available"
+    | "partial_sold_out"
+    | "sold_out"
+    | "discontinued"
+    | "auth_required"
+    | "unknown"
+    | "failed";
+  productName: string | null;
+  checkedAt: string;
+  source: "chrome_extension";
+  url: string;
+  evidence: string[];
+  availableOptions: string[];
+  soldOutOptions: string[];
 }
 
 export interface NaverCommerceImportState {
@@ -153,6 +173,8 @@ export interface ManagedProductSummary {
   keywordCount: number;
   selectedKeywordCount: number;
   updatedAt: Date;
+  supplierUrl?: string;
+  supplierAvailabilityCheck?: SupplierAvailabilityCheck;
 }
 
 export interface ManagedProductDetail {

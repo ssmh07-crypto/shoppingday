@@ -368,6 +368,133 @@ describe("키워드 관리 서비스", () => {
     );
   });
 
+  it("Chrome 확장 프로그램이 관측한 가격비교 PC 결과를 기록한다", async () => {
+    const repository = fakeRepository();
+    const service = new KeywordManagementService(
+      repository,
+      null,
+      null,
+      config,
+    );
+
+    await service.recordBrowserRankObservation("owner-1", "product-1", {
+      keyword: "여성 원피스",
+      result: {
+        device: "pc",
+        status: "found",
+        rank: 18,
+        checkedRange: 18,
+        observedAt: "2026-07-30T12:00:00.000Z",
+        message: null,
+      },
+    });
+
+    expect(repository.addRankObservation).toHaveBeenCalledWith(
+      "owner-1",
+      "product-1",
+      expect.objectContaining({
+        keyword: "여성 원피스",
+        device: "pc",
+        rank: 18,
+        resultStatus: "found",
+        checkedRange: 18,
+        source: "browser_observed",
+      }),
+    );
+  });
+
+  it("Chrome 확장 프로그램 경로에는 모바일 관측값을 허용하지 않는다", async () => {
+    const repository = fakeRepository();
+    const service = new KeywordManagementService(
+      repository,
+      null,
+      null,
+      config,
+    );
+
+    await expect(
+      service.recordBrowserRankObservation("owner-1", "product-1", {
+        keyword: "여성 원피스",
+        result: {
+          device: "mobile",
+          status: "found",
+          rank: 18,
+          checkedRange: 18,
+          observedAt: "2026-07-30T12:00:00.000Z",
+          message: null,
+        },
+      }),
+    ).rejects.toBeDefined();
+    expect(repository.addRankObservation).not.toHaveBeenCalled();
+  });
+
+  it("Chrome에서 확인한 직감 상품 상태만 기존 상품 입력에 병합한다", async () => {
+    const repository = fakeRepository();
+    const service = new KeywordManagementService(
+      repository,
+      null,
+      null,
+      config,
+    );
+    const supplierUrl =
+      "https://zicgam.com/product/detail.html?product_no=3649&cate_no=48";
+    const result = {
+      provider: "zicgam" as const,
+      status: "sold_out" as const,
+      productName: "직감 테스트 상품",
+      checkedAt: "2026-07-30T14:00:00.000Z",
+      source: "chrome_extension" as const,
+      url: supplierUrl,
+      evidence: ["품절 표시 요소를 확인했습니다."],
+      availableOptions: [],
+      soldOutOptions: [],
+    };
+
+    await service.recordSupplierAvailability("owner-1", "product-1", {
+      supplierUrl,
+      result,
+    });
+
+    expect(repository.updateProductInput).toHaveBeenCalledWith(
+      "owner-1",
+      "product-1",
+      expect.objectContaining({
+        supplierTitle: "여성 원피스",
+        supplierUrl,
+        supplierAvailabilityCheck: result,
+      }),
+    );
+  });
+
+  it("요청 URL과 다른 직감 상품의 확인 결과는 저장하지 않는다", async () => {
+    const repository = fakeRepository();
+    const service = new KeywordManagementService(
+      repository,
+      null,
+      null,
+      config,
+    );
+
+    await expect(
+      service.recordSupplierAvailability("owner-1", "product-1", {
+        supplierUrl:
+          "https://zicgam.com/product/detail.html?product_no=3649",
+        result: {
+          provider: "zicgam",
+          status: "available",
+          productName: null,
+          checkedAt: "2026-07-30T14:00:00.000Z",
+          source: "chrome_extension",
+          url: "https://zicgam.com/product/detail.html?product_no=9999",
+          evidence: ["구매 가능한 상품 버튼을 확인했습니다."],
+          availableOptions: [],
+          soldOutOptions: [],
+        },
+      }),
+    ).rejects.toBeDefined();
+    expect(repository.updateProductInput).not.toHaveBeenCalled();
+  });
+
   it("최종 확인한 상품명과 태그를 기존 스마트스토어 상품에 반영한다", async () => {
     const repository = fakeRepository();
     vi.mocked(repository.findLocalPublication).mockResolvedValue({

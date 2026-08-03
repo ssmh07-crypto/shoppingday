@@ -18,8 +18,7 @@ const OptionEditor = dynamic(
   { loading: () => <PanelLoading label="옵션 편집기" /> },
 );
 const MarginCalculator = dynamic(
-  () =>
-    import("./margin-calculator").then((module) => module.MarginCalculator),
+  () => import("./margin-calculator").then((module) => module.MarginCalculator),
   { loading: () => <PanelLoading label="마진 계산기" /> },
 );
 const NaverAttributeEditor = dynamic(
@@ -145,6 +144,7 @@ export function ProductEditor({
   const [saving, setSaving] = useState(false);
   const [uploadingImages, setUploadingImages] = useState(false);
   const [publishingNaver, setPublishingNaver] = useState(false);
+  const [syncingNaver, setSyncingNaver] = useState(false);
   const [marketData, setMarketData] = useState<ProductEditorMarketData | null>(
     () =>
       initial.naverPublicationPolicy &&
@@ -154,8 +154,7 @@ export function ProductEditor({
             naverPublicationPolicy: initial.naverPublicationPolicy,
             naverStoreConnections: initial.naverStoreConnections,
             naverDeliveryPolicies: initial.naverDeliveryPolicies,
-            naverStoreConnectionId:
-              initial.naverStoreConnectionId ?? null,
+            naverStoreConnectionId: initial.naverStoreConnectionId ?? null,
           }
         : null,
   );
@@ -217,9 +216,7 @@ export function ProductEditor({
   const [publicationRefreshKey, setPublicationRefreshKey] = useState(0);
   const autoRecommendationStarted = useRef(false);
   const publicationLoadedKey = useRef(-1);
-  const categoryRecommendationController = useRef<AbortController | null>(
-    null,
-  );
+  const categoryRecommendationController = useRef<AbortController | null>(null);
   const titleBeforeCategoryQuery = useRef(initial.product.title);
   const dirty = JSON.stringify(form) !== baseline;
   const margin = useMemo(
@@ -390,8 +387,7 @@ export function ProductEditor({
         const body = await response.json().catch(() => null);
         if (!response.ok) {
           throw new Error(
-            body?.error?.message ??
-              "스토어와 판매 정책을 불러오지 못했습니다.",
+            body?.error?.message ?? "스토어와 판매 정책을 불러오지 못했습니다.",
           );
         }
         const data = body.data as ProductEditorMarketData;
@@ -571,10 +567,7 @@ export function ProductEditor({
     [applyCategoryQueryToTitle],
   );
 
-  useEffect(
-    () => () => categoryRecommendationController.current?.abort(),
-    [],
-  );
+  useEffect(() => () => categoryRecommendationController.current?.abort(), []);
 
   useEffect(() => {
     if (
@@ -680,7 +673,9 @@ export function ProductEditor({
     if (registrationContext && sourcingRegistrationDraft) {
       setRecommendingTitle(true);
       setTitleRecommendation(null);
-      setTitleRecommendationStatus("소싱 키워드 분류와 검색 품질 규칙을 적용하는 중입니다.");
+      setTitleRecommendationStatus(
+        "소싱 키워드 분류와 검색 품질 규칙을 적용하는 중입니다.",
+      );
       const draft = buildSourcingRegistrationDraft(
         registrationContext.sourcingKeyword,
         registrationContext.relatedKeywords,
@@ -712,9 +707,10 @@ export function ProductEditor({
             keyword,
             totalMonthlySearchVolume: source?.monthlySearchVolume ?? null,
             competition: "unknown" as const,
-            status: source?.monthlySearchVolume == null
-              ? "not-found" as const
-              : "success" as const,
+            status:
+              source?.monthlySearchVolume == null
+                ? ("not-found" as const)
+                : ("success" as const),
           };
         }),
         relatedKeywords: [],
@@ -794,7 +790,10 @@ export function ProductEditor({
       setTagSelectionStatus("");
       return {
         ...current,
-        searchTags: [...current.searchTags.filter((item) => item.trim()), normalized],
+        searchTags: [
+          ...current.searchTags.filter((item) => item.trim()),
+          normalized,
+        ],
       };
     });
   }
@@ -941,6 +940,90 @@ export function ProductEditor({
     }
   }
 
+  async function syncFromNaver() {
+    if (dirty) {
+      setMessage("저장되지 않은 변경사항을 먼저 저장해 주세요.");
+      return;
+    }
+    if (
+      !window.confirm(
+        "[스마트스토어 정보 불러오기]\n\n스마트스토어센터에서 직접 수정한 상품명, 판매가, 할인율, 카테고리, 검색 태그, 상품 속성을 현재 편집 정보에 반영합니다.\n\n배송 정책, 상세설명, 이미지, 옵션은 변경하지 않습니다. 계속할까요?",
+      )
+    ) {
+      return;
+    }
+    setSyncingNaver(true);
+    setErrors({});
+    setMessage("스마트스토어의 최신 상품 정보를 불러오는 중…");
+    try {
+      const response = await fetch(
+        `/api/products/${initial.product.id}/naver-sync`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            confirmed: true,
+            draftVersion: form.draftVersion,
+          }),
+        },
+      );
+      const body = await response.json().catch(() => null);
+      if (!response.ok) {
+        setErrors(body?.error?.errors ?? {});
+        throw new Error(
+          body?.error?.message ??
+            "스마트스토어 상품 정보를 불러오지 못했습니다.",
+        );
+      }
+      const product = body.result?.product;
+      if (!product)
+        throw new Error("동기화된 상품 정보를 확인하지 못했습니다.");
+      const next = {
+        ...form,
+        draftVersion: product.draftVersion,
+        title: product.title,
+        searchTags: product.searchTags,
+        sellingPrice: product.sellingPrice,
+        naverCategoryId: product.naverCategoryId,
+        naverAttributes: product.naverAttributes,
+      };
+      setForm(next);
+      setBaseline(JSON.stringify(next));
+      setStatus(product.status);
+      if (body.remote?.category) {
+        setSelectedNaverCategory(body.remote.category);
+      }
+      if (body.policy) {
+        setMarketData((current) =>
+          current
+            ? {
+                ...current,
+                naverPublicationPolicy: body.policy,
+              }
+            : current,
+        );
+      }
+      setCategoryRequirementsRefreshKey((current) => current + 1);
+      setPublicationRefreshKey((current) => current + 1);
+      setMessage(
+        `스마트스토어 최신 정보를 반영했습니다.${
+          body.remote?.stockQuantity == null
+            ? ""
+            : ` 현재 재고 ${Number(body.remote.stockQuantity).toLocaleString("ko-KR")}개`
+        }`,
+      );
+      onMutated?.();
+    } catch (error) {
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : "스마트스토어 상품 정보를 불러오지 못했습니다.",
+      );
+    } finally {
+      setSyncingNaver(false);
+    }
+  }
+
   async function changeNaverSaleStatus(
     statusType: "SALE" | "OUTOFSTOCK" | "SUSPENSION",
   ) {
@@ -970,7 +1053,8 @@ export function ProductEditor({
       const body = await response.json().catch(() => null);
       if (!response.ok) {
         throw new Error(
-          body?.error?.message ?? "스마트스토어 판매 상태를 변경하지 못했습니다.",
+          body?.error?.message ??
+            "스마트스토어 판매 상태를 변경하지 못했습니다.",
         );
       }
       setMessage(`스마트스토어 상품을 ${labels[statusType]}했습니다.`);
@@ -1168,7 +1252,7 @@ export function ProductEditor({
         categoryRequirements &&
         categoryRequirements.requiredAttributes.every((attribute) =>
           isNaverAttributeComplete(
-            attribute.attributeSeq,
+            attribute,
             categoryRequirements.attributeValues,
             form.naverAttributes,
           ),
@@ -1410,25 +1494,28 @@ export function ProductEditor({
                       }}
                     >
                       <option value="">검색수 높은 순으로 자동 조합</option>
-                      {sourcingRegistrationDraft.titleCandidates.map((keyword) => {
-                        const source = registrationContext?.relatedKeywords.find(
-                          (item) =>
-                            item.placement === "product_name" &&
-                            item.keyword === keyword,
-                        );
-                        return (
-                          <option value={keyword} key={keyword}>
-                            {keyword}
-                            {source?.monthlySearchVolume == null
-                              ? ""
-                              : ` · 월 ${source.monthlySearchVolume.toLocaleString("ko-KR")}`}
-                          </option>
-                        );
-                      })}
+                      {sourcingRegistrationDraft.titleCandidates.map(
+                        (keyword) => {
+                          const source =
+                            registrationContext?.relatedKeywords.find(
+                              (item) =>
+                                item.placement === "product_name" &&
+                                item.keyword === keyword,
+                            );
+                          return (
+                            <option value={keyword} key={keyword}>
+                              {keyword}
+                              {source?.monthlySearchVolume == null
+                                ? ""
+                                : ` · 월 ${source.monthlySearchVolume.toLocaleString("ko-KR")}`}
+                            </option>
+                          );
+                        },
+                      )}
                     </select>
                     <small>
-                      검색수 1,000 이하 상품명 후보가 여러 개면 하나를 골라
-                      해당 표현을 우선한 추천을 만들 수 있습니다.
+                      검색수 1,000 이하 상품명 후보가 여러 개면 하나를 골라 해당
+                      표현을 우선한 추천을 만들 수 있습니다.
                     </small>
                   </label>
                 )}
@@ -1494,8 +1581,8 @@ export function ProductEditor({
                             ? "소싱 분류 + 검색 품질 규칙"
                             : titleRecommendation.source ===
                                 "rules_naver_search_ad"
-                            ? "규칙 분석 + 네이버 검색광고 실제 데이터"
-                            : "규칙 기반 기본 모드"}
+                              ? "규칙 분석 + 네이버 검색광고 실제 데이터"
+                              : "규칙 기반 기본 모드"}
                         </small>
                         <strong>{titleRecommendation.title}</strong>
                       </div>
@@ -1543,8 +1630,9 @@ export function ProductEditor({
                         <div>
                           <dt>소재·재질</dt>
                           <dd>
-                            {titleRecommendation.analysis.materials.join(", ") ||
-                              "감지 안 됨"}
+                            {titleRecommendation.analysis.materials.join(
+                              ", ",
+                            ) || "감지 안 됨"}
                           </dd>
                         </div>
                         <div>
@@ -1612,11 +1700,11 @@ export function ProductEditor({
                           title: form.title,
                         });
                         const selected = form.searchTags.includes(tag);
-                        const source = registrationContext?.relatedKeywords.find(
-                          (item) =>
-                            item.placement === "tag" &&
-                            item.keyword === tag,
-                        );
+                        const source =
+                          registrationContext?.relatedKeywords.find(
+                            (item) =>
+                              item.placement === "tag" && item.keyword === tag,
+                          );
                         return (
                           <label
                             key={tag}
@@ -1643,7 +1731,9 @@ export function ProductEditor({
                       })}
                     </div>
                   ) : (
-                    <small>소싱 조사에서 태그로 분류한 키워드가 없습니다.</small>
+                    <small>
+                      소싱 조사에서 태그로 분류한 키워드가 없습니다.
+                    </small>
                   )}
                   {tagSelectionStatus && (
                     <small className="field-error">{tagSelectionStatus}</small>
@@ -1876,13 +1966,14 @@ export function ProductEditor({
                         <span>
                           {image.isPrimary
                             ? "대표 이미지"
-                            : `추가 이미지 ${form.selectedImages
-                                .slice(0, index + 1)
-                                .filter(
-                                  (candidate) =>
-                                    candidate.enabled &&
-                                    !candidate.isPrimary,
-                                ).length}`}
+                            : `추가 이미지 ${
+                                form.selectedImages
+                                  .slice(0, index + 1)
+                                  .filter(
+                                    (candidate) =>
+                                      candidate.enabled && !candidate.isPrimary,
+                                  ).length
+                              }`}
                         </span>
                       )}
                       {image.storedUrl && <small>네이버 업로드 완료</small>}
@@ -2204,7 +2295,17 @@ export function ProductEditor({
                       <button
                         type="button"
                         className="secondary"
-                        disabled={publishingNaver}
+                        disabled={publishingNaver || syncingNaver || dirty}
+                        onClick={() => void syncFromNaver()}
+                      >
+                        {syncingNaver
+                          ? "최신 정보 불러오는 중…"
+                          : "스마트스토어 정보 불러오기"}
+                      </button>
+                      <button
+                        type="button"
+                        className="secondary"
+                        disabled={publishingNaver || syncingNaver}
                         onClick={() => void changeNaverSaleStatus("SALE")}
                       >
                         판매 재개
@@ -2213,9 +2314,7 @@ export function ProductEditor({
                         type="button"
                         className="secondary"
                         disabled={publishingNaver}
-                        onClick={() =>
-                          void changeNaverSaleStatus("OUTOFSTOCK")
-                        }
+                        onClick={() => void changeNaverSaleStatus("OUTOFSTOCK")}
                       >
                         품절 처리
                       </button>
@@ -2223,9 +2322,7 @@ export function ProductEditor({
                         type="button"
                         className="secondary"
                         disabled={publishingNaver}
-                        onClick={() =>
-                          void changeNaverSaleStatus("SUSPENSION")
-                        }
+                        onClick={() => void changeNaverSaleStatus("SUSPENSION")}
                       >
                         판매 중지
                       </button>
@@ -2245,11 +2342,15 @@ export function ProductEditor({
               <strong>상품별 판매 정책</strong>
               {marketData ? (
                 <NaverPublicationPolicyForm
+                  key={`${selectedStoreId}:${JSON.stringify(
+                    marketData.naverPublicationPolicy.overrides,
+                  )}`}
                   mode="product"
                   endpoint={`/api/products/${initial.product.id}/naver-publication-policy`}
                   initialDefaults={marketData.naverPublicationPolicy.defaults}
                   initialOverrides={marketData.naverPublicationPolicy.overrides}
                   categoryId={form.naverCategoryId}
+                  salePrice={form.sellingPrice}
                   onSaved={() =>
                     setPublicationRefreshKey((current) => current + 1)
                   }
@@ -2386,8 +2487,8 @@ function NaverAttributesPanel({
     <div className="drawer-category-requirements drawer-attributes-panel">
       <strong>네이버 카테고리별 공식 속성</strong>
       <p>
-        최종 카테고리를 기준으로 네이버 커머스 API에서 필수 속성, 선택값,
-        단위와 표준 옵션을 불러옵니다.
+        최종 카테고리를 기준으로 네이버 커머스 API에서 필수 속성, 선택값, 단위와
+        표준 옵션을 불러옵니다.
       </p>
       {status && <p role="status">{status}</p>}
       {failed && (
@@ -2444,22 +2545,25 @@ function NaverAttributesPanel({
 }
 
 function isNaverAttributeComplete(
-  attributeSeq: number,
+  attribute: CategoryRequirements["requiredAttributes"][number],
   candidates: CategoryRequirements["attributeValues"],
   selected: NaverProductAttribute[],
 ) {
   const attributeCandidates = candidates.filter(
-    (candidate) => candidate.attributeSeq === attributeSeq,
+    (candidate) => candidate.attributeSeq === attribute.attributeSeq,
   );
   const attributeSelections = selected.filter(
-    (value) => value.attributeSeq === attributeSeq,
+    (value) => value.attributeSeq === attribute.attributeSeq,
   );
   return attributeCandidates.length
-    ? attributeSelections.some((value) =>
-        attributeCandidates.some(
-          (candidate) =>
-            candidate.attributeValueSeq === value.attributeValueSeq,
-        ),
+    ? attributeSelections.some(
+        (value) =>
+          attributeCandidates.some(
+            (candidate) =>
+              candidate.attributeValueSeq === value.attributeValueSeq,
+          ) &&
+          (attribute.attributeClassificationType !== "RANGE" ||
+            Boolean(value.minValue.trim() || value.maxValue.trim())),
       )
     : attributeSelections.some((value) => value.minValue || value.maxValue);
 }
@@ -2489,9 +2593,7 @@ function publicationStatusLabel(inspection: PublicationInspection) {
 }
 
 function naverRemoteStatusLabel(
-  status: NonNullable<
-    PublicationInspection["publication"]
-  >["remoteStatusType"],
+  status: NonNullable<PublicationInspection["publication"]>["remoteStatusType"],
 ) {
   return (
     {

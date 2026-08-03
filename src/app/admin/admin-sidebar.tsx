@@ -5,10 +5,15 @@ import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 
 const navigation = [
-  { href: "/admin/products", label: "상품 관리", icon: "box" },
-  { href: "/admin/products/import", label: "상품 가져오기", icon: "download" },
+  { href: "/admin/products", label: "위탁상품관리", icon: "box" },
+  {
+    href: "/admin/products/import",
+    label: "위탁상품 가져오기",
+    icon: "download",
+  },
   { href: "/admin/keywords", label: "성장 상품 관리", icon: "trend" },
   { href: "/admin/sourcing", label: "소싱 조사", icon: "search" },
+  { href: "/admin/wholesale-sites", label: "도매사이트 메모", icon: "link" },
   { href: "/admin/registration", label: "상품 등록관리", icon: "clipboard" },
   { href: "/admin/channels/naver", label: "스마트스토어 설정", icon: "store" },
   { href: "/admin/settings/products", label: "설정", icon: "settings" },
@@ -40,8 +45,8 @@ export function AdminSidebar() {
       <div className="inventory-sidebar-note">
         <AdminIcon name="database" />
         <div>
-          <strong>친구도매 연동</strong>
-          <span>최근 동기화된 상품을 관리합니다.</span>
+          <strong>공급처 연동</strong>
+          <span>친구도매·직감 상품을 관리합니다.</span>
         </div>
       </div>
     </aside>
@@ -101,6 +106,12 @@ function AdminIcon({
         <path d="m20 20-4-4" />
         <path d="M8 11h6" />
         <path d="M11 8v6" />
+      </>
+    ),
+    link: (
+      <>
+        <path d="M10 13a5 5 0 0 0 7.1.1l2-2a5 5 0 0 0-7.1-7.1l-1.1 1.1" />
+        <path d="M14 11a5 5 0 0 0-7.1-.1l-2 2A5 5 0 0 0 12 20l1.1-1.1" />
       </>
     ),
     clipboard: (
