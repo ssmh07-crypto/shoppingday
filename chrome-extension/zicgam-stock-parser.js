@@ -1,20 +1,24 @@
 (() => {
   function inspect(root, locationLike, requestUrl) {
     const pageText = normalizeText(root.body?.innerText ?? "");
+    const productDetail =
+      root.querySelector(".xans-product-detail .infoArea") ??
+      root.querySelector(".xans-product-detail") ??
+      root.querySelector(".infoArea");
     if (
       locationLike.pathname.includes("/member/login") ||
-      /로그인이 필요|회원 등급을 확인|승인회원.*구매/.test(pageText)
+      (!productDetail &&
+        Boolean(
+          root.querySelector("form[action*='/member/login'], input[name='member_id']"),
+        ) &&
+        /로그인이 필요|회원 등급을 확인|승인회원.*구매/.test(pageText))
     ) {
       return makeResult(requestUrl, "auth_required", {
         evidence: ["직감 로그인 또는 승인회원 확인이 필요합니다."],
       });
     }
 
-    const productRoot =
-      root.querySelector(".xans-product-detail .infoArea") ??
-      root.querySelector(".xans-product-detail") ??
-      root.querySelector(".infoArea") ??
-      root.querySelector("#contents");
+    const productRoot = productDetail ?? root.querySelector("#contents");
     const productText = normalizeText(productRoot?.textContent ?? "");
     const productName =
       cleanProductName(

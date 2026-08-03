@@ -153,4 +153,24 @@ describe("Zicgam dropship availability parser", () => {
       "차콜",
     ]);
   });
+
+  it("does not treat a general approved-member notice as logged out on a product page", () => {
+    document.body.innerHTML = `
+      <section class="xans-product-detail">
+        <div class="infoArea">
+          <h2>승인회원 구매 상품</h2>
+          <p>승인회원만 구매할 수 있습니다.</p>
+          <div class="xans-product-action"><button id="btnBuy">구매하기</button></div>
+        </div>
+      </section>
+    `;
+
+    const result = parserGlobal.ShoppingdayZicgamStockParser.inspect(
+      document,
+      { pathname: "/product/detail.html" },
+      productUrl,
+    );
+
+    expect(result.status).toBe("available");
+  });
 });

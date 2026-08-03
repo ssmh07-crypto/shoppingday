@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Shoppingday 순위·공급처 상태 확인",
   "description": "네이버쇼핑 PC 순위 확인과 직감 위탁상품의 전체 가져오기·품절 점검을 로그인된 Chrome에서 실행합니다.",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "permissions": ["storage"],
   "host_permissions": [
     "https://search.shopping.naver.com/*",

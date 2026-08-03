@@ -10,6 +10,11 @@ async function runCatalogImport() {
   const request = ready.payload;
   try {
     const productUrls = await discoverCatalog(request);
+    if (productUrls.length !== request.expectedTotal) {
+      throw new Error(
+        `직감 표시 상품 ${request.expectedTotal}개와 발견 상품 ${productUrls.length}개가 달라 상세 저장을 시작하지 않았습니다.`,
+      );
+    }
     let processed = 0;
     let succeeded = 0;
     let failed = 0;
@@ -78,7 +83,10 @@ async function discoverCatalog(request) {
     const page = url === location.href
       ? { document, url: location.href }
       : await fetchDocument(url);
-    if (/로그인이 필요|승인회원.*구매|회원 등급을 확인/.test(page.document.body?.innerText ?? "")) {
+    if (
+      new URL(page.url).pathname.includes("/member/login") ||
+      page.document.querySelector("form[action*='/member/login'], input[name='member_id']")
+    ) {
       throw Object.assign(
         new Error("직감 로그인 또는 승인회원 확인이 필요합니다."),
         { code: "auth_required" },

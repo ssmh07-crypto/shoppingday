@@ -40,6 +40,7 @@ interface CatalogProgressDetail {
 export function ZicgamFullImport() {
   const [extension, setExtension] = useState({ available: false, version: null as string | null });
   const [requestId, setRequestId] = useState<string | null>(null);
+  const [expectedTotal, setExpectedTotal] = useState(1999);
   const [phase, setPhase] = useState<Phase>("idle");
   const [message, setMessage] = useState<string | null>(null);
   const [progress, setProgress] = useState<CatalogProgressDetail["progress"]>();
@@ -88,7 +89,7 @@ export function ZicgamFullImport() {
     };
   }, [requestId]);
 
-  const extensionReady = extension.available && isMinimumVersion(extension.version, "0.4.0");
+  const extensionReady = extension.available && isMinimumVersion(extension.version, "0.4.1");
   const running = ["starting", "discovering", "importing", "stopping"].includes(phase);
   const percent = useMemo(() => {
     const total = progress?.total ?? 0;
@@ -105,7 +106,11 @@ export function ZicgamFullImport() {
     setMessage("직감 카테고리와 상품 주소를 찾고 있습니다.");
     setProgress(undefined);
     setCounts({ created: 0, updated: 0, unchanged: 0, failed: 0 });
-    window.dispatchEvent(new CustomEvent(START_EVENT, { detail: { requestId: id } }));
+    window.dispatchEvent(
+      new CustomEvent(START_EVENT, {
+        detail: { requestId: id, expectedTotal },
+      }),
+    );
   }
 
   function stop() {
@@ -123,6 +128,17 @@ export function ZicgamFullImport() {
         확인합니다. 새 상품은 추가하고 기존 상품은 공급처 원본 정보만 갱신합니다.
       </p>
       <div className="row" style={{ marginTop: 12 }}>
+        <label htmlFor="zicgam-expected-total">직감 표시 전체 상품 수</label>
+        <input
+          id="zicgam-expected-total"
+          type="number"
+          min={1}
+          max={100000}
+          value={expectedTotal}
+          disabled={running}
+          onChange={(event) => setExpectedTotal(Number(event.target.value))}
+          style={{ width: 130 }}
+        />
         <button type="button" onClick={start} disabled={!extensionReady || running}>
           {running ? "전체 상품 처리 중…" : "직감 전체 상품 가져오기"}
         </button>
@@ -135,7 +151,7 @@ export function ZicgamFullImport() {
       <p className={`notice${extensionReady ? "" : " error"}`}>
         {extensionReady
           ? `Chrome 확장 프로그램 ${extension.version ?? ""} 연결됨`
-          : `Chrome 확장 프로그램 0.4.0 이상이 필요합니다${extension.version ? ` (현재 ${extension.version})` : ""}. 확장을 다시 로드하고 이 페이지를 강력 새로고침해 주세요.`}
+          : `Chrome 확장 프로그램 0.4.1 이상이 필요합니다${extension.version ? ` (현재 ${extension.version})` : ""}. 확장을 다시 로드하고 이 페이지를 강력 새로고침해 주세요.`}
       </p>
       {phase === "discovering" && (
         <p className="notice">

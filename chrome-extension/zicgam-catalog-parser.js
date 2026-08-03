@@ -4,15 +4,32 @@
   function discoverPage(root, baseUrl) {
     const productUrls = new Map();
     const listUrls = new Set();
-    for (const anchor of root.querySelectorAll("a[href]")) {
+    const currentUrl = new URL(baseUrl);
+    const isCatalogPage =
+      currentUrl.pathname === "/product/list.html" ||
+      currentUrl.pathname.startsWith("/category/");
+    for (const anchor of root.querySelectorAll(
+      ".prdList a[href], .xans-product-listnormal a[href], [class*='xans-product-listmain'] a[href]",
+    )) {
       const href = anchor.getAttribute("href");
       const url = safeUrl(href, baseUrl);
       if (!url || url.hostname !== "zicgam.com") continue;
       const productId = productNo(url);
       if (productId) {
         productUrls.set(productId, canonicalProductUrl(url, productId));
-        continue;
       }
+    }
+    const listAnchors = isCatalogPage
+      ? root.querySelectorAll(
+          ".xans-product-normalpaging a[href], .ec-base-paginate a[href], .paginate a[href]",
+        )
+      : root.querySelectorAll(
+          "#category a[href], .category a[href], [class*='category'] a[href], nav a[href]",
+        );
+    for (const anchor of listAnchors) {
+      const href = anchor.getAttribute("href");
+      const url = safeUrl(href, baseUrl);
+      if (!url || url.hostname !== "zicgam.com") continue;
       const listUrl = canonicalListUrl(url);
       if (listUrl) listUrls.add(listUrl);
     }

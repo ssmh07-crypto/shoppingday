@@ -39,15 +39,20 @@ beforeEach(() => {
 describe("Zicgam full catalog parser", () => {
   it("discovers and deduplicates category, pagination, and product links", () => {
     document.body.innerHTML = `
-      <a href="/product/list.html?cate_no=48">욕실용품</a>
-      <a href="/product/list.html?cate_no=48&page=2&sort_method=5">2</a>
-      <a href="/product/detail.html?product_no=3649&cate_no=48">상품</a>
-      <a href="/product/detail.html?product_no=3649&cate_no=48">중복 상품</a>
+      <ul class="prdList">
+        <li><a href="/product/detail.html?product_no=3649&cate_no=48">상품</a></li>
+        <li><a href="/product/detail.html?product_no=3649&cate_no=48">중복 상품</a></li>
+      </ul>
+      <div class="ec-base-paginate">
+        <a href="/product/list.html?cate_no=48">1</a>
+        <a href="/product/list.html?cate_no=48&page=2&sort_method=5">2</a>
+      </div>
+      <aside><a href="/product/detail.html?product_no=9999">최근 본 상품</a></aside>
     `;
 
     const result = parserGlobal.ShoppingdayZicgamCatalogParser.discoverPage(
       document,
-      "https://zicgam.com/index.html",
+      "https://zicgam.com/product/list.html?cate_no=48",
     );
 
     expect(result.productUrls).toEqual([
@@ -56,6 +61,23 @@ describe("Zicgam full catalog parser", () => {
     expect(result.listUrls).toEqual([
       "https://zicgam.com/product/list.html?cate_no=48",
       "https://zicgam.com/product/list.html?cate_no=48&page=2",
+    ]);
+  });
+
+  it("ignores product links outside the catalog product list", () => {
+    document.body.innerHTML = `
+      <ul class="prdList"><li><a href="/product/detail.html?product_no=100">목록 상품</a></li></ul>
+      <section class="recent"><a href="/product/detail.html?product_no=200">최근 본 상품</a></section>
+      <section class="recommend"><a href="/product/detail.html?product_no=300">추천 상품</a></section>
+    `;
+
+    const result = parserGlobal.ShoppingdayZicgamCatalogParser.discoverPage(
+      document,
+      "https://zicgam.com/product/list.html?cate_no=48",
+    );
+
+    expect(result.productUrls).toEqual([
+      "https://zicgam.com/product/detail.html?product_no=100",
     ]);
   });
 
