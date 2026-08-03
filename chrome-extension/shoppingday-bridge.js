@@ -212,15 +212,7 @@ function failedSupplierResult(url, message) {
 
 async function startCatalogBatch(message) {
   try {
-    const response = await fetch("/api/suppliers/zicgam/products/sync", {
-      method: "POST",
-      credentials: "same-origin",
-      signal: AbortSignal.timeout(45_000),
-    });
-    const body = await response.json().catch(() => null);
-    if (!response.ok || !body?.success || !body.job?.id || !body.uploadToken) {
-      throw new Error(body?.error?.message ?? `직감 작업 생성 HTTP ${response.status}`);
-    }
+    const body = await startCatalogBatchWithRetry(message);
     dispatchCatalogProgress(message.requestId, {
       phase: "capturing",
       progress: message.progress,
@@ -230,6 +222,37 @@ async function startCatalogBatch(message) {
   } catch (error) {
     return { ok: false, message: error instanceof Error ? error.message : "직감 작업을 만들지 못했습니다." };
   }
+}
+
+async function startCatalogBatchWithRetry(message) {
+  const retryDelays = [0, 2_000, 5_000, 10_000, 20_000];
+  let lastError = "직감 작업을 만들지 못했습니다.";
+  for (let attempt = 0; attempt < retryDelays.length; attempt += 1) {
+    if (retryDelays[attempt]) {
+      dispatchCatalogProgress(message.requestId, {
+        phase: "starting",
+        progress: message.progress,
+        message: `직감 작업 생성을 재시도합니다 (${attempt}/${retryDelays.length - 1}).`,
+      });
+      await wait(retryDelays[attempt]);
+    }
+    try {
+      const response = await fetch("/api/suppliers/zicgam/products/sync", {
+        method: "POST",
+        credentials: "same-origin",
+        signal: AbortSignal.timeout(45_000),
+      });
+      const body = await response.json().catch(() => null);
+      if (response.ok && body?.success && body.job?.id && body.uploadToken) {
+        return body;
+      }
+      lastError = body?.error?.message ?? `직감 작업 생성 HTTP ${response.status}`;
+      if (response.status !== 429 && response.status < 500) break;
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : lastError;
+    }
+  }
+  throw new Error(lastError);
 }
 
 async function uploadCatalogBatchChunk(message) {
