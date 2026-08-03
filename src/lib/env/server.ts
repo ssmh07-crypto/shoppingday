@@ -53,6 +53,7 @@ const serverEnvSchema = z
     GITHUB_ACTIONS_TOKEN: optionalString,
     GITHUB_ACTIONS_REPOSITORY: optionalString,
     GITHUB_ACTIONS_WORKFLOW: optionalString,
+    ZICGAM_GITHUB_ACTIONS_WORKFLOW: optionalString,
     NAVER_COMMERCE_API_URL: z
       .url()
       .default("https://api.commerce.naver.com/external"),

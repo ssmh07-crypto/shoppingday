@@ -18,15 +18,22 @@ async function runCatalogImport() {
     if (!approval?.ok) {
       throw new Error(approval?.message ?? "발견 상품 수 확인에 실패했습니다.");
     }
-    const importStarted = await chrome.runtime.sendMessage({
-      type: "shoppingday.zicgam.catalog.import_started",
+    const batchStarted = await chrome.runtime.sendMessage({
+      type: "shoppingday.zicgam.catalog.batch_start",
       progress: { processed: 0, total: catalog.productUrls.length },
     });
-    if (importStarted?.cancelled) return;
+    if (batchStarted?.cancelled) return;
+    if (!batchStarted?.ok || !batchStarted.jobId || !batchStarted.uploadToken) {
+      throw new Error(batchStarted?.message ?? "직감 일괄 저장 작업을 만들지 못했습니다.");
+    }
+    const jobId = batchStarted.jobId;
+    const uploadToken = batchStarted.uploadToken;
     let processed = 0;
-    let succeeded = 0;
+    let captured = 0;
     let failed = 0;
     let consecutiveFailures = 0;
+    let chunkIndex = 0;
+    let chunk = [];
     const recentFailures = [];
     for (const url of catalog.productUrls) {
       let stage = "진행 상태 전달";
@@ -49,26 +56,11 @@ async function runCatalogImport() {
           page.url,
           ShoppingdayZicgamStockParser,
         );
-        stage = "Shoppingday 저장";
-        const response = await saveProductWithRetry(
-          product,
-          { processed: processed + 1, total: catalog.productUrls.length },
-        );
-        if (response?.cancelled) return;
-        if (!response?.ok) {
-          const saveError = new Error(response?.message ?? "상품 저장 실패");
-          if (response?.retryable) saveError.code = "shoppingday_service_unavailable";
-          throw saveError;
-        }
-        succeeded += 1;
+        chunk.push(product);
+        captured += 1;
         consecutiveFailures = 0;
       } catch (error) {
         if (error?.code === "auth_required") throw error;
-        if (error?.code === "shoppingday_service_unavailable") {
-          throw new Error(
-            `Shoppingday 서버가 약 2분 동안 HTTP 5xx 오류를 반환해 작업을 중단했습니다. 잠시 후 다시 실행해 주세요. 마지막 오류: ${error.message}`,
-          );
-        }
         failed += 1;
         consecutiveFailures += 1;
         const productId = ShoppingdayZicgamCatalogParser.productNo(new URL(url)) ?? "알 수 없음";
@@ -90,11 +82,46 @@ async function runCatalogImport() {
         }
       }
       processed += 1;
+      if (chunk.length >= 20) {
+        const uploaded = await uploadChunk(jobId, uploadToken, chunkIndex, chunk, {
+          current: processed,
+          processed,
+          captured,
+          failed,
+          total: catalog.productUrls.length,
+        });
+        if (uploaded?.cancelled) return;
+        chunk = [];
+        chunkIndex += 1;
+      }
       await delay(request.delayMs);
     }
+    if (chunk.length) {
+      const uploaded = await uploadChunk(jobId, uploadToken, chunkIndex, chunk, {
+        current: processed,
+        processed,
+        captured,
+        failed,
+        total: catalog.productUrls.length,
+      });
+      if (uploaded?.cancelled) return;
+      chunkIndex += 1;
+    }
+    if (!captured || !chunkIndex) {
+      throw new Error("GitHub Actions로 전달할 직감 상품을 수집하지 못했습니다.");
+    }
+    const dispatched = await chrome.runtime.sendMessage({
+      type: "shoppingday.zicgam.catalog.batch_dispatch",
+      payload: { jobId, chunkCount: chunkIndex, total: captured },
+      progress: { processed, captured, failed, total: catalog.productUrls.length },
+    });
+    if (dispatched?.cancelled) return;
+    if (!dispatched?.ok) {
+      throw new Error(dispatched?.message ?? "GitHub Actions 작업을 시작하지 못했습니다.");
+    }
     await chrome.runtime.sendMessage({
-      type: "shoppingday.zicgam.catalog.complete",
-      summary: { total: catalog.productUrls.length, processed, succeeded, failed },
+      type: "shoppingday.zicgam.catalog.capture_complete",
+      summary: { total: catalog.productUrls.length, captured, failed, jobId },
     });
   } catch (error) {
     await chrome.runtime.sendMessage({
@@ -116,29 +143,14 @@ async function fetchDocumentWithRetry(url) {
   }
 }
 
-async function saveProductWithRetry(product, progress) {
-  let response = null;
-  const retryDelays = [5_000, 15_000, 30_000, 60_000];
-  for (let attempt = 0; attempt <= retryDelays.length; attempt += 1) {
-    response = await chrome.runtime.sendMessage({
-      type: "shoppingday.zicgam.catalog.product",
-      product,
-      progress,
-    });
-    if (response?.ok || response?.cancelled) return response;
-    if (!response?.retryable || attempt === retryDelays.length) return response;
-    const retryDelay = retryDelays[attempt];
-    const waitResponse = await chrome.runtime.sendMessage({
-      type: "shoppingday.zicgam.catalog.retry_wait",
-      progress: {
-        ...progress,
-        retryAttempt: attempt + 1,
-        retryDelaySeconds: retryDelay / 1_000,
-        status: response.status,
-      },
-    });
-    if (waitResponse?.cancelled) return waitResponse;
-    await delay(retryDelay);
+async function uploadChunk(jobId, uploadToken, chunkIndex, products, progress) {
+  const response = await chrome.runtime.sendMessage({
+    type: "shoppingday.zicgam.catalog.batch_chunk",
+    payload: { jobId, uploadToken, chunkIndex, products },
+    progress,
+  });
+  if (!response?.ok && !response?.cancelled) {
+    throw new Error(response?.message ?? `직감 수집 파일 ${chunkIndex + 1} 업로드 실패`);
   }
   return response;
 }

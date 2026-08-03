@@ -12,7 +12,9 @@ type Phase =
   | "idle"
   | "starting"
   | "discovering"
+  | "capturing"
   | "importing"
+  | "queued"
   | "stopping"
   | "complete"
   | "failed";
@@ -36,6 +38,8 @@ interface CatalogProgressDetail {
     verificationSource?: "empty_page" | "empty_page_and_site_total";
     hasNextPage?: boolean;
     processed?: number;
+    captured?: number;
+    failed?: number;
     total?: number;
     retryAttempt?: number;
     retryDelaySeconds?: number;
@@ -44,10 +48,24 @@ interface CatalogProgressDetail {
   result?: { action?: "created" | "updated" | "unchanged" };
   summary?: {
     total: number;
-    processed: number;
-    succeeded: number;
+    processed?: number;
+    succeeded?: number;
+    captured?: number;
     failed: number;
+    jobId?: string;
   };
+}
+
+interface SyncJob {
+  id: string;
+  status: "queued" | "running" | "succeeded" | "failed";
+  total: number;
+  processed: number;
+  created: number;
+  updated: number;
+  unchanged: number;
+  errorMessage: string | null;
+  githubRunUrl: string | null;
 }
 
 export function ZicgamFullImport() {
@@ -60,6 +78,7 @@ export function ZicgamFullImport() {
   const [lastActivityAt, setLastActivityAt] = useState<number | null>(null);
   const [importStartedAt, setImportStartedAt] = useState<number | null>(null);
   const [now, setNow] = useState(() => Date.now());
+  const [job, setJob] = useState<SyncJob | null>(null);
 
   useEffect(() => {
     function onStatus(event: Event) {
@@ -78,6 +97,14 @@ export function ZicgamFullImport() {
         setMessage(detail.message ?? "직감 전체 가져오기를 시작하고 있습니다.");
       }
       if (detail.phase === "discovering") setPhase("discovering");
+      if (detail.phase === "capturing") {
+        setPhase("capturing");
+        if (detail.message) setMessage(detail.message);
+      }
+      if (detail.phase === "queued") {
+        setPhase("queued");
+        if (detail.message) setMessage(detail.message);
+      }
       if (detail.phase === "discovery_complete") {
         setPhase("discovering");
         setMessage(
@@ -123,8 +150,47 @@ export function ZicgamFullImport() {
     };
   }, [requestId]);
 
-  const extensionReady = extension.available && isMinimumVersion(extension.version, "0.4.10");
-  const running = ["starting", "discovering", "importing", "stopping"].includes(phase);
+  useEffect(() => {
+    async function refreshJob() {
+      const response = await fetch("/api/suppliers/zicgam/products/sync", {
+        cache: "no-store",
+        headers: { accept: "application/json" },
+      });
+      const body = await response.json().catch(() => null);
+      if (!response.ok || !body?.success) return;
+      const next = (body.job ?? null) as SyncJob | null;
+      setJob(next);
+      if (!next) return;
+      setCounts({
+        created: next.created,
+        updated: next.updated,
+        unchanged: next.unchanged,
+        failed: 0,
+      });
+      if (next.status === "queued" && next.total > 0) {
+        setPhase("queued");
+        setMessage("수집을 마쳤습니다. GitHub Actions 실행을 기다리고 있습니다.");
+      } else if (next.status === "running") {
+        setPhase("queued");
+        setMessage(`GitHub Actions에서 DB 저장 중입니다: ${next.processed} / ${next.total}개`);
+      } else if (next.status === "succeeded") {
+        setPhase("complete");
+        setMessage(`직감 상품 ${next.processed}개를 DB에 저장했습니다.`);
+      } else if (next.status === "failed") {
+        setPhase("failed");
+        setMessage(next.errorMessage ?? "GitHub Actions 직감 저장 작업에 실패했습니다.");
+      }
+    }
+    const initial = window.setTimeout(() => void refreshJob(), 0);
+    const interval = window.setInterval(() => void refreshJob(), 5_000);
+    return () => {
+      window.clearTimeout(initial);
+      window.clearInterval(interval);
+    };
+  }, []);
+
+  const extensionReady = extension.available && isMinimumVersion(extension.version, "0.5.0");
+  const running = ["starting", "discovering", "capturing", "importing", "queued", "stopping"].includes(phase);
   useEffect(() => {
     if (!running) return;
     const timer = window.setInterval(() => setNow(Date.now()), 1_000);
@@ -178,7 +244,7 @@ export function ZicgamFullImport() {
         <button type="button" onClick={start} disabled={!extensionReady || running}>
           {running ? "전체 상품 처리 중…" : "직감 전체 상품 가져오기"}
         </button>
-        {running && (
+        {running && phase !== "queued" && (
           <button type="button" className="secondary" onClick={stop}>
             중단
           </button>
@@ -187,7 +253,7 @@ export function ZicgamFullImport() {
       <p className={`notice${extensionReady ? "" : " error"}`}>
         {extensionReady
           ? `Chrome 확장 프로그램 ${extension.version ?? ""} 연결됨`
-          : `Chrome 확장 프로그램 0.4.10 이상이 필요합니다${extension.version ? ` (현재 ${extension.version})` : ""}. 확장을 다시 로드하고 이 페이지를 강력 새로고침해 주세요.`}
+          : `Chrome 확장 프로그램 0.5.0 이상이 필요합니다${extension.version ? ` (현재 ${extension.version})` : ""}. 확장을 다시 로드하고 이 페이지를 강력 새로고침해 주세요.`}
       </p>
       {phase === "discovering" && (
         <p className="notice">
@@ -196,6 +262,24 @@ export function ZicgamFullImport() {
             ? ` · 사이트 표시 전체 ${progress.displayedTotal}개`
             : ""}
         </p>
+      )}
+      {phase === "capturing" && (
+        <p className="notice">
+          상세 판독 {progress?.processed ?? 0} / {progress?.total ?? 0}개 · 수집 성공 {progress?.captured ?? 0}개 · 판독 실패 {progress?.failed ?? 0}개
+        </p>
+      )}
+      {phase === "queued" && job && (
+        <div className="product-sync-status">
+          <progress value={job.total ? job.processed : undefined} max={job.total || undefined} />
+          <small>
+            {job.status === "running"
+              ? `DB 저장 ${job.processed.toLocaleString("ko-KR")} / ${job.total.toLocaleString("ko-KR")}개`
+              : "GitHub Actions 실행 대기 중"}
+          </small>
+          {job.githubRunUrl && (
+            <a href={job.githubRunUrl} target="_blank" rel="noreferrer">실행 로그 보기</a>
+          )}
+        </div>
       )}
       {(phase === "importing" || phase === "stopping") && (
         <>

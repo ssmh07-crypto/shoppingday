@@ -206,6 +206,7 @@ async function handleMessage(message, sender) {
       summary: message.summary,
       url: message.url,
       message: message.message,
+      payload: message.payload,
     };
     let updatedPending = {
       ...pending,
@@ -225,7 +226,10 @@ async function handleMessage(message, sender) {
     });
     const needsPageResponse =
       message.type === "shoppingday.zicgam.catalog.product" ||
-      message.type === "shoppingday.zicgam.catalog.discovery_complete";
+      message.type === "shoppingday.zicgam.catalog.discovery_complete" ||
+      message.type === "shoppingday.zicgam.catalog.batch_start" ||
+      message.type === "shoppingday.zicgam.catalog.batch_chunk" ||
+      message.type === "shoppingday.zicgam.catalog.batch_dispatch";
     const response = needsPageResponse
       ? await sendCatalogMessageWithRetry(pending.sourceTabId, forwarded)
       : await chrome.tabs.sendMessage(pending.sourceTabId, forwarded).catch(() => null);
@@ -250,7 +254,7 @@ async function handleMessage(message, sender) {
     }
     return response?.ok === false
       ? response
-      : { ok: true, cancelled: response?.cancelled === true };
+      : { ...response, ok: true, cancelled: response?.cancelled === true };
   }
 
   return { ok: false, message: "지원하지 않는 요청입니다." };

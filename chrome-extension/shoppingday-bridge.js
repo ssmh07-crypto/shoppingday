@@ -111,6 +111,18 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     void saveCatalogProduct(message).then(sendResponse);
     return true;
   }
+  if (message?.type === "shoppingday.zicgam.catalog.batch_start") {
+    void startCatalogBatch(message).then(sendResponse);
+    return true;
+  }
+  if (message?.type === "shoppingday.zicgam.catalog.batch_chunk") {
+    void uploadCatalogBatchChunk(message).then(sendResponse);
+    return true;
+  }
+  if (message?.type === "shoppingday.zicgam.catalog.batch_dispatch") {
+    void dispatchCatalogBatch(message).then(sendResponse);
+    return true;
+  }
   if (message?.type === "shoppingday.zicgam.catalog.discovery_complete") {
     const total = Number(message.progress?.discoveredProducts ?? 0);
     const pages = Number(message.progress?.listPages ?? 0);
@@ -198,6 +210,97 @@ function failedSupplierResult(url, message) {
   };
 }
 
+async function startCatalogBatch(message) {
+  try {
+    const response = await fetch("/api/suppliers/zicgam/products/sync", {
+      method: "POST",
+      credentials: "same-origin",
+      signal: AbortSignal.timeout(45_000),
+    });
+    const body = await response.json().catch(() => null);
+    if (!response.ok || !body?.success || !body.job?.id || !body.uploadToken) {
+      throw new Error(body?.error?.message ?? `직감 작업 생성 HTTP ${response.status}`);
+    }
+    dispatchCatalogProgress(message.requestId, {
+      phase: "capturing",
+      progress: message.progress,
+      message: "상품 상세정보를 수집 파일로 만들고 있습니다.",
+    });
+    return { ok: true, jobId: body.job.id, uploadToken: body.uploadToken };
+  } catch (error) {
+    return { ok: false, message: error instanceof Error ? error.message : "직감 작업을 만들지 못했습니다." };
+  }
+}
+
+async function uploadCatalogBatchChunk(message) {
+  try {
+    const { jobId, uploadToken, chunkIndex, products } = message.payload ?? {};
+    if (!jobId || !uploadToken || !Number.isInteger(chunkIndex) || !Array.isArray(products)) {
+      throw new Error("직감 수집 청크가 올바르지 않습니다.");
+    }
+    const compressed = await gzipJson(products);
+    const response = await fetch(
+      `/api/suppliers/zicgam/products/sync/${encodeURIComponent(jobId)}/chunks/${chunkIndex}`,
+      {
+        method: "PUT",
+        headers: {
+          "content-type": "application/gzip",
+          "x-zicgam-upload-token": uploadToken,
+        },
+        credentials: "same-origin",
+        body: compressed,
+        signal: AbortSignal.timeout(60_000),
+      },
+    );
+    const body = await response.json().catch(() => null);
+    if (!response.ok || !body?.success) {
+      throw new Error(body?.error?.message ?? `직감 청크 업로드 HTTP ${response.status}`);
+    }
+    dispatchCatalogProgress(message.requestId, {
+      phase: "capturing",
+      progress: message.progress,
+      message: `수집 파일 ${chunkIndex + 1}개를 업로드했습니다.`,
+    });
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, message: error instanceof Error ? error.message : "직감 수집 파일을 업로드하지 못했습니다." };
+  }
+}
+
+async function dispatchCatalogBatch(message) {
+  try {
+    const { jobId, chunkCount, total } = message.payload ?? {};
+    const response = await fetch(
+      `/api/suppliers/zicgam/products/sync/${encodeURIComponent(jobId)}/dispatch`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({ chunkCount, total }),
+        signal: AbortSignal.timeout(45_000),
+      },
+    );
+    const body = await response.json().catch(() => null);
+    if (!response.ok || !body?.success) {
+      throw new Error(body?.error?.message ?? `GitHub Actions 실행 요청 HTTP ${response.status}`);
+    }
+    dispatchCatalogProgress(message.requestId, {
+      phase: "queued",
+      progress: message.progress,
+      message: "수집을 마쳤습니다. GitHub Actions DB 저장을 기다리고 있습니다.",
+    });
+    return { ok: true, job: body.job };
+  } catch (error) {
+    return { ok: false, message: error instanceof Error ? error.message : "GitHub Actions 작업을 시작하지 못했습니다." };
+  }
+}
+
+async function gzipJson(value) {
+  const source = new Blob([JSON.stringify(value)], { type: "application/json" });
+  const stream = source.stream().pipeThrough(new CompressionStream("gzip"));
+  return new Blob([await new Response(stream).arrayBuffer()], { type: "application/gzip" });
+}
+
 async function saveCatalogProduct(message) {
   let status = null;
   let retryable = true;
@@ -254,6 +357,21 @@ function catalogProgressDetail(message) {
       phase: "discovery_complete",
       progress: message.progress,
       message: "전체상품 목록 확인을 마쳤습니다.",
+    };
+  }
+  if (suffix === "batch_start" || suffix === "batch_chunk") {
+    return {
+      phase: "capturing",
+      progress: message.progress,
+      message: "직감 상품을 수집 파일로 만들고 있습니다.",
+    };
+  }
+  if (suffix === "batch_dispatch" || suffix === "capture_complete") {
+    return {
+      phase: "queued",
+      progress: message.progress,
+      summary: message.summary,
+      message: "GitHub Actions DB 저장을 기다리고 있습니다.",
     };
   }
   if (
