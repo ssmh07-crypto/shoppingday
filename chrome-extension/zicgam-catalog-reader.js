@@ -55,11 +55,20 @@ async function runCatalogImport() {
           { processed: processed + 1, total: catalog.productUrls.length },
         );
         if (response?.cancelled) return;
-        if (!response?.ok) throw new Error(response?.message ?? "상품 저장 실패");
+        if (!response?.ok) {
+          const saveError = new Error(response?.message ?? "상품 저장 실패");
+          if (response?.retryable) saveError.code = "shoppingday_service_unavailable";
+          throw saveError;
+        }
         succeeded += 1;
         consecutiveFailures = 0;
       } catch (error) {
         if (error?.code === "auth_required") throw error;
+        if (error?.code === "shoppingday_service_unavailable") {
+          throw new Error(
+            `Shoppingday 서버가 약 2분 동안 HTTP 5xx 오류를 반환해 작업을 중단했습니다. 잠시 후 다시 실행해 주세요. 마지막 오류: ${error.message}`,
+          );
+        }
         failed += 1;
         consecutiveFailures += 1;
         const productId = ShoppingdayZicgamCatalogParser.productNo(new URL(url)) ?? "알 수 없음";
@@ -109,14 +118,27 @@ async function fetchDocumentWithRetry(url) {
 
 async function saveProductWithRetry(product, progress) {
   let response = null;
-  for (let attempt = 0; attempt < 2; attempt += 1) {
+  const retryDelays = [5_000, 15_000, 30_000, 60_000];
+  for (let attempt = 0; attempt <= retryDelays.length; attempt += 1) {
     response = await chrome.runtime.sendMessage({
       type: "shoppingday.zicgam.catalog.product",
       product,
       progress,
     });
     if (response?.ok || response?.cancelled) return response;
-    if (attempt === 0) await delay(1_500);
+    if (!response?.retryable || attempt === retryDelays.length) return response;
+    const retryDelay = retryDelays[attempt];
+    const waitResponse = await chrome.runtime.sendMessage({
+      type: "shoppingday.zicgam.catalog.retry_wait",
+      progress: {
+        ...progress,
+        retryAttempt: attempt + 1,
+        retryDelaySeconds: retryDelay / 1_000,
+        status: response.status,
+      },
+    });
+    if (waitResponse?.cancelled) return waitResponse;
+    await delay(retryDelay);
   }
   return response;
 }

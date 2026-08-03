@@ -199,6 +199,8 @@ function failedSupplierResult(url, message) {
 }
 
 async function saveCatalogProduct(message) {
+  let status = null;
+  let retryable = true;
   try {
     const response = await fetch("/api/suppliers/zicgam/products/import", {
       method: "POST",
@@ -207,6 +209,8 @@ async function saveCatalogProduct(message) {
       body: JSON.stringify(message.product),
       signal: AbortSignal.timeout(45_000),
     });
+    status = response.status;
+    retryable = response.status === 429 || response.status >= 500;
     const responseText = await response.text();
     const body = parseJson(responseText);
     if (!response.ok || !body?.success) {
@@ -227,7 +231,7 @@ async function saveCatalogProduct(message) {
       url: message.product?.url,
       message: error instanceof Error ? error.message : "직감 상품 저장에 실패했습니다.",
     };
-    return { ok: false, message: detail.message };
+    return { ok: false, message: detail.message, retryable, status };
   }
 }
 
@@ -269,6 +273,13 @@ function catalogProgressDetail(message) {
           : suffix === "product_saved"
             ? `${message.progress?.processed ?? 0}개 상품 저장을 완료했습니다.`
             : `${message.progress?.current ?? (message.progress?.processed ?? 0) + 1}번째 상품 상세 정보를 확인하고 있습니다.`,
+    };
+  }
+  if (suffix === "retry_wait") {
+    return {
+      phase: "importing",
+      progress: message.progress,
+      message: `Shoppingday 서버가 응답하지 않아 ${message.progress?.retryDelaySeconds ?? 0}초 후 재시도합니다 (${message.progress?.retryAttempt ?? 0}/4).`,
     };
   }
   if (suffix === "item_failed") {

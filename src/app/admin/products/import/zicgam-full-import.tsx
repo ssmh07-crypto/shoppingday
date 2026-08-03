@@ -37,6 +37,9 @@ interface CatalogProgressDetail {
     hasNextPage?: boolean;
     processed?: number;
     total?: number;
+    retryAttempt?: number;
+    retryDelaySeconds?: number;
+    status?: number | null;
   };
   result?: { action?: "created" | "updated" | "unchanged" };
   summary?: {
@@ -120,7 +123,7 @@ export function ZicgamFullImport() {
     };
   }, [requestId]);
 
-  const extensionReady = extension.available && isMinimumVersion(extension.version, "0.4.9");
+  const extensionReady = extension.available && isMinimumVersion(extension.version, "0.4.10");
   const running = ["starting", "discovering", "importing", "stopping"].includes(phase);
   useEffect(() => {
     if (!running) return;
@@ -184,7 +187,7 @@ export function ZicgamFullImport() {
       <p className={`notice${extensionReady ? "" : " error"}`}>
         {extensionReady
           ? `Chrome 확장 프로그램 ${extension.version ?? ""} 연결됨`
-          : `Chrome 확장 프로그램 0.4.9 이상이 필요합니다${extension.version ? ` (현재 ${extension.version})` : ""}. 확장을 다시 로드하고 이 페이지를 강력 새로고침해 주세요.`}
+          : `Chrome 확장 프로그램 0.4.10 이상이 필요합니다${extension.version ? ` (현재 ${extension.version})` : ""}. 확장을 다시 로드하고 이 페이지를 강력 새로고침해 주세요.`}
       </p>
       {phase === "discovering" && (
         <p className="notice">
