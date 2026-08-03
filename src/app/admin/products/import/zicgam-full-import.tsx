@@ -23,8 +23,12 @@ interface CatalogProgressDetail {
   message?: string;
   progress?: {
     listPages?: number;
-    pendingListPages?: number;
+    currentPage?: number;
+    lastPage?: number;
+    pageItemCount?: number;
     discoveredProducts?: number;
+    displayedTotal?: number | null;
+    hasNextPage?: boolean;
     processed?: number;
     total?: number;
   };
@@ -57,7 +61,9 @@ export function ZicgamFullImport() {
       if (detail.phase === "discovering") setPhase("discovering");
       if (detail.phase === "discovery_complete") {
         setPhase("discovering");
-        setMessage(`현재 직감 목록에서 상품 ${detail.progress?.discoveredProducts ?? 0}개를 발견했습니다.`);
+        setMessage(
+          `직감 전체상품 ${detail.progress?.listPages ?? 0}페이지에서 상품 ${detail.progress?.discoveredProducts ?? 0}개를 확인했습니다.`,
+        );
       }
       if (detail.phase === "importing") {
         setPhase("importing");
@@ -92,7 +98,7 @@ export function ZicgamFullImport() {
     };
   }, [requestId]);
 
-  const extensionReady = extension.available && isMinimumVersion(extension.version, "0.4.3");
+  const extensionReady = extension.available && isMinimumVersion(extension.version, "0.4.4");
   const running = ["starting", "discovering", "importing", "stopping"].includes(phase);
   const percent = useMemo(() => {
     const total = progress?.total ?? 0;
@@ -123,7 +129,7 @@ export function ZicgamFullImport() {
     <section className="card" aria-live="polite">
       <h2>직감 전체 상품 가져오기</h2>
       <p>
-        Chrome에 로그인된 직감 승인 계정으로 카테고리와 상품 상세 페이지를 순차
+        Chrome에 로그인된 직감 승인 계정으로 전체상품 목록과 상품 상세 페이지를 순차
         확인합니다. 새 상품은 추가하고 기존 상품은 공급처 원본 정보만 갱신합니다.
       </p>
       <div className="row" style={{ marginTop: 12 }}>
@@ -139,11 +145,14 @@ export function ZicgamFullImport() {
       <p className={`notice${extensionReady ? "" : " error"}`}>
         {extensionReady
           ? `Chrome 확장 프로그램 ${extension.version ?? ""} 연결됨`
-          : `Chrome 확장 프로그램 0.4.3 이상이 필요합니다${extension.version ? ` (현재 ${extension.version})` : ""}. 확장을 다시 로드하고 이 페이지를 강력 새로고침해 주세요.`}
+          : `Chrome 확장 프로그램 0.4.4 이상이 필요합니다${extension.version ? ` (현재 ${extension.version})` : ""}. 확장을 다시 로드하고 이 페이지를 강력 새로고침해 주세요.`}
       </p>
       {phase === "discovering" && (
         <p className="notice">
-          목록 {progress?.listPages ?? 0}페이지 확인 · 상품 {progress?.discoveredProducts ?? 0}개 발견
+          전체상품 목록 {progress?.currentPage ?? progress?.listPages ?? 0}페이지 확인 · 현재 페이지 {progress?.pageItemCount ?? 0}개 · 고유 상품 {progress?.discoveredProducts ?? 0}개
+          {progress?.displayedTotal !== null && progress?.displayedTotal !== undefined
+            ? ` · 사이트 표시 전체 ${progress.displayedTotal}개`
+            : ""}
         </p>
       )}
       {(phase === "importing" || phase === "stopping") && (

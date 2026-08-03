@@ -9,10 +9,10 @@ async function runCatalogImport() {
   if (!ready?.ok || !ready.payload) return;
   const request = ready.payload;
   try {
-    const productUrls = await discoverCatalog(request);
+    const catalog = await discoverCatalog(request);
     const approval = await chrome.runtime.sendMessage({
       type: "shoppingday.zicgam.catalog.discovery_complete",
-      progress: { discoveredProducts: productUrls.length },
+      progress: catalog.summary,
     });
     if (approval?.cancelled) return;
     if (!approval?.ok) {
@@ -22,7 +22,7 @@ async function runCatalogImport() {
     let succeeded = 0;
     let failed = 0;
     let consecutiveFailures = 0;
-    for (const url of productUrls) {
+    for (const url of catalog.productUrls) {
       try {
         const page = await fetchDocument(url);
         const product = ShoppingdayZicgamCatalogParser.extractProduct(
@@ -33,7 +33,7 @@ async function runCatalogImport() {
         const response = await chrome.runtime.sendMessage({
           type: "shoppingday.zicgam.catalog.product",
           product,
-          progress: { processed: processed + 1, total: productUrls.length },
+          progress: { processed: processed + 1, total: catalog.productUrls.length },
         });
         if (response?.cancelled) return;
         if (!response?.ok) throw new Error(response?.message ?? "상품 저장 실패");
@@ -47,7 +47,7 @@ async function runCatalogImport() {
           type: "shoppingday.zicgam.catalog.item_failed",
           url,
           message: error instanceof Error ? error.message : "상품 판독 실패",
-          progress: { processed: processed + 1, total: productUrls.length },
+          progress: { processed: processed + 1, total: catalog.productUrls.length },
         });
         if (response?.cancelled) return;
         if (consecutiveFailures >= 20) {
@@ -59,7 +59,7 @@ async function runCatalogImport() {
     }
     await chrome.runtime.sendMessage({
       type: "shoppingday.zicgam.catalog.complete",
-      summary: { total: productUrls.length, processed, succeeded, failed },
+      summary: { total: catalog.productUrls.length, processed, succeeded, failed },
     });
   } catch (error) {
     await chrome.runtime.sendMessage({
@@ -84,17 +84,21 @@ async function discoverCatalog(request) {
       "직감 홈에서 전체상품 목록 주소를 찾지 못해 작업을 중단했습니다.",
     );
   }
-  const queue = [allProductsUrl];
+  let currentListUrl = allProductsUrl;
   const visited = new Set();
   const products = new Map();
-  while (queue.length) {
+  const productPages = new Map();
+  let displayedTotal = null;
+  let expectedPage = 1;
+  while (currentListUrl) {
     if (visited.size >= request.maximumListPages) {
       throw new Error("직감 목록 페이지 안전 한도를 초과했습니다.");
     }
-    const url = queue.shift();
-    if (!url || visited.has(url)) continue;
-    visited.add(url);
-    const page = await fetchDocument(url);
+    if (visited.has(currentListUrl)) {
+      throw new Error(`직감 목록 ${expectedPage}페이지 주소가 반복되었습니다.`);
+    }
+    visited.add(currentListUrl);
+    const page = await fetchDocument(currentListUrl);
     if (
       new URL(page.url).pathname.includes("/member/login") ||
       page.document.querySelector("form[action*='/member/login'], input[name='member_id']")
@@ -104,34 +108,92 @@ async function discoverCatalog(request) {
         { code: "auth_required" },
       );
     }
-    const found = ShoppingdayZicgamCatalogParser.discoverPage(
+    const inspected = ShoppingdayZicgamCatalogParser.inspectCatalogPage(
       page.document,
       page.url,
     );
-    for (const productUrl of found.productUrls) {
-      const id = ShoppingdayZicgamCatalogParser.productNo(new URL(productUrl));
-      if (id) products.set(id, productUrl);
+    if (inspected.currentPage !== expectedPage) {
+      throw new Error(
+        `직감 목록 페이지 번호가 ${expectedPage}에서 ${inspected.currentPage}(으)로 건너뛰었습니다.`,
+      );
     }
-    for (const listUrl of found.listUrls) {
-      if (!visited.has(listUrl) && !queue.includes(listUrl)) queue.push(listUrl);
+    if (inspected.activePage !== inspected.currentPage) {
+      throw new Error(
+        `직감 목록 ${expectedPage}페이지의 활성 페이지 표시를 확인하지 못했습니다.`,
+      );
+    }
+    if (!inspected.productUrls.length) {
+      throw new Error(`직감 목록 ${expectedPage}페이지에서 상품 카드를 찾지 못했습니다.`);
+    }
+    if (inspected.displayedTotal !== null) {
+      if (displayedTotal === null) displayedTotal = inspected.displayedTotal;
+      else if (displayedTotal !== inspected.displayedTotal) {
+        throw new Error(
+          `탐색 중 직감 표시 전체 상품 수가 ${displayedTotal}개에서 ${inspected.displayedTotal}개로 변경되었습니다. 다시 실행해 주세요.`,
+        );
+      }
+    }
+    for (const productUrl of inspected.productUrls) {
+      const id = ShoppingdayZicgamCatalogParser.productNo(new URL(productUrl));
+      if (!id) continue;
+      const previousPage = productPages.get(id);
+      if (previousPage) {
+        throw new Error(
+          `직감 상품번호 ${id}가 목록 ${previousPage}페이지와 ${expectedPage}페이지에 중복 표시되어 완전성을 확인할 수 없습니다.`,
+        );
+      }
+      productPages.set(id, expectedPage);
+      products.set(id, productUrl);
     }
     const progress = await chrome.runtime.sendMessage({
       type: "shoppingday.zicgam.catalog.discovery",
       progress: {
         listPages: visited.size,
-        pendingListPages: queue.length,
+        currentPage: inspected.currentPage,
+        pageItemCount: inspected.productUrls.length,
         discoveredProducts: products.size,
+        displayedTotal,
+        hasNextPage: Boolean(inspected.nextListUrl),
       },
     });
     if (progress?.cancelled) throw new Error("사용자가 가져오기를 중단했습니다.");
+    if (!inspected.nextListUrl) break;
+    const nextPage = Number(
+      new URL(inspected.nextListUrl).searchParams.get("page") ?? "1",
+    );
+    if (nextPage !== expectedPage + 1) {
+      throw new Error(
+        `직감 목록 다음 페이지가 ${expectedPage + 1}이 아니라 ${nextPage}(으)로 연결됩니다.`,
+      );
+    }
+    currentListUrl = inspected.nextListUrl;
+    expectedPage += 1;
     await delay(request.discoveryDelayMs);
   }
   if (!products.size) {
     throw new Error("직감 상품 목록에서 상품 상세 주소를 찾지 못했습니다.");
   }
-  return [...products.entries()]
-    .sort(([left], [right]) => Number(left) - Number(right))
-    .map(([, url]) => url);
+  if (displayedTotal === null) {
+    throw new Error(
+      "직감 목록에 표시된 전체 상품 수를 읽지 못해 완전성을 확인할 수 없습니다. 상세 저장을 시작하지 않았습니다.",
+    );
+  }
+  if (products.size !== displayedTotal) {
+    throw new Error(
+      `직감 표시 전체 상품은 ${displayedTotal}개지만 목록에서 확인한 고유 상품은 ${products.size}개입니다. 상세 저장을 시작하지 않았습니다.`,
+    );
+  }
+  return {
+    productUrls: [...products.entries()]
+      .sort(([left], [right]) => Number(left) - Number(right))
+      .map(([, url]) => url),
+    summary: {
+      listPages: visited.size,
+      lastPage: expectedPage,
+      discoveredProducts: products.size,
+      displayedTotal,
+    },
+  };
 }
 
 async function fetchDocument(url) {

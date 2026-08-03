@@ -284,7 +284,7 @@ function validateCatalogRequest(value) {
     startUrl: "https://zicgam.com/index.html",
     discoveryDelayMs: 400,
     delayMs: 800,
-    maximumListPages: 5000,
+    maximumListPages: 500,
   };
 }
 

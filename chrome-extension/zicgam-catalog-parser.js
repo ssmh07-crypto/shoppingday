@@ -2,15 +2,28 @@
   const PRODUCT_PATH = "/product/detail.html";
 
   function discoverPage(root, baseUrl) {
+    const inspected = inspectCatalogPage(root, baseUrl);
+    return {
+      productUrls: inspected.productUrls,
+      listUrls: inspected.paginationUrls,
+    };
+  }
+
+  function inspectCatalogPage(root, baseUrl) {
     const productUrls = new Map();
-    const listUrls = new Set();
     const currentUrl = new URL(baseUrl);
-    const isCatalogPage =
-      currentUrl.pathname === "/product/list.html" ||
-      currentUrl.pathname.startsWith("/category/");
-    for (const anchor of root.querySelectorAll(
-      ".prdList a[href], .xans-product-listnormal a[href], [class*='xans-product-listmain'] a[href]",
-    )) {
+    const canonicalCurrentUrl = canonicalListUrl(currentUrl);
+    if (!canonicalCurrentUrl) {
+      throw new Error("직감 전체상품 목록 주소를 확인하지 못했습니다.");
+    }
+    const currentPage = pageNumber(new URL(canonicalCurrentUrl));
+    const normalListAnchors = root.querySelectorAll(
+      ".xans-product-listnormal .prdList a[href]",
+    );
+    const productAnchors = normalListAnchors.length
+      ? normalListAnchors
+      : root.querySelectorAll(".prdList a[href]");
+    for (const anchor of productAnchors) {
       const href = anchor.getAttribute("href");
       const url = safeUrl(href, baseUrl);
       if (!url || url.hostname !== "zicgam.com") continue;
@@ -19,23 +32,27 @@
         productUrls.set(productId, canonicalProductUrl(url, productId));
       }
     }
-    const listAnchors = isCatalogPage
-      ? root.querySelectorAll(
-          ".xans-product-normalpaging a[href], .ec-base-paginate a[href], .paginate a[href]",
-        )
-      : root.querySelectorAll(
-          "#category a[href], .category a[href], [class*='category'] a[href], nav a[href]",
-        );
-    for (const anchor of listAnchors) {
+    const paginationUrls = new Map();
+    for (const anchor of root.querySelectorAll(
+      ".xans-product-normalpaging a[href], .ec-base-paginate a[href]",
+    )) {
       const href = anchor.getAttribute("href");
       const url = safeUrl(href, baseUrl);
       if (!url || url.hostname !== "zicgam.com") continue;
+      inheritCatalogParameters(url, currentUrl);
       const listUrl = canonicalListUrl(url);
-      if (listUrl) listUrls.add(listUrl);
+      if (!listUrl || !sameCatalog(new URL(listUrl), currentUrl)) continue;
+      paginationUrls.set(pageNumber(new URL(listUrl)), listUrl);
     }
+    const activePage = activePageNumber(root);
+    const nextListUrl = paginationUrls.get(currentPage + 1) ?? null;
     return {
       productUrls: [...productUrls.values()],
-      listUrls: [...listUrls],
+      paginationUrls: [...paginationUrls.values()],
+      currentPage,
+      activePage,
+      nextListUrl,
+      displayedTotal: displayedProductTotal(root),
     };
   }
 
@@ -205,6 +222,57 @@
     return result.toString();
   }
 
+  function inheritCatalogParameters(url, currentUrl) {
+    for (const key of ["cate_no", "display_group"]) {
+      if (!url.searchParams.has(key) && currentUrl.searchParams.has(key)) {
+        url.searchParams.set(key, currentUrl.searchParams.get(key));
+      }
+    }
+  }
+
+  function sameCatalog(left, right) {
+    if (left.pathname !== right.pathname) return false;
+    if (left.pathname === "/product/list.html") {
+      return (
+        left.searchParams.get("cate_no") === right.searchParams.get("cate_no") &&
+        (left.searchParams.get("display_group") ?? "") ===
+          (right.searchParams.get("display_group") ?? "")
+      );
+    }
+    return left.pathname.startsWith("/category/");
+  }
+
+  function pageNumber(url) {
+    const value = Number(url.searchParams.get("page") ?? "1");
+    return Number.isInteger(value) && value > 0 ? value : 1;
+  }
+
+  function activePageNumber(root) {
+    for (const element of root.querySelectorAll(
+      ".xans-product-normalpaging .this, .xans-product-normalpaging .selected, .xans-product-normalpaging .active, .xans-product-normalpaging [aria-current='page'], .xans-product-normalpaging strong, .ec-base-paginate .this, .ec-base-paginate .selected, .ec-base-paginate .active, .ec-base-paginate [aria-current='page'], .ec-base-paginate strong",
+    )) {
+      const text = normalizeText(element.textContent ?? "").replace(/,/g, "");
+      if (/^\d+$/.test(text)) return Number(text);
+    }
+    return null;
+  }
+
+  function displayedProductTotal(root) {
+    for (const element of root.querySelectorAll(
+      "[data-total-count], .xans-product-normalmenu .prdCount, .xans-product-normalmenu .count, .prdCount",
+    )) {
+      const attribute = element.getAttribute("data-total-count");
+      const text = normalizeText(attribute ?? element.textContent ?? "");
+      const matched =
+        text.match(/(?:TOTAL|총)\s*:?[\s]*(\d[\d,]*)/i) ??
+        text.match(/(\d[\d,]*)\s*(?:items?|개)/i);
+      if (!matched) continue;
+      const value = Number(matched[1].replace(/,/g, ""));
+      if (Number.isInteger(value) && value >= 0) return value;
+    }
+    return null;
+  }
+
   function firstText(values) {
     return normalizeText(values.find((value) => normalizeText(value ?? "")) ?? "");
   }
@@ -239,6 +307,7 @@
 
   globalThis.ShoppingdayZicgamCatalogParser = {
     discoverPage,
+    inspectCatalogPage,
     findAllProductsListUrl,
     extractProduct,
     productNo,

@@ -4,6 +4,14 @@ import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 type CatalogParser = {
   findAllProductsListUrl(root: Document, baseUrl: string): string | null;
+  inspectCatalogPage(root: Document, baseUrl: string): {
+    productUrls: string[];
+    paginationUrls: string[];
+    currentPage: number;
+    activePage: number | null;
+    nextListUrl: string | null;
+    displayedTotal: number | null;
+  };
   discoverPage(root: Document, baseUrl: string): {
     productUrls: string[];
     listUrls: string[];
@@ -110,6 +118,61 @@ describe("Zicgam full catalog parser", () => {
     expect(result.productUrls).toEqual([
       "https://zicgam.com/product/detail.html?product_no=100",
     ]);
+  });
+
+  it("selects only the sequential next page in the same all-products catalog", () => {
+    document.body.innerHTML = `
+      <div class="xans-product-normalmenu"><p class="prdCount">TOTAL <strong>1,999</strong> items</p></div>
+      <div class="xans-product-listnormal"><ul class="prdList">
+        <li><a href="/product/detail.html?product_no=100&cate_no=56">상품 100</a></li>
+        <li><a href="/product/detail.html?product_no=101&cate_no=56">상품 101</a></li>
+      </ul></div>
+      <div class="xans-product-normalpaging">
+        <a class="this" href="?cate_no=56&page=1">1</a>
+        <a href="?cate_no=56&page=2">2</a>
+        <a href="?cate_no=59&page=2">다른 카테고리</a>
+        <a href="?cate_no=56&page=11">다음 묶음</a>
+      </div>
+    `;
+
+    const result = parserGlobal.ShoppingdayZicgamCatalogParser.inspectCatalogPage(
+      document,
+      "https://zicgam.com/product/list.html?cate_no=56",
+    );
+
+    expect(result).toMatchObject({
+      currentPage: 1,
+      activePage: 1,
+      displayedTotal: 1999,
+      nextListUrl: "https://zicgam.com/product/list.html?cate_no=56&page=2",
+    });
+    expect(result.paginationUrls).not.toContain(
+      "https://zicgam.com/product/list.html?cate_no=59&page=2",
+    );
+  });
+
+  it("recognizes the last page only when the active page has no sequential next link", () => {
+    document.body.innerHTML = `
+      <div class="xans-product-listnormal"><ul class="prdList">
+        <li><a href="/product/detail.html?product_no=999&cate_no=56">마지막 상품</a></li>
+      </ul></div>
+      <div class="ec-base-paginate">
+        <a href="?page=2">2</a>
+        <strong>3</strong>
+      </div>
+    `;
+
+    const result = parserGlobal.ShoppingdayZicgamCatalogParser.inspectCatalogPage(
+      document,
+      "https://zicgam.com/product/list.html?cate_no=56&page=3",
+    );
+
+    expect(result.currentPage).toBe(3);
+    expect(result.activePage).toBe(3);
+    expect(result.nextListUrl).toBeNull();
+    expect(result.paginationUrls).toContain(
+      "https://zicgam.com/product/list.html?cate_no=56&page=2",
+    );
   });
 
   it("extracts normalized product fields from a Cafe24-style detail page", () => {
