@@ -18,12 +18,27 @@ async function runCatalogImport() {
     if (!approval?.ok) {
       throw new Error(approval?.message ?? "발견 상품 수 확인에 실패했습니다.");
     }
+    const importStarted = await chrome.runtime.sendMessage({
+      type: "shoppingday.zicgam.catalog.import_started",
+      progress: { processed: 0, total: catalog.productUrls.length },
+    });
+    if (importStarted?.cancelled) return;
     let processed = 0;
     let succeeded = 0;
     let failed = 0;
     let consecutiveFailures = 0;
     for (const url of catalog.productUrls) {
       try {
+        const itemStarted = await chrome.runtime.sendMessage({
+          type: "shoppingday.zicgam.catalog.item_started",
+          url,
+          progress: {
+            current: processed + 1,
+            processed,
+            total: catalog.productUrls.length,
+          },
+        });
+        if (itemStarted?.cancelled) return;
         const page = await fetchDocument(url);
         const product = ShoppingdayZicgamCatalogParser.extractProduct(
           page.document,
@@ -189,7 +204,11 @@ async function discoverCatalog(request) {
 }
 
 async function fetchDocument(url) {
-  const response = await fetch(url, { credentials: "include", redirect: "follow" });
+  const response = await fetch(url, {
+    credentials: "include",
+    redirect: "follow",
+    signal: AbortSignal.timeout(45_000),
+  });
   if (!response.ok) throw new Error(`직감 페이지 HTTP ${response.status}`);
   const html = await response.text();
   return {

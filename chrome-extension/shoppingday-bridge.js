@@ -197,6 +197,7 @@ async function saveCatalogProduct(message) {
       headers: { "content-type": "application/json" },
       credentials: "same-origin",
       body: JSON.stringify(message.product),
+      signal: AbortSignal.timeout(45_000),
     });
     const body = await response.json().catch(() => null);
     if (!response.ok || !body?.success) {
@@ -222,6 +223,17 @@ async function saveCatalogProduct(message) {
 function catalogProgressDetail(message) {
   const suffix = message.type.split(".").at(-1);
   if (suffix === "discovery") return { phase: "discovering", progress: message.progress };
+  if (suffix === "import_started" || suffix === "item_started") {
+    return {
+      phase: "importing",
+      progress: message.progress,
+      url: message.url,
+      message:
+        suffix === "import_started"
+          ? "상품 상세 정보 저장을 시작합니다."
+          : `${message.progress?.current ?? 0}번째 상품 상세 정보를 확인하고 있습니다.`,
+    };
+  }
   if (suffix === "item_failed") {
     return { phase: "item_failed", progress: message.progress, url: message.url, message: message.message };
   }

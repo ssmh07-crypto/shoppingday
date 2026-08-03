@@ -27,6 +27,7 @@ interface CatalogProgressDetail {
     lastPage?: number;
     terminalEmptyPage?: number;
     pageItemCount?: number;
+    current?: number;
     discoveredProducts?: number;
     displayedTotal?: number | null;
     verificationSource?: "empty_page" | "empty_page_and_site_total";
@@ -50,6 +51,9 @@ export function ZicgamFullImport() {
   const [message, setMessage] = useState<string | null>(null);
   const [progress, setProgress] = useState<CatalogProgressDetail["progress"]>();
   const [counts, setCounts] = useState({ created: 0, updated: 0, unchanged: 0, failed: 0 });
+  const [lastActivityAt, setLastActivityAt] = useState<number | null>(null);
+  const [importStartedAt, setImportStartedAt] = useState<number | null>(null);
+  const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
     function onStatus(event: Event) {
@@ -59,6 +63,7 @@ export function ZicgamFullImport() {
     function onProgress(event: Event) {
       const detail = (event as CustomEvent<CatalogProgressDetail>).detail;
       if (!detail || (requestId && detail.requestId !== requestId)) return;
+      setLastActivityAt(Date.now());
       if (detail.progress) setProgress(detail.progress);
       if (detail.phase === "discovering") setPhase("discovering");
       if (detail.phase === "discovery_complete") {
@@ -69,6 +74,8 @@ export function ZicgamFullImport() {
       }
       if (detail.phase === "importing") {
         setPhase("importing");
+        setImportStartedAt((current) => current ?? Date.now());
+        if (detail.message) setMessage(detail.message);
         const action = detail.result?.action;
         if (action) setCounts((current) => ({ ...current, [action]: current[action] + 1 }));
       }
@@ -100,13 +107,28 @@ export function ZicgamFullImport() {
     };
   }, [requestId]);
 
-  const extensionReady = extension.available && isMinimumVersion(extension.version, "0.4.5");
+  const extensionReady = extension.available && isMinimumVersion(extension.version, "0.4.6");
   const running = ["starting", "discovering", "importing", "stopping"].includes(phase);
+  useEffect(() => {
+    if (!running) return;
+    const timer = window.setInterval(() => setNow(Date.now()), 1_000);
+    return () => window.clearInterval(timer);
+  }, [running]);
   const percent = useMemo(() => {
     const total = progress?.total ?? 0;
     const processed = progress?.processed ?? 0;
     return total ? Math.min(100, Math.round((processed / total) * 100)) : 0;
   }, [progress]);
+  const inactiveSeconds = lastActivityAt
+    ? Math.max(0, Math.floor((now - lastActivityAt) / 1_000))
+    : 0;
+  const estimatedMinutes = useMemo(() => {
+    const processed = progress?.processed ?? 0;
+    const total = progress?.total ?? 0;
+    if (!importStartedAt || processed < 1 || total <= processed) return null;
+    const averageMilliseconds = Math.max(0, now - importStartedAt) / processed;
+    return Math.max(1, Math.ceil((averageMilliseconds * (total - processed)) / 60_000));
+  }, [importStartedAt, now, progress]);
 
   function start() {
     if (!extensionReady || running) return;
@@ -117,6 +139,8 @@ export function ZicgamFullImport() {
     setMessage("직감 카테고리와 상품 주소를 찾고 있습니다.");
     setProgress(undefined);
     setCounts({ created: 0, updated: 0, unchanged: 0, failed: 0 });
+    setLastActivityAt(Date.now());
+    setImportStartedAt(null);
     window.dispatchEvent(new CustomEvent(START_EVENT, { detail: { requestId: id } }));
   }
 
@@ -147,7 +171,7 @@ export function ZicgamFullImport() {
       <p className={`notice${extensionReady ? "" : " error"}`}>
         {extensionReady
           ? `Chrome 확장 프로그램 ${extension.version ?? ""} 연결됨`
-          : `Chrome 확장 프로그램 0.4.5 이상이 필요합니다${extension.version ? ` (현재 ${extension.version})` : ""}. 확장을 다시 로드하고 이 페이지를 강력 새로고침해 주세요.`}
+          : `Chrome 확장 프로그램 0.4.6 이상이 필요합니다${extension.version ? ` (현재 ${extension.version})` : ""}. 확장을 다시 로드하고 이 페이지를 강력 새로고침해 주세요.`}
       </p>
       {phase === "discovering" && (
         <p className="notice">
@@ -162,7 +186,15 @@ export function ZicgamFullImport() {
           <progress value={percent} max={100} style={{ width: "100%" }} />
           <p className="notice">
             {progress?.processed ?? 0} / {progress?.total ?? 0} · 신규 {counts.created} · 갱신 {counts.updated} · 변경 없음 {counts.unchanged} · 실패 {counts.failed}
+            {progress?.current ? ` · 현재 ${progress.current}번째 상품 확인 중` : ""}
+            {` · 마지막 응답 ${inactiveSeconds}초 전`}
+            {estimatedMinutes ? ` · 예상 잔여 약 ${estimatedMinutes}분` : ""}
           </p>
+          {inactiveSeconds >= 120 && (
+            <p className="notice error">
+              2분 이상 진행 응답이 없습니다. 직감 작업 탭의 로그인 상태와 오류 화면을 확인해 주세요.
+            </p>
+          )}
         </>
       )}
       {message && (
