@@ -3,6 +3,7 @@
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 type CatalogParser = {
+  catalogPageUrl(baseUrl: string, page: number): string | null;
   findAllProductsListUrl(root: Document, baseUrl: string): string | null;
   inspectCatalogPage(root: Document, baseUrl: string): {
     productUrls: string[];
@@ -173,6 +174,23 @@ describe("Zicgam full catalog parser", () => {
     expect(result.paginationUrls).toContain(
       "https://zicgam.com/product/list.html?cate_no=56&page=2",
     );
+  });
+
+  it("builds each numbered page directly and recognizes an empty page", () => {
+    const parser = parserGlobal.ShoppingdayZicgamCatalogParser;
+    const url = parser.catalogPageUrl(
+      "https://zicgam.com/product/list.html?cate_no=56&sort_method=5",
+      51,
+    );
+
+    expect(url).toBe(
+      "https://zicgam.com/product/list.html?cate_no=56&page=51",
+    );
+
+    document.body.innerHTML = '<div class="xans-product-listnormal"><ul class="prdList"></ul></div>';
+    const result = parser.inspectCatalogPage(document, url!);
+    expect(result.currentPage).toBe(51);
+    expect(result.productUrls).toEqual([]);
   });
 
   it("extracts normalized product fields from a Cafe24-style detail page", () => {

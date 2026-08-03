@@ -247,6 +247,15 @@
     return Number.isInteger(value) && value > 0 ? value : 1;
   }
 
+  function catalogPageUrl(baseUrl, page) {
+    if (!Number.isInteger(page) || page < 1) return null;
+    const canonical = canonicalListUrl(new URL(baseUrl));
+    if (!canonical) return null;
+    const result = new URL(canonical);
+    result.searchParams.set("page", String(page));
+    return result.toString();
+  }
+
   function activePageNumber(root) {
     for (const element of root.querySelectorAll(
       ".xans-product-normalpaging .this, .xans-product-normalpaging .selected, .xans-product-normalpaging .active, .xans-product-normalpaging [aria-current='page'], .xans-product-normalpaging strong, .ec-base-paginate .this, .ec-base-paginate .selected, .ec-base-paginate .active, .ec-base-paginate [aria-current='page'], .ec-base-paginate strong",
@@ -311,5 +320,6 @@
     findAllProductsListUrl,
     extractProduct,
     productNo,
+    catalogPageUrl,
   };
 })();

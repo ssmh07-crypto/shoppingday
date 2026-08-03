@@ -114,13 +114,18 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type === "shoppingday.zicgam.catalog.discovery_complete") {
     const total = Number(message.progress?.discoveredProducts ?? 0);
     const pages = Number(message.progress?.listPages ?? 0);
-    const displayedTotal = Number(message.progress?.displayedTotal ?? 0);
+    const displayedTotal = message.progress?.displayedTotal;
+    const terminalEmptyPage = Number(message.progress?.terminalEmptyPage ?? pages + 1);
     dispatchCatalogProgress(message.requestId, {
       phase: "discovery_complete",
       progress: message.progress,
     });
+    const siteTotalMessage =
+      Number.isInteger(displayedTotal) && displayedTotal >= 0
+        ? ` 사이트 표시 전체 수는 ${displayedTotal.toLocaleString("ko-KR")}개입니다${displayedTotal === total ? "(일치)." : "(목록 발견 수와 다름)."}`
+        : " 사이트 표시 전체 수는 읽지 못했지만 빈 페이지 기준으로 끝을 확인했습니다.";
     const approved = window.confirm(
-      `직감 전체상품 목록 ${pages.toLocaleString("ko-KR")}페이지에서 ${total.toLocaleString("ko-KR")}개를 확인했습니다. 사이트 표시 전체 수 ${displayedTotal.toLocaleString("ko-KR")}개와 일치합니다. 상품 상세 정보 저장을 시작할까요?`,
+      `직감 전체상품 ${pages.toLocaleString("ko-KR")}페이지에서 고유 상품 ${total.toLocaleString("ko-KR")}개를 확인했고, ${terminalEmptyPage.toLocaleString("ko-KR")}페이지가 비어 있어 목록의 끝으로 판정했습니다.${siteTotalMessage} 상품 상세 정보 저장을 시작할까요?`,
     );
     sendResponse({ ok: approved, cancelled: !approved });
     return;

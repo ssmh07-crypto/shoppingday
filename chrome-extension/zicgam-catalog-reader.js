@@ -89,7 +89,9 @@ async function discoverCatalog(request) {
   const products = new Map();
   const productPages = new Map();
   let displayedTotal = null;
+  let displayedTotalInvalid = false;
   let expectedPage = 1;
+  let terminalEmptyPage = null;
   while (currentListUrl) {
     if (visited.size >= request.maximumListPages) {
       throw new Error("직감 목록 페이지 안전 한도를 초과했습니다.");
@@ -117,20 +119,20 @@ async function discoverCatalog(request) {
         `직감 목록 페이지 번호가 ${expectedPage}에서 ${inspected.currentPage}(으)로 건너뛰었습니다.`,
       );
     }
+    if (!inspected.productUrls.length) {
+      terminalEmptyPage = expectedPage;
+      break;
+    }
     if (inspected.activePage !== inspected.currentPage) {
       throw new Error(
         `직감 목록 ${expectedPage}페이지의 활성 페이지 표시를 확인하지 못했습니다.`,
       );
     }
-    if (!inspected.productUrls.length) {
-      throw new Error(`직감 목록 ${expectedPage}페이지에서 상품 카드를 찾지 못했습니다.`);
-    }
-    if (inspected.displayedTotal !== null) {
+    if (!displayedTotalInvalid && inspected.displayedTotal !== null) {
       if (displayedTotal === null) displayedTotal = inspected.displayedTotal;
       else if (displayedTotal !== inspected.displayedTotal) {
-        throw new Error(
-          `탐색 중 직감 표시 전체 상품 수가 ${displayedTotal}개에서 ${inspected.displayedTotal}개로 변경되었습니다. 다시 실행해 주세요.`,
-        );
+        displayedTotal = null;
+        displayedTotalInvalid = true;
       }
     }
     for (const productUrl of inspected.productUrls) {
@@ -153,45 +155,35 @@ async function discoverCatalog(request) {
         pageItemCount: inspected.productUrls.length,
         discoveredProducts: products.size,
         displayedTotal,
-        hasNextPage: Boolean(inspected.nextListUrl),
+        hasNextPage: true,
       },
     });
     if (progress?.cancelled) throw new Error("사용자가 가져오기를 중단했습니다.");
-    if (!inspected.nextListUrl) break;
-    const nextPage = Number(
-      new URL(inspected.nextListUrl).searchParams.get("page") ?? "1",
-    );
-    if (nextPage !== expectedPage + 1) {
-      throw new Error(
-        `직감 목록 다음 페이지가 ${expectedPage + 1}이 아니라 ${nextPage}(으)로 연결됩니다.`,
-      );
-    }
-    currentListUrl = inspected.nextListUrl;
     expectedPage += 1;
+    currentListUrl = ShoppingdayZicgamCatalogParser.catalogPageUrl(
+      allProductsUrl,
+      expectedPage,
+    );
     await delay(request.discoveryDelayMs);
   }
   if (!products.size) {
     throw new Error("직감 상품 목록에서 상품 상세 주소를 찾지 못했습니다.");
   }
-  if (displayedTotal === null) {
-    throw new Error(
-      "직감 목록에 표시된 전체 상품 수를 읽지 못해 완전성을 확인할 수 없습니다. 상세 저장을 시작하지 않았습니다.",
-    );
-  }
-  if (products.size !== displayedTotal) {
-    throw new Error(
-      `직감 표시 전체 상품은 ${displayedTotal}개지만 목록에서 확인한 고유 상품은 ${products.size}개입니다. 상세 저장을 시작하지 않았습니다.`,
-    );
+  if (terminalEmptyPage === null) {
+    throw new Error("직감 상품이 없는 마지막 확인 페이지를 찾지 못했습니다.");
   }
   return {
     productUrls: [...products.entries()]
       .sort(([left], [right]) => Number(left) - Number(right))
       .map(([, url]) => url),
     summary: {
-      listPages: visited.size,
-      lastPage: expectedPage,
+      listPages: terminalEmptyPage - 1,
+      lastPage: terminalEmptyPage - 1,
+      terminalEmptyPage,
       discoveredProducts: products.size,
       displayedTotal,
+      verificationSource:
+        displayedTotal === null ? "empty_page" : "empty_page_and_site_total",
     },
   };
 }

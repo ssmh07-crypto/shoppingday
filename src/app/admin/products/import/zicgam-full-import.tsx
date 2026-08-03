@@ -25,9 +25,11 @@ interface CatalogProgressDetail {
     listPages?: number;
     currentPage?: number;
     lastPage?: number;
+    terminalEmptyPage?: number;
     pageItemCount?: number;
     discoveredProducts?: number;
     displayedTotal?: number | null;
+    verificationSource?: "empty_page" | "empty_page_and_site_total";
     hasNextPage?: boolean;
     processed?: number;
     total?: number;
@@ -62,7 +64,7 @@ export function ZicgamFullImport() {
       if (detail.phase === "discovery_complete") {
         setPhase("discovering");
         setMessage(
-          `직감 전체상품 ${detail.progress?.listPages ?? 0}페이지에서 상품 ${detail.progress?.discoveredProducts ?? 0}개를 확인했습니다.`,
+          `직감 전체상품 ${detail.progress?.listPages ?? 0}페이지에서 상품 ${detail.progress?.discoveredProducts ?? 0}개를 확인했고 ${detail.progress?.terminalEmptyPage ?? 0}페이지가 비어 있어 목록의 끝으로 판정했습니다.`,
         );
       }
       if (detail.phase === "importing") {
@@ -98,7 +100,7 @@ export function ZicgamFullImport() {
     };
   }, [requestId]);
 
-  const extensionReady = extension.available && isMinimumVersion(extension.version, "0.4.4");
+  const extensionReady = extension.available && isMinimumVersion(extension.version, "0.4.5");
   const running = ["starting", "discovering", "importing", "stopping"].includes(phase);
   const percent = useMemo(() => {
     const total = progress?.total ?? 0;
@@ -145,7 +147,7 @@ export function ZicgamFullImport() {
       <p className={`notice${extensionReady ? "" : " error"}`}>
         {extensionReady
           ? `Chrome 확장 프로그램 ${extension.version ?? ""} 연결됨`
-          : `Chrome 확장 프로그램 0.4.4 이상이 필요합니다${extension.version ? ` (현재 ${extension.version})` : ""}. 확장을 다시 로드하고 이 페이지를 강력 새로고침해 주세요.`}
+          : `Chrome 확장 프로그램 0.4.5 이상이 필요합니다${extension.version ? ` (현재 ${extension.version})` : ""}. 확장을 다시 로드하고 이 페이지를 강력 새로고침해 주세요.`}
       </p>
       {phase === "discovering" && (
         <p className="notice">
