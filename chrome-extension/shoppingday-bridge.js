@@ -207,9 +207,12 @@ async function saveCatalogProduct(message) {
       body: JSON.stringify(message.product),
       signal: AbortSignal.timeout(45_000),
     });
-    const body = await response.json().catch(() => null);
+    const responseText = await response.text();
+    const body = parseJson(responseText);
     if (!response.ok || !body?.success) {
-      throw new Error(body?.error?.message ?? "직감 상품 저장에 실패했습니다.");
+      const responseType = response.headers.get("content-type") ?? "알 수 없음";
+      const fallback = `직감 저장 HTTP ${response.status} · 응답 ${responseType}`;
+      throw new Error(body?.error?.message ?? fallback);
     }
     dispatchCatalogProgress(message.requestId, {
       phase: "importing",
@@ -225,6 +228,14 @@ async function saveCatalogProduct(message) {
       message: error instanceof Error ? error.message : "직감 상품 저장에 실패했습니다.",
     };
     return { ok: false, message: detail.message };
+  }
+}
+
+function parseJson(value) {
+  try {
+    return JSON.parse(value);
+  } catch {
+    return null;
   }
 }
 
