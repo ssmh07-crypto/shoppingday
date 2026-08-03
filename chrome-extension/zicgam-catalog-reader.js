@@ -27,7 +27,9 @@ async function runCatalogImport() {
     let succeeded = 0;
     let failed = 0;
     let consecutiveFailures = 0;
+    const recentFailures = [];
     for (const url of catalog.productUrls) {
+      let stage = "진행 상태 전달";
       try {
         const itemStarted = await chrome.runtime.sendMessage({
           type: "shoppingday.zicgam.catalog.item_started",
@@ -39,17 +41,19 @@ async function runCatalogImport() {
           },
         });
         if (itemStarted?.cancelled) return;
-        const page = await fetchDocument(url);
+        stage = "상세페이지 조회";
+        const page = await fetchDocumentWithRetry(url);
+        stage = "상품정보 해석";
         const product = ShoppingdayZicgamCatalogParser.extractProduct(
           page.document,
           page.url,
           ShoppingdayZicgamStockParser,
         );
-        const response = await chrome.runtime.sendMessage({
-          type: "shoppingday.zicgam.catalog.product",
+        stage = "Shoppingday 저장";
+        const response = await saveProductWithRetry(
           product,
-          progress: { processed: processed + 1, total: catalog.productUrls.length },
-        });
+          { processed: processed + 1, total: catalog.productUrls.length },
+        );
         if (response?.cancelled) return;
         if (!response?.ok) throw new Error(response?.message ?? "상품 저장 실패");
         succeeded += 1;
@@ -58,15 +62,22 @@ async function runCatalogImport() {
         if (error?.code === "auth_required") throw error;
         failed += 1;
         consecutiveFailures += 1;
+        const productId = ShoppingdayZicgamCatalogParser.productNo(new URL(url)) ?? "알 수 없음";
+        const rawMessage = error instanceof Error ? error.message : "알 수 없는 오류";
+        const failureMessage = `${stage} 실패 · 상품번호 ${productId} · ${rawMessage}`;
+        recentFailures.push(failureMessage);
+        if (recentFailures.length > 3) recentFailures.shift();
         const response = await chrome.runtime.sendMessage({
           type: "shoppingday.zicgam.catalog.item_failed",
           url,
-          message: error instanceof Error ? error.message : "상품 판독 실패",
+          message: failureMessage,
           progress: { processed: processed + 1, total: catalog.productUrls.length },
         });
         if (response?.cancelled) return;
         if (consecutiveFailures >= 20) {
-          throw new Error("상품 판독이 20회 연속 실패해 작업을 중단했습니다.");
+          throw new Error(
+            `상품 처리가 20회 연속 실패해 중단했습니다. 최근 오류: ${recentFailures.join(" / ")}`,
+          );
         }
       }
       processed += 1;
@@ -85,6 +96,29 @@ async function runCatalogImport() {
           : "직감 전체 상품 가져오기에 실패했습니다.",
     });
   }
+}
+
+async function fetchDocumentWithRetry(url) {
+  try {
+    return await fetchDocument(url);
+  } catch {
+    await delay(1_500);
+    return fetchDocument(url);
+  }
+}
+
+async function saveProductWithRetry(product, progress) {
+  let response = null;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    response = await chrome.runtime.sendMessage({
+      type: "shoppingday.zicgam.catalog.product",
+      product,
+      progress,
+    });
+    if (response?.ok || response?.cancelled) return response;
+    if (attempt === 0) await delay(1_500);
+  }
+  return response;
 }
 
 async function discoverCatalog(request) {
