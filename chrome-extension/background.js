@@ -279,17 +279,8 @@ function validateCatalogRequest(value) {
   if (!requestId || requestId.length > 100) {
     throw new Error("전체 가져오기 요청 ID가 올바르지 않습니다.");
   }
-  const expectedTotal = Number(value?.expectedTotal);
-  if (
-    !Number.isInteger(expectedTotal) ||
-    expectedTotal < 1 ||
-    expectedTotal > 100_000
-  ) {
-    throw new Error("직감 표시 전체 상품 수를 확인해 주세요.");
-  }
   return {
     requestId,
-    expectedTotal,
     startUrl: "https://zicgam.com/index.html",
     discoveryDelayMs: 400,
     delayMs: 800,

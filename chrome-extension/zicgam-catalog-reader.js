@@ -10,10 +10,13 @@ async function runCatalogImport() {
   const request = ready.payload;
   try {
     const productUrls = await discoverCatalog(request);
-    if (productUrls.length !== request.expectedTotal) {
-      throw new Error(
-        `직감 표시 상품 ${request.expectedTotal}개와 발견 상품 ${productUrls.length}개가 달라 상세 저장을 시작하지 않았습니다.`,
-      );
+    const approval = await chrome.runtime.sendMessage({
+      type: "shoppingday.zicgam.catalog.discovery_complete",
+      progress: { discoveredProducts: productUrls.length },
+    });
+    if (approval?.cancelled) return;
+    if (!approval?.ok) {
+      throw new Error(approval?.message ?? "발견 상품 수 확인에 실패했습니다.");
     }
     let processed = 0;
     let succeeded = 0;

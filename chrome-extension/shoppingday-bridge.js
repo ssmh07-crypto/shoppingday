@@ -111,6 +111,18 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     void saveCatalogProduct(message).then(sendResponse);
     return true;
   }
+  if (message?.type === "shoppingday.zicgam.catalog.discovery_complete") {
+    const total = Number(message.progress?.discoveredProducts ?? 0);
+    dispatchCatalogProgress(message.requestId, {
+      phase: "discovery_complete",
+      progress: message.progress,
+    });
+    const approved = window.confirm(
+      `직감 상품 ${total.toLocaleString("ko-KR")}개를 발견했습니다. 상품 상세 정보 저장을 시작할까요?`,
+    );
+    sendResponse({ ok: approved, cancelled: !approved });
+    return;
+  }
   if (message?.type?.startsWith("shoppingday.zicgam.catalog.")) {
     dispatchCatalogProgress(message.requestId, catalogProgressDetail(message));
     sendResponse({ ok: true });
