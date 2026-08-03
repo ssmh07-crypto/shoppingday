@@ -45,8 +45,8 @@ export function AdminSidebar() {
       <div className="inventory-sidebar-note">
         <AdminIcon name="database" />
         <div>
-          <strong>친구도매 연동</strong>
-          <span>최근 동기화된 상품을 관리합니다.</span>
+          <strong>공급처 연동</strong>
+          <span>친구도매·직감 상품을 관리합니다.</span>
         </div>
       </div>
     </aside>

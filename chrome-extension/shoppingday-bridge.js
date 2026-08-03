@@ -6,6 +6,9 @@ const STATUS_EVENT = "shoppingday:rank-extension-status";
 const PING_EVENT = "shoppingday:rank-extension-ping";
 const SUPPLIER_REQUEST_EVENT = "shoppingday:supplier-check-request";
 const SUPPLIER_RESULT_EVENT = "shoppingday:supplier-check-result";
+const CATALOG_START_EVENT = "shoppingday:zicgam-catalog-start";
+const CATALOG_STOP_EVENT = "shoppingday:zicgam-catalog-stop";
+const CATALOG_PROGRESS_EVENT = "shoppingday:zicgam-catalog-progress";
 
 window.addEventListener(PING_EVENT, () => {
   void reportStatus();
@@ -70,12 +73,47 @@ window.addEventListener(SUPPLIER_REQUEST_EVENT, (event) => {
     });
 });
 
-chrome.runtime.onMessage.addListener((message) => {
+window.addEventListener(CATALOG_START_EVENT, (event) => {
+  void chrome.runtime
+    .sendMessage({
+      type: "shoppingday.zicgam.catalog.start",
+      payload: event.detail,
+    })
+    .then((response) => {
+      if (response?.ok) return;
+      dispatchCatalogProgress(event.detail?.requestId, {
+        phase: "failed",
+        message: response?.message ?? "직감 전체 가져오기를 시작하지 못했습니다.",
+      });
+    })
+    .catch((error) => {
+      dispatchCatalogProgress(event.detail?.requestId, {
+        phase: "failed",
+        message: error instanceof Error ? error.message : "확장 프로그램과 통신하지 못했습니다.",
+      });
+    });
+});
+
+window.addEventListener(CATALOG_STOP_EVENT, (event) => {
+  void chrome.runtime
+    .sendMessage({ type: "shoppingday.zicgam.catalog.stop" })
+    .then(() => dispatchCatalogProgress(event.detail?.requestId, { phase: "stopped" }));
+});
+
+chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type === "shoppingday.rank.result") {
     dispatchResult(message.requestId, message.result);
   }
   if (message?.type === "shoppingday.supplier.result") {
     dispatchSupplierResult(message.requestId, message.result);
+  }
+  if (message?.type === "shoppingday.zicgam.catalog.product") {
+    void saveCatalogProduct(message).then(sendResponse);
+    return true;
+  }
+  if (message?.type?.startsWith("shoppingday.zicgam.catalog.")) {
+    dispatchCatalogProgress(message.requestId, catalogProgressDetail(message));
+    sendResponse({ ok: true });
   }
 });
 
@@ -131,4 +169,51 @@ function failedSupplierResult(url, message) {
     availableOptions: [],
     soldOutOptions: [],
   };
+}
+
+async function saveCatalogProduct(message) {
+  try {
+    const response = await fetch("/api/suppliers/zicgam/products/import", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify(message.product),
+    });
+    const body = await response.json().catch(() => null);
+    if (!response.ok || !body?.success) {
+      throw new Error(body?.error?.message ?? "직감 상품 저장에 실패했습니다.");
+    }
+    dispatchCatalogProgress(message.requestId, {
+      phase: "importing",
+      progress: message.progress,
+      result: body,
+    });
+    return { ok: true };
+  } catch (error) {
+    const detail = {
+      phase: "item_failed",
+      progress: message.progress,
+      url: message.product?.url,
+      message: error instanceof Error ? error.message : "직감 상품 저장에 실패했습니다.",
+    };
+    return { ok: false, message: detail.message };
+  }
+}
+
+function catalogProgressDetail(message) {
+  const suffix = message.type.split(".").at(-1);
+  if (suffix === "discovery") return { phase: "discovering", progress: message.progress };
+  if (suffix === "item_failed") {
+    return { phase: "item_failed", progress: message.progress, url: message.url, message: message.message };
+  }
+  if (suffix === "complete") return { phase: "complete", summary: message.summary };
+  return { phase: "failed", message: message.message ?? "직감 전체 가져오기에 실패했습니다." };
+}
+
+function dispatchCatalogProgress(requestId, detail) {
+  window.dispatchEvent(
+    new CustomEvent(CATALOG_PROGRESS_EVENT, {
+      detail: { requestId, ...detail },
+    }),
+  );
 }

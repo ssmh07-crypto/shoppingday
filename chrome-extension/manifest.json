@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Shoppingday 순위·공급처 상태 확인",
-  "description": "네이버쇼핑 PC 순위와 직감 위탁상품의 품절·단종 상태를 로그인된 Chrome에서 확인합니다.",
-  "version": "0.3.1",
+  "description": "네이버쇼핑 PC 순위 확인과 직감 위탁상품의 전체 가져오기·품절 점검을 로그인된 Chrome에서 실행합니다.",
+  "version": "0.4.0",
   "permissions": ["storage"],
   "host_permissions": [
     "https://search.shopping.naver.com/*",
@@ -21,8 +21,11 @@
     {
       "matches": [
         "https://shoppingday.ssmh07.workers.dev/admin/keywords*",
+        "https://shoppingday.ssmh07.workers.dev/admin/products/import*",
         "http://localhost/admin/keywords*",
-        "http://127.0.0.1/admin/keywords*"
+        "http://localhost/admin/products/import*",
+        "http://127.0.0.1/admin/keywords*",
+        "http://127.0.0.1/admin/products/import*"
       ],
       "js": ["shoppingday-bridge.js"],
       "run_at": "document_start"
@@ -38,6 +41,15 @@
         "https://zicgam.com/member/login.html*"
       ],
       "js": ["zicgam-stock-parser.js", "zicgam-stock-reader.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://zicgam.com/*"],
+      "js": [
+        "zicgam-stock-parser.js",
+        "zicgam-catalog-parser.js",
+        "zicgam-catalog-reader.js"
+      ],
       "run_at": "document_idle"
     }
   ]
