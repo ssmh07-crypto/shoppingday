@@ -8,6 +8,22 @@
 
 ### 직감 전체 상품 가져오기
 
+#### 현재 운영 상태
+
+- 직감 기능 최신 병합은 PR #22의 `468a4b8`이며, 확장 프로그램 기준 버전은 0.5.3이다.
+  Cloudflare GitHub 체크가 PR #22에서는 생성되지 않아 검증된 OpenNext 번들을 Wrangler로
+  직접 배포했다. 운영 Worker 버전은 `ffa97bf5-f667-4985-b080-be96432e4056`이고
+  `/api/suppliers/zicgam/products/sync` 비로그인 점검은 정상 401을 반환했다.
+- 관련 병합은 PR #19(Chrome 수집 + Storage + Actions), PR #20(Storage 직접 업로드),
+  PR #21(작업 생성 503 재시도), PR #22(필드가 빠진 2xx 응답 재시도) 순서다.
+- 0.5.3 배포 뒤 사용자가 전체 흐름을 다시 실행하기 전 대화를 중단했다. 따라서
+  Chrome 전체 수집 → 청크 직접 업로드 → `zicgam-import.yml` 실행 → 전체 DB 저장의
+  실사용 성공은 아직 확인하지 못했다. 다음 세션은 새 코드 변경보다 아래 재시험 순서를
+  먼저 수행한다.
+- 이전 상품별 Worker 저장 경로에서 DB에 들어간 직감 상품 83개는 연결 무결성이 정상이다.
+  이후 재실행도 `product_no` 멱등 처리로 중복 생성되지 않는다. 실패한 수집이 남긴
+  `total=0` 대기 작업과 일부 청크는 다음 실행에서 재사용·덮어쓰기할 수 있다.
+
 - 최신 구현은 확장 프로그램 0.5.3의 하이브리드 방식이다. Chrome은 승인회원 로그인으로
   목록과 상세를 읽고, 20개 단위 gzip 청크를 비공개 Supabase Storage `zicgam-imports`에
   올린다. 수집 완료 후 `zicgam-import.yml` GitHub Actions가 청크를 검증해 DB에 직접
@@ -28,8 +44,8 @@
 - Supabase 비공개 버킷 `zicgam-imports`(5 MiB, `application/gzip`)를 생성했고,
   `SUPABASE_SERVICE_ROLE_KEY`를 Cloudflare Worker와 GitHub Actions Secret에 등록했다.
   Secret 실제 값은 문서나 저장소에 기록하지 않았다.
-- 새 워크플로는 기본 브랜치에 파일이 있어야 API로 실행할 수 있다. 이 기능 브랜치를
-  `main`에 병합하고 배포한 뒤 최초 실사용 검증을 진행한다.
+- `zicgam-import.yml`은 `main`에 병합되어 GitHub Actions에 등록돼 있다. 아직 직감 전체
+  수집이 Actions 실행 단계까지 완료되지 않아 실제 워크플로 실행 이력은 없다.
 - Chrome 수집 중에는 직감 작업 탭과 Shoppingday 탭을 유지한다. 화면이 GitHub Actions
   대기·DB 저장 단계로 전환된 뒤에는 브라우저를 닫거나 다른 페이지로 이동해도 계속된다.
   성공한 임시 청크는 삭제하며, 실패한 청크는 진단을 위해 남긴다.
@@ -39,8 +55,8 @@
 - 확장 프로그램은 로그인된 직감 승인 계정으로 홈의 전체상품 링크와 그 목록 페이지를 탐색해
   `product_no` 기준 상품 상세 주소를 중복 제거한 뒤 한 건씩 처리한다.
 - 상품명, 공급가, 대표·상세 이미지, 상세 HTML, 옵션, 판매·품절 상태를 추출한다.
-  한 상품을 Shoppingday API가 저장한 뒤에만 다음 상품으로 진행하며 요청 간 800ms,
-  목록 탐색 간 400ms 간격을 둔다.
+  상품 상세는 요청 간 800ms, 목록 탐색은 400ms 간격으로 순차 판독한다. 상세 결과는
+  20개씩 gzip 청크로 만든 뒤 signed-upload URL을 사용해 Storage에 직접 올린다.
 - 신규 직감 상품은 기존 공급처 상품과 판매 초안을 만들고, 재실행 시 기존 판매 편집값은
   보존하면서 공급처 원본만 갱신한다. 직감 공급처 레코드는 첫 저장 요청에서 멱등 생성해
   별도 migration은 없다.
@@ -95,21 +111,27 @@
 
 - `npm run typecheck` 통과
 - `npm run lint` 통과
-- 전체 58개 테스트 파일, 310개 테스트 통과
+- 전체 59개 테스트 파일, 315개 테스트 통과
 - `npm run build` 통과
 - `npm run cf:build` 통과
-- `npm run analyze:bundle` 통과 (`/admin/products/import` 클라이언트 청크 gzip 약 5 KiB)
 - 확장 프로그램 JavaScript 문법과 manifest JSON 파싱 통과
+- 실제 비공개 Storage에서 signed-upload URL을 생성해 임시 gzip 파일 업로드·다운로드·삭제
+  검증 통과
+- 운영 서명 API를 유효한 임시 HMAC 토큰으로 호출해 HTTP 200 JSON과
+  `success`·`signedUrl`·`apiKey`·`path` 필드 확인
 
 ### 다음 확인 순서
 
-1. 기능 브랜치를 `main`에 병합하고 배포가 완료됐는지 확인한다.
-2. `chrome://extensions`에서 `Shoppingday 순위·공급처 상태 확인` 0.5.3을 다시 로드한다.
+1. 기존 Shoppingday 탭과 직감 작업 탭을 모두 닫아 이전 content script를 제거한다.
+2. `chrome://extensions`에서 `Shoppingday 순위·공급처 상태 확인`을 다시 로드하고
+   버전이 0.5.3인지 확인한다.
 3. Chrome에서 승인된 직감 계정으로 로그인한다.
-4. Shoppingday `위탁상품 가져오기` 화면을 강력 새로고침하고 확장 연결 상태를 확인한다.
-5. 전체 가져오기를 시작해 목록 발견 수가 실제 직감 카테고리와 맞는지 확인한다.
-6. 수집 완료 후 GitHub Actions 링크와 DB 저장 진행률이 표시되는지 확인한다.
-7. 처음 저장된 3~5개 상품의 공급가, 이미지, 상세설명, 옵션과 품절 상태를 원본 상세
+4. Shoppingday `위탁상품 가져오기`를 새 탭으로 열고 확장 연결 상태를 확인한다.
+5. 전체 가져오기를 시작해 목록 발견 수가 실제 직감 전체상품 목록과 맞는지 확인한다.
+6. 작업 생성·서명 발급이 일시 실패하면 화면에 2초·5초·10초·20초 재시도 메시지가
+   나오는지 확인한다. 최종 실패 문구는 그대로 보존한다.
+7. 수집 완료 후 GitHub Actions 링크와 DB 저장 진행률이 표시되는지 확인한다.
+8. 처음 저장된 3~5개 상품의 공급가, 이미지, 상세설명, 옵션과 품절 상태를 원본 상세
    페이지와 대조한다. 값이 다르면 전체 작업을 중단하고 실제 DOM에 맞게
    `zicgam-catalog-parser.js`를 보강한다.
 
