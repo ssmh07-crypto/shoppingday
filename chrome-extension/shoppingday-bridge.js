@@ -246,6 +246,10 @@ async function startCatalogBatchWithRetry(message) {
       if (response.ok && body?.success && body.job?.id && body.uploadToken) {
         return body;
       }
+      if (response.ok) {
+        lastError = invalidJsonResponseMessage("직감 작업 생성", response, body);
+        continue;
+      }
       lastError = body?.error?.message ?? `직감 작업 생성 HTTP ${response.status}`;
       if (response.status !== 429 && response.status < 500) break;
     } catch (error) {
@@ -304,6 +308,10 @@ async function requestSignedChunkUpload(jobId, uploadToken, chunkIndex, message)
       );
       const body = await response.json().catch(() => null);
       if (response.ok && body?.success && body.signedUrl && body.apiKey) return body;
+      if (response.ok) {
+        lastError = invalidJsonResponseMessage("서명 URL", response, body);
+        continue;
+      }
       lastError = body?.error?.message ?? `서명 URL HTTP ${response.status}`;
       if (response.status !== 429 && response.status < 500) break;
     } catch (error) {
@@ -352,6 +360,12 @@ async function uploadSignedChunk(signed, compressed, chunkIndex, message) {
 
 function wait(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+function invalidJsonResponseMessage(label, response, body) {
+  const contentType = response.headers.get("content-type") ?? "알 수 없음";
+  const fields = body && typeof body === "object" ? Object.keys(body).join(",") : "없음";
+  return `${label} 응답 필드 누락 · HTTP ${response.status} · ${contentType} · 필드 ${fields}`;
 }
 
 async function dispatchCatalogBatch(message) {
