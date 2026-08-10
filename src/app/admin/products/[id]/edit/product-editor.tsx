@@ -120,6 +120,8 @@ type TitleRecommendation = {
   relatedKeywords: Array<{
     keyword: string;
     totalMonthlySearchVolume: number | null;
+    competition?: "low" | "medium" | "high" | "unknown";
+    status?: "success" | "not-found" | "error";
   }>;
   notices: string[];
 };
@@ -772,15 +774,19 @@ export function ProductEditor({
     }
   }
 
-  function toggleSourcingTag(tag: string) {
+  function toggleSearchTag(tag: string) {
     setForm((current) => {
       const normalized = tag.trim();
-      const selected = current.searchTags.includes(normalized);
+      const selected = current.searchTags.some(
+        (item) => item.trim() === normalized,
+      );
       if (selected) {
         setTagSelectionStatus("");
         return {
           ...current,
-          searchTags: current.searchTags.filter((item) => item !== normalized),
+          searchTags: current.searchTags.filter(
+            (item) => item.trim() !== normalized,
+          ),
         };
       }
       if (current.searchTags.filter((item) => item.trim()).length >= 10) {
@@ -795,6 +801,36 @@ export function ProductEditor({
           normalized,
         ],
       };
+    });
+  }
+
+  function applyRecommendedSearchTags() {
+    if (!titleRecommendation?.relatedKeywords.length) return;
+    setForm((current) => {
+      const existing = current.searchTags
+        .map((item) => item.trim())
+        .filter(Boolean);
+      const candidates = titleRecommendation.relatedKeywords
+        .map((item) => item.keyword.trim())
+        .filter(
+          (keyword) =>
+            keyword &&
+            !existing.includes(keyword) &&
+            assessSearchTag(keyword, { title: current.title }).length === 0,
+        );
+      const added = candidates.slice(0, Math.max(0, 10 - existing.length));
+      if (!added.length) {
+        setTagSelectionStatus(
+          existing.length >= 10
+            ? "검색 태그는 최대 10개까지 선택할 수 있습니다."
+            : "추가할 수 있는 새 추천 키워드가 없습니다.",
+        );
+        return current;
+      }
+      setTagSelectionStatus(
+        `추천 키워드 ${added.length}개를 검색 태그에 적용했습니다.`,
+      );
+      return { ...current, searchTags: [...existing, ...added] };
     });
   }
 
@@ -1674,6 +1710,88 @@ export function ProductEditor({
                         </div>
                       </div>
                     )}
+                    {titleRecommendation.source !== "sourcing_rules" &&
+                      titleRecommendation.relatedKeywords.length > 0 && (
+                        <div className="drawer-related-keywords">
+                          <div className="drawer-related-keywords-heading">
+                            <div>
+                              <strong>검색 키워드 추천</strong>
+                              <small>
+                                상품과 관련 있는 연관 검색어를 검색량순으로
+                                정리했습니다.
+                              </small>
+                            </div>
+                            <div>
+                              <span>
+                                {
+                                  form.searchTags.filter((tag) => tag.trim())
+                                    .length
+                                }
+                                /10 선택
+                              </span>
+                              <button
+                                type="button"
+                                className="drawer-button-secondary"
+                                onClick={applyRecommendedSearchTags}
+                              >
+                                추천 키워드 채우기
+                              </button>
+                            </div>
+                          </div>
+                          <div className="drawer-related-keyword-list">
+                            {titleRecommendation.relatedKeywords.map((item) => {
+                              const keyword = item.keyword.trim();
+                              const qualityIssues = assessSearchTag(keyword, {
+                                title: form.title,
+                              });
+                              const selected = form.searchTags.some(
+                                (tag) => tag.trim() === keyword,
+                              );
+                              const selectionLimitReached =
+                                !selected &&
+                                form.searchTags.filter((tag) => tag.trim())
+                                  .length >= 10;
+                              return (
+                                <label
+                                  key={item.keyword}
+                                  className={selected ? "selected" : undefined}
+                                  title={qualityIssues[0]?.message}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={selected}
+                                    disabled={
+                                      selectionLimitReached ||
+                                      qualityIssues.length > 0
+                                    }
+                                    onChange={() => toggleSearchTag(keyword)}
+                                  />
+                                  <span>{item.keyword}</span>
+                                  <small>
+                                    {item.totalMonthlySearchVolume == null
+                                      ? "검색량 조회 안 됨"
+                                      : `월 ${item.totalMonthlySearchVolume.toLocaleString("ko-KR")}회`}
+                                    {qualityIssues.length > 0
+                                      ? " · 상품명과 중복"
+                                      : ""}
+                                  </small>
+                                </label>
+                              );
+                            })}
+                          </div>
+                          {tagSelectionStatus && (
+                            <small
+                              className={
+                                tagSelectionStatus.includes("최대")
+                                  ? "field-error"
+                                  : "drawer-tag-selection-status"
+                              }
+                            >
+                              {tagSelectionStatus}
+                            </small>
+                          )}
+                        </div>
+                      )}
                     {titleRecommendation.notices.map((notice) => (
                       <p key={notice}>{notice}</p>
                     ))}
@@ -1717,7 +1835,7 @@ export function ProductEditor({
                               type="checkbox"
                               checked={selected}
                               disabled={tooLong || qualityIssues.length > 0}
-                              onChange={() => toggleSourcingTag(tag)}
+                              onChange={() => toggleSearchTag(tag)}
                             />
                             <span>{tag}</span>
                             <small>
@@ -2420,7 +2538,7 @@ export function ProductEditor({
         </div>
         <button
           type="button"
-          className="secondary"
+          className="drawer-button-secondary"
           disabled={!dirty || saving}
           onClick={() => setForm(JSON.parse(baseline))}
         >
@@ -2428,12 +2546,18 @@ export function ProductEditor({
         </button>
         <button
           type="button"
+          className="drawer-button-draft"
           disabled={!dirty || saving}
           onClick={() => submit("draft")}
         >
           {saving ? "저장 중…" : "임시저장"}
         </button>
-        <button type="button" disabled={saving} onClick={() => submit("ready")}>
+        <button
+          type="button"
+          className="drawer-button-primary"
+          disabled={saving}
+          onClick={() => submit("ready")}
+        >
           등록 준비 완료
         </button>
       </footer>

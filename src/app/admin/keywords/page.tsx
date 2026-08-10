@@ -6,7 +6,6 @@ import {
 } from "@/modules/keywords/keyword-factory";
 import { KeywordManager } from "./keyword-manager";
 import { NaverStoreSettingsRepository } from "@/modules/channels/naver/naver-store-settings-repository";
-import "../admin-operations.css";
 
 export const dynamic = "force-dynamic";
 
