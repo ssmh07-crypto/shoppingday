@@ -138,6 +138,7 @@ export const suppliers = pgTable("suppliers", {
   id: uuid("id").primaryKey().defaultRandom(),
   code: text("code").notNull().unique(),
   name: text("name").notNull(),
+  productNumberPrefix: text("product_number_prefix").unique(),
   status: supplierStatusEnum("status").notNull().default("active"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()

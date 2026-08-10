@@ -4,6 +4,7 @@ import {
   imagesFromSupplier,
   readyErrors,
   sanitizeDescription,
+  supplierDescriptionIsUnedited,
   statusAfterSave,
 } from "@/modules/products/product-domain";
 
@@ -246,5 +247,14 @@ describe("판매 상품 도메인", () => {
       '<script>x</script><a href="javascript:alert(1)" onclick="x()">a</a><img src="data:x">',
     );
     expect(clean).not.toMatch(/script|javascript|onclick|data:/);
+  });
+  it("공급처 원본과 같은 상세설명만 미편집 상태로 판단한다", () => {
+    const raw = '<p>사이즈</p><img ec-data-src="//example.test/detail.jpg">';
+    const original = sanitizeDescription(raw);
+
+    expect(supplierDescriptionIsUnedited(original, raw)).toBe(true);
+    expect(
+      supplierDescriptionIsUnedited(`${original}<p>사용자 설명</p>`, raw),
+    ).toBe(false);
   });
 });

@@ -64,6 +64,7 @@ export type ProductEditorInitial = {
   } | null;
   supplier: {
     name: string;
+    productNumberPrefix?: string | null;
     externalProductId: string;
     originalName: string | null;
     supplierPrice: string | null;

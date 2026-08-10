@@ -49,6 +49,7 @@ export class ProductEditService {
     input: {
       search?: string;
       filter?: string;
+      supplier?: string;
       sort?: string;
       page?: number;
       pageSize?: number;

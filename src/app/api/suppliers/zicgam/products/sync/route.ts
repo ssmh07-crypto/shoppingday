@@ -30,7 +30,12 @@ export async function POST() {
       const user = await requireAdmin(database);
       await database
         .insert(suppliers)
-        .values({ code: "zicgam", name: "직감", status: "active" })
+        .values({
+          code: "zicgam",
+          name: "직감",
+          productNumberPrefix: "ZG",
+          status: "active",
+        })
         .onConflictDoNothing({ target: suppliers.code });
       let job;
       try {

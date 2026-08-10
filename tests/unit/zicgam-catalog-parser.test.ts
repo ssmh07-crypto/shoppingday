@@ -211,7 +211,11 @@ describe("Zicgam full catalog parser", () => {
           </div>
         </div>
       </section>
-      <div id="prdDetail"><img src="/images/detail.jpg"><p>상세 설명</p></div>
+      <div id="prdDetail">
+        <img src="/images/detail.jpg">
+        <img ec-data-src="//cdn.example.com/lazy-detail.jpg">
+        <p>상세 설명</p>
+      </div>
     `;
     const result = parserGlobal.ShoppingdayZicgamCatalogParser.extractProduct(
       document,
@@ -229,6 +233,7 @@ describe("Zicgam full catalog parser", () => {
       images: [
         "https://cdn.example.com/main.jpg",
         "https://zicgam.com/images/detail.jpg",
+        "https://cdn.example.com/lazy-detail.jpg",
       ],
       options: [
         { name: "색상: 아이보리", price: 0 },
@@ -238,6 +243,10 @@ describe("Zicgam full catalog parser", () => {
     expect(result.rawDescription).toContain(
       'src="https://zicgam.com/images/detail.jpg"',
     );
+    expect(result.rawDescription).toContain(
+      'src="https://cdn.example.com/lazy-detail.jpg"',
+    );
+    expect(result.rawDescription).not.toContain("ec-data-src");
   });
 
   it("rejects a product page when the approved-member login is required", () => {
