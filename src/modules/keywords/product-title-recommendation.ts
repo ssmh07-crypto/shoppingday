@@ -4,62 +4,13 @@ import { getServerEnv, type ServerEnv } from "@/lib/env/server";
 import { NaverSearchAdClient } from "./naver-search-ad-client";
 import { createRulesAnalysis, createRulesTitle } from "./rules-keyword-client";
 import {
-  genericProductTypePattern,
-  promotionalTitleTerms,
-} from "./title-quality";
+  detectProductTitleAnalysis,
+  normalizeProductTitleAnalysis,
+  productTitleMaterialTerms,
+  type ProductTitleAnalysisCriteria,
+} from "./product-title-analysis";
 import { normalizeKeyword, sanitizeKeyword } from "./keyword-utils";
 import type { KeywordMetrics } from "./types";
-
-const materialTerms = [
-  "스테인리스",
-  "스테인레스",
-  "스텐",
-  "철제",
-  "금속",
-  "고무",
-  "실리콘",
-  "가죽",
-  "플라스틱",
-  "아크릴",
-  "원목",
-  "나무",
-  "유리",
-  "면",
-  "린넨",
-  "폴리에스터",
-] as const;
-
-const useTerms = [
-  "바느질",
-  "재봉",
-  "공예",
-  "수납",
-  "보관",
-  "정리",
-  "거치",
-  "캠핑",
-  "주방",
-  "욕실",
-  "차량",
-  "사무",
-  "작업",
-  "청소",
-  "운동",
-  "낚시",
-] as const;
-
-const generalTerms = new Set([
-  "남성",
-  "여성",
-  "아동",
-  "유아",
-  "성인",
-  "휴대용",
-  "미니",
-  "대형",
-  "소형",
-  "다용도",
-]);
 
 export type ProductTitleRecommendationInput = {
   title: string;
@@ -67,6 +18,7 @@ export type ProductTitleRecommendationInput = {
   categoryPath?: string;
   searchTags?: string[];
   maximumLength?: number;
+  analysisCriteria?: ProductTitleAnalysisCriteria;
 };
 
 export type ProductTitleRecommendation = {
@@ -111,8 +63,20 @@ export class ProductTitleRecommendationService {
       imageUrls: [],
       memo: "",
     };
-    const analysis = createRulesAnalysis(productInput, 20).productAnalysis;
-    const parsed = parseTitleParts(cleanTitle, analysis.productType);
+    const detectedCriteria = detectProductTitleAnalysis(input);
+    const parsed = normalizeProductTitleAnalysis(
+      input.analysisCriteria ?? detectedCriteria,
+    );
+    if (!parsed.productType) {
+      throw new Error("상품 유형을 입력한 뒤 다시 추천해 주세요.");
+    }
+    const analysis = {
+      ...createRulesAnalysis(productInput, 20).productAnalysis,
+      productType: parsed.productType,
+      productTypes: [parsed.productType],
+      primaryProductType: parsed.productType,
+      productTypeStatus: "user_confirmed" as const,
+    };
     const descriptorTerms = unique([
       ...parsed.materials,
       ...parsed.uses,
@@ -135,9 +99,14 @@ export class ProductTitleRecommendationService {
         relatedKeywords = relatedKeywords
           .filter(
             (item) =>
+              !parsed.removedTerms.some((term) =>
+                normalizeKeyword(item.keyword).includes(normalizeKeyword(term)),
+              ) &&
               normalizeKeyword(item.keyword)
                 .replace(/\s+/g, "")
-                .includes(normalizeKeyword(analysis.productType).replace(/\s+/g, "")) &&
+                .includes(
+                  normalizeKeyword(analysis.productType).replace(/\s+/g, ""),
+                ) &&
               !hasConflictingMaterial(item.keyword, parsed.materials),
           )
           .sort(
@@ -187,10 +156,7 @@ export class ProductTitleRecommendationService {
 
     return {
       title,
-      source:
-        keywordEvidence.length > 0
-          ? "rules_naver_search_ad"
-          : "rules",
+      source: keywordEvidence.length > 0 ? "rules_naver_search_ad" : "rules",
       analysis: {
         productType: analysis.productType,
         materials: parsed.materials,
@@ -223,57 +189,25 @@ export function createProductTitleRecommendationService(
   return new ProductTitleRecommendationService(metrics);
 }
 
-function parseTitleParts(title: string, productType: string) {
-  const productTypeNormalized = normalizeKeyword(productType);
-  const removedTerms: string[] = [];
-  const materials: string[] = [];
-  const uses: string[] = [];
-  const modifiers: string[] = [];
-
-  for (const token of tokenize(title)) {
-    const normalized = normalizeKeyword(token);
-    if (normalized === productTypeNormalized) continue;
-    if (
-      promotionalTitleTerms.some((term) => normalized.includes(normalizeKeyword(term))) ||
-      genericProductTypePattern.test(token)
-    ) {
-      removedTerms.push(token);
-      continue;
-    }
-    const material = materialTerms.find((term) => normalized.includes(normalizeKeyword(term)));
-    if (material) {
-      materials.push(material);
-      continue;
-    }
-    const use = useTerms.find((term) => normalized.includes(normalizeKeyword(term)));
-    if (use) {
-      uses.push(use);
-      continue;
-    }
-    if (generalTerms.has(normalized) || token.length <= 8) modifiers.push(token);
-  }
-
-  return {
-    materials: unique(materials),
-    uses: unique(uses),
-    modifiers: unique(modifiers),
-    removedTerms: unique(removedTerms),
-  };
-}
-
 function rankDescriptors(
   terms: string[],
   productType: string,
   metrics: KeywordMetrics[],
-  parsed: ReturnType<typeof parseTitleParts>,
+  parsed: ProductTitleAnalysisCriteria,
 ) {
   const volumeByTerm = new Map<string, number>();
   for (const term of terms) {
-    const query = normalizeKeyword(`${term} ${productType}`).replace(/\s+/g, "");
+    const query = normalizeKeyword(`${term} ${productType}`).replace(
+      /\s+/g,
+      "",
+    );
     const metric = metrics.find(
       (item) => normalizeKeyword(item.keyword).replace(/\s+/g, "") === query,
     );
-    volumeByTerm.set(normalizeKeyword(term), metric?.totalMonthlySearchVolume ?? -1);
+    volumeByTerm.set(
+      normalizeKeyword(term),
+      metric?.totalMonthlySearchVolume ?? -1,
+    );
   }
   const group = (term: string) =>
     parsed.materials.includes(term) ? 0 : parsed.uses.includes(term) ? 1 : 2;
@@ -290,7 +224,7 @@ function rankDescriptors(
 function hasConflictingMaterial(keyword: string, selectedMaterials: string[]) {
   if (!selectedMaterials.length) return false;
   const normalizedKeyword = normalizeKeyword(keyword).replace(/\s+/g, "");
-  const mentioned = materialTerms.filter((term) =>
+  const mentioned = productTitleMaterialTerms.filter((term) =>
     normalizedKeyword.includes(normalizeKeyword(term).replace(/\s+/g, "")),
   );
   if (!mentioned.length) return false;
@@ -299,15 +233,6 @@ function hasConflictingMaterial(keyword: string, selectedMaterials: string[]) {
       (selected) => normalizeKeyword(selected) === normalizeKeyword(term),
     ),
   );
-}
-
-function tokenize(value: string) {
-  return value
-    .normalize("NFKC")
-    .replace(/[>｜|/,[\](){}]+/g, " ")
-    .split(/\s+/)
-    .map((token) => token.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, ""))
-    .filter((token) => token.length > 1);
 }
 
 function unique(values: string[]) {

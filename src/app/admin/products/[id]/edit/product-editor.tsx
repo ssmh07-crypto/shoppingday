@@ -6,6 +6,10 @@ import dynamic from "next/dynamic";
 import type { NaverProductAttribute, SelectedImage } from "@/lib/db/schema";
 import { buildSourcingRegistrationDraft } from "@/modules/sourcing/registration-draft";
 import { assessSearchTag } from "@/modules/keywords/search-tag-quality";
+import {
+  detectProductTitleAnalysis,
+  type ProductTitleAnalysisCriteria,
+} from "@/modules/keywords/product-title-analysis";
 import type {
   NaverCategoryOption,
   ProductEditorInitial,
@@ -126,6 +130,14 @@ type TitleRecommendation = {
   notices: string[];
 };
 
+type ProductTitleAnalysisDraft = {
+  productType: string;
+  materials: string;
+  uses: string;
+  modifiers: string;
+  removedTerms: string;
+};
+
 export function ProductEditor({
   initial,
   onMutated,
@@ -174,6 +186,19 @@ export function ProductEditor({
     useState<TitleRecommendation | null>(null);
   const [titleRecommendationStatus, setTitleRecommendationStatus] =
     useState("");
+  const [titleAnalysisCriteria, setTitleAnalysisCriteria] =
+    useState<ProductTitleAnalysisDraft>(() =>
+      toProductTitleAnalysisDraft(
+        detectProductTitleAnalysis({
+          title: initial.product.title,
+          originalTitle: initial.supplier.originalName ?? "",
+          categoryPath: initial.naverCategory?.wholeCategoryName ?? "",
+        }),
+      ),
+    );
+  const [titleAnalysisStatus, setTitleAnalysisStatus] = useState(
+    "판매용 상품명과 카테고리에서 자동 감지했습니다. 추천 전에 수정할 수 있습니다.",
+  );
   const [preferredSourcingTitleKeyword, setPreferredSourcingTitleKeyword] =
     useState("");
   const [tagSelectionStatus, setTagSelectionStatus] = useState("");
@@ -670,6 +695,39 @@ export function ProductEditor({
     }
   }
 
+  function currentTitleCategoryPath() {
+    return selectedNaverCategory?.id === form.naverCategoryId
+      ? selectedNaverCategory.wholeCategoryName
+      : initial.naverCategory?.id === form.naverCategoryId
+        ? initial.naverCategory.wholeCategoryName
+        : "";
+  }
+
+  function redetectTitleAnalysis() {
+    const detected = detectProductTitleAnalysis({
+      title: form.title,
+      originalTitle: initial.supplier.originalName ?? "",
+      categoryPath: currentTitleCategoryPath(),
+    });
+    setTitleAnalysisCriteria(toProductTitleAnalysisDraft(detected));
+    setTitleRecommendation(null);
+    setTitleRecommendationStatus("");
+    setTitleAnalysisStatus(
+      detected.productType
+        ? "현재 상품명과 카테고리 기준으로 다시 감지했습니다."
+        : "상품 유형을 자동으로 확정하지 못했습니다. 실제 상품 유형을 직접 입력해 주세요.",
+    );
+  }
+
+  function updateTitleAnalysisCriteria(next: ProductTitleAnalysisDraft) {
+    setTitleAnalysisCriteria(next);
+    setTitleRecommendation(null);
+    setTitleRecommendationStatus("");
+    setTitleAnalysisStatus(
+      "수정한 분석 기준을 다음 상품명·검색 키워드 추천에 사용합니다.",
+    );
+  }
+
   async function recommendProductTitle() {
     const title = form.title.trim();
     if (registrationContext && sourcingRegistrationDraft) {
@@ -728,18 +786,19 @@ export function ProductEditor({
       );
       return;
     }
+    if (!titleAnalysisCriteria.productType.trim()) {
+      setTitleRecommendationStatus(
+        "상품 분석 기준에서 상품 유형을 입력해 주세요.",
+      );
+      return;
+    }
     setRecommendingTitle(true);
     setTitleRecommendation(null);
     setTitleRecommendationStatus(
       "상품 구조를 분석하고 네이버 키워드 검색량을 확인하는 중입니다.",
     );
     try {
-      const categoryPath =
-        selectedNaverCategory?.id === form.naverCategoryId
-          ? selectedNaverCategory.wholeCategoryName
-          : initial.naverCategory?.id === form.naverCategoryId
-            ? initial.naverCategory.wholeCategoryName
-            : "";
+      const categoryPath = currentTitleCategoryPath();
       const response = await fetch(
         `/api/products/${initial.product.id}/title-recommendation`,
         {
@@ -752,6 +811,9 @@ export function ProductEditor({
             searchTags: form.searchTags
               .map((tag) => tag.trim())
               .filter(Boolean),
+            analysisCriteria: fromProductTitleAnalysisDraft(
+              titleAnalysisCriteria,
+            ),
           }),
         },
       );
@@ -1560,18 +1622,18 @@ export function ProductEditor({
                 )}
                 <div className="drawer-product-title-heading">
                   <label htmlFor="product-selling-title">판매용 상품명</label>
-                  <button
-                    type="button"
-                    disabled={
-                      recommendingTitle ||
-                      (sourcingRegistrationDraft
-                        ? !sourcingRegistrationDraft.titleCandidates.length
-                        : form.title.trim().length < 2)
-                    }
-                    onClick={() => void recommendProductTitle()}
-                  >
-                    {recommendingTitle ? "추천 분석 중…" : "상품명 추천"}
-                  </button>
+                  {sourcingRegistrationDraft && (
+                    <button
+                      type="button"
+                      disabled={
+                        recommendingTitle ||
+                        !sourcingRegistrationDraft.titleCandidates.length
+                      }
+                      onClick={() => void recommendProductTitle()}
+                    >
+                      {recommendingTitle ? "추천 분석 중…" : "상품명 추천"}
+                    </button>
+                  )}
                 </div>
                 <input
                   id="product-selling-title"
@@ -1581,6 +1643,9 @@ export function ProductEditor({
                     setForm({ ...form, title: event.target.value });
                     setTitleRecommendation(null);
                     setTitleRecommendationStatus("");
+                    setTitleAnalysisStatus(
+                      "상품명이 변경되었습니다. 분석 기준을 확인하거나 다시 감지해 주세요.",
+                    );
                   }}
                   onBlur={() => {
                     if (!form.naverCategoryId)
@@ -1603,6 +1668,120 @@ export function ProductEditor({
                   <small>원본 상품명</small>
                   <strong>{initial.supplier.originalName ?? "-"}</strong>
                 </span>
+                {!sourcingRegistrationDraft && (
+                  <section className="drawer-title-analysis-criteria">
+                    <div className="drawer-title-analysis-heading">
+                      <div>
+                        <strong>상품 분석 기준</strong>
+                        <p>
+                          자동 감지값을 실제 상품에 맞게 수정하면 상품명과 검색
+                          키워드 추천에 함께 반영됩니다.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        className="drawer-button-secondary"
+                        onClick={redetectTitleAnalysis}
+                      >
+                        현재 상품명으로 다시 감지
+                      </button>
+                    </div>
+                    <div className="drawer-title-analysis-grid">
+                      <label>
+                        <span>
+                          상품 유형 <strong>필수</strong>
+                        </span>
+                        <input
+                          value={titleAnalysisCriteria.productType}
+                          placeholder="예: 공구함, 골무, 욕실화"
+                          onChange={(event) =>
+                            updateTitleAnalysisCriteria({
+                              ...titleAnalysisCriteria,
+                              productType: event.target.value,
+                            })
+                          }
+                        />
+                      </label>
+                      <label>
+                        소재·재질
+                        <input
+                          value={titleAnalysisCriteria.materials}
+                          placeholder="쉼표로 구분"
+                          onChange={(event) =>
+                            updateTitleAnalysisCriteria({
+                              ...titleAnalysisCriteria,
+                              materials: event.target.value,
+                            })
+                          }
+                        />
+                      </label>
+                      <label>
+                        용도
+                        <input
+                          value={titleAnalysisCriteria.uses}
+                          placeholder="예: 수납, 캠핑"
+                          onChange={(event) =>
+                            updateTitleAnalysisCriteria({
+                              ...titleAnalysisCriteria,
+                              uses: event.target.value,
+                            })
+                          }
+                        />
+                      </label>
+                      <label>
+                        핵심 특징
+                        <input
+                          value={titleAnalysisCriteria.modifiers}
+                          placeholder="예: 휴대용, 미니"
+                          onChange={(event) =>
+                            updateTitleAnalysisCriteria({
+                              ...titleAnalysisCriteria,
+                              modifiers: event.target.value,
+                            })
+                          }
+                        />
+                      </label>
+                      <label className="wide">
+                        추천에서 제외할 표현
+                        <input
+                          value={titleAnalysisCriteria.removedTerms}
+                          placeholder="예: 무료배송, 부자재"
+                          onChange={(event) =>
+                            updateTitleAnalysisCriteria({
+                              ...titleAnalysisCriteria,
+                              removedTerms: event.target.value,
+                            })
+                          }
+                        />
+                      </label>
+                    </div>
+                    <div className="drawer-title-analysis-actions">
+                      <small
+                        className={
+                          titleAnalysisCriteria.productType
+                            ? "drawer-title-analysis-status"
+                            : "field-error"
+                        }
+                      >
+                        {titleAnalysisStatus}
+                      </small>
+                      <button
+                        type="button"
+                        className="drawer-button-primary"
+                        disabled={
+                          recommendingTitle ||
+                          form.title.trim().length < 2 ||
+                          !titleAnalysisCriteria.productType.trim()
+                        }
+                        onClick={() => void recommendProductTitle()}
+                      >
+                        {recommendingTitle
+                          ? "추천 분석 중…"
+                          : "이 기준으로 상품명·키워드 추천"}
+                      </button>
+                    </div>
+                  </section>
+                )}
                 {titleRecommendationStatus && (
                   <small className="drawer-title-recommendation-status">
                     {titleRecommendationStatus}
@@ -2747,6 +2926,41 @@ function fromInitial(initial: ProductEditorInitial) {
     selectedImages: product.selectedImages,
     editedOptions: product.editedOptions,
     naverAttributes: product.naverAttributes ?? [],
+  };
+}
+
+function splitKeywordList(value: string) {
+  return Array.from(
+    new Set(
+      value
+        .split(",")
+        .map((item) => item.trim())
+        .filter(Boolean),
+    ),
+  );
+}
+
+function toProductTitleAnalysisDraft(
+  criteria: ProductTitleAnalysisCriteria,
+): ProductTitleAnalysisDraft {
+  return {
+    productType: criteria.productType,
+    materials: criteria.materials.join(", "),
+    uses: criteria.uses.join(", "),
+    modifiers: criteria.modifiers.join(", "),
+    removedTerms: criteria.removedTerms.join(", "),
+  };
+}
+
+function fromProductTitleAnalysisDraft(
+  draft: ProductTitleAnalysisDraft,
+): ProductTitleAnalysisCriteria {
+  return {
+    productType: draft.productType.trim(),
+    materials: splitKeywordList(draft.materials),
+    uses: splitKeywordList(draft.uses),
+    modifiers: splitKeywordList(draft.modifiers),
+    removedTerms: splitKeywordList(draft.removedTerms),
   };
 }
 

@@ -233,7 +233,17 @@ describe("상품 편집 서랍", () => {
     );
 
     await screen.findByDisplayValue("철제 바느질 골무 바느질부자재");
-    fireEvent.click(screen.getByRole("button", { name: "상품명 추천" }));
+    expect(screen.getByDisplayValue("골무")).toBeVisible();
+    expect(screen.getByDisplayValue("철제")).toBeVisible();
+    expect(screen.getByDisplayValue("바느질")).toBeVisible();
+    fireEvent.change(screen.getByPlaceholderText("예: 수납, 캠핑"), {
+      target: { value: "재봉, 공예" },
+    });
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "이 기준으로 상품명·키워드 추천",
+      }),
+    );
 
     expect(
       await screen.findByText("규칙 분석 + 네이버 검색광고 실제 데이터"),
@@ -250,6 +260,15 @@ describe("상품 편집 서랍", () => {
       "/api/products/title-recommendation-product/title-recommendation",
       expect.objectContaining({ method: "POST" }),
     );
+    expect(
+      JSON.parse(String(fetchMock.mock.calls.at(-1)?.[1]?.body))
+        .analysisCriteria,
+    ).toMatchObject({
+      productType: "골무",
+      materials: ["철제"],
+      uses: ["재봉", "공예"],
+      removedTerms: ["바느질부자재"],
+    });
   });
 
   it("변경 후 다른 탭을 누르면 초안을 저장한 뒤 이동한다", async () => {
@@ -376,7 +395,11 @@ describe("상품 편집 서랍", () => {
     render(<ProductEditorDrawer initialProductId="related-keyword-product" />);
 
     await screen.findByDisplayValue("스테인리스 공구함");
-    fireEvent.click(screen.getByRole("button", { name: "상품명 추천" }));
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "이 기준으로 상품명·키워드 추천",
+      }),
+    );
 
     expect(await screen.findByText("검색 키워드 추천")).toBeVisible();
     expect(screen.getByText("월 120회")).toBeVisible();

@@ -9,6 +9,15 @@ const inputSchema = z.object({
   originalTitle: z.string().trim().max(300).optional(),
   categoryPath: z.string().trim().max(500).optional(),
   searchTags: z.array(z.string().trim().max(50)).max(10).default([]),
+  analysisCriteria: z
+    .object({
+      productType: z.string().trim().min(1).max(50),
+      materials: z.array(z.string().trim().min(1).max(50)).max(10),
+      uses: z.array(z.string().trim().min(1).max(50)).max(10),
+      modifiers: z.array(z.string().trim().min(1).max(50)).max(10),
+      removedTerms: z.array(z.string().trim().min(1).max(50)).max(20),
+    })
+    .optional(),
 });
 
 export async function POST(
