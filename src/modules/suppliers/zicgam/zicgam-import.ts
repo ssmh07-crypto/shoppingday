@@ -77,6 +77,7 @@ export class ZicgamImportService {
       existing.supplierProductId,
       product,
       existing,
+      { refreshDescriptionIfUnedited: true },
     );
     return {
       success: true as const,

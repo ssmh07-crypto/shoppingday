@@ -17,6 +17,7 @@ import {
   imagesFromSupplier,
   optionsFromSupplier,
   sanitizeDescription,
+  supplierDescriptionIsUnedited,
 } from "./product-domain";
 
 export interface ImportedProductRecord {
@@ -42,7 +43,10 @@ export interface ProductRepository {
     supplierProductId: string,
     product: SupplierProduct,
     existing?: ImportedProductRecord,
-    options?: { protectedFields?: SupplierEditableField[] },
+    options?: {
+      protectedFields?: SupplierEditableField[];
+      refreshDescriptionIfUnedited?: boolean;
+    },
   ): Promise<ImportedProductRecord>;
   findDetail(productId: string): Promise<ProductDetail | null>;
 }
@@ -62,7 +66,10 @@ export class DrizzleProductRepository implements ProductRepository {
     supplierProductId: string,
     product: SupplierProduct,
     existing?: ImportedProductRecord,
-    options?: { protectedFields?: SupplierEditableField[] },
+    options?: {
+      protectedFields?: SupplierEditableField[];
+      refreshDescriptionIfUnedited?: boolean;
+    },
   ) {
     const imported =
       existing ??
@@ -75,6 +82,21 @@ export class DrizzleProductRepository implements ProductRepository {
       options?.protectedFields ?? supplierEditableFields,
     );
     return this.database.transaction(async (tx) => {
+      const [currentProduct] = options?.refreshDescriptionIfUnedited
+        ? await tx
+            .select({ description: products.description })
+            .from(products)
+            .where(eq(products.id, imported.productId))
+            .for("update")
+            .limit(1)
+        : [];
+      const refreshDescription = Boolean(
+        currentProduct &&
+          supplierDescriptionIsUnedited(
+            currentProduct.description,
+            imported.supplierProduct.rawDescription,
+          ),
+      );
       const [supplierProduct] = await tx
         .update(supplierProducts)
         .set({
@@ -102,7 +124,7 @@ export class DrizzleProductRepository implements ProductRepository {
         ...(!protectedFields.has("title")
           ? { title: product.originalName ?? "" }
           : {}),
-        ...(!protectedFields.has("description")
+        ...(!protectedFields.has("description") || refreshDescription
           ? { description: sanitizeDescription(product.rawDescription ?? "") }
           : {}),
         ...(!protectedFields.has("images")

@@ -242,6 +242,14 @@ export function sanitizeDescription(html: string) {
     },
   });
 }
+export function supplierDescriptionIsUnedited(
+  currentDescription: string,
+  supplierRawDescription: string | null,
+) {
+  return (
+    currentDescription === sanitizeDescription(supplierRawDescription ?? "")
+  );
+}
 export function readyErrors(
   input: Omit<DraftInput, "draftVersion">,
 ): Record<string, string> {

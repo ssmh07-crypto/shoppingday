@@ -178,10 +178,16 @@
     const source = root.querySelector("#prdDetail, .xans-product-additional .cont");
     if (!source) return null;
     const clone = source.cloneNode(true);
-    for (const element of clone.querySelectorAll("img[src], img[data-src]")) {
-      const raw = element.getAttribute("data-src") ?? element.getAttribute("src");
+    for (const element of clone.querySelectorAll(
+      "img[src], img[data-src], img[ec-data-src]",
+    )) {
+      const raw =
+        element.getAttribute("ec-data-src") ??
+        element.getAttribute("data-src") ??
+        element.getAttribute("src");
       const url = safeUrl(raw, baseUrl);
       if (url) element.setAttribute("src", url.toString());
+      element.removeAttribute("ec-data-src");
       element.removeAttribute("data-src");
       element.removeAttribute("srcset");
     }
