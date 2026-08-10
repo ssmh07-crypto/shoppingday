@@ -630,10 +630,8 @@ td small {
   font-size: 12px;
 }
 .product-sync-control.inventory .product-sync-status {
-  position: absolute;
-  top: calc(100% + 10px);
-  right: 0;
-  z-index: 25;
+  margin-top: 10px;
+  box-shadow: none;
 }
 .product-sync-control.card .product-sync-status {
   margin-top: 12px;
@@ -725,6 +723,7 @@ td small {
   align-items: center;
   justify-content: space-between;
   gap: 20px;
+  flex-wrap: wrap;
   padding: 16px 20px;
   border-bottom: 1px solid var(--inv-line);
 }
@@ -749,6 +748,50 @@ td small {
   border-radius: 6px;
   color: #465166;
   font-size: 12px;
+}
+.inventory-number-settings {
+  font-size: 12px;
+}
+.inventory-number-settings summary {
+  cursor: pointer;
+  color: var(--inv-primary);
+  font-weight: 700;
+}
+.inventory-number-settings > div {
+  display: flex;
+  align-items: end;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 12px;
+  border: 1px solid var(--inv-line);
+  border-radius: 8px;
+  background: #f8faff;
+}
+.inventory-number-settings label {
+  display: grid;
+  gap: 4px;
+  color: var(--inv-muted);
+}
+.inventory-number-settings select,
+.inventory-number-settings input {
+  height: 34px;
+  min-width: 110px;
+  padding: 0 9px;
+  border: 1px solid #c8cfdb;
+  border-radius: 6px;
+  background: #fff;
+}
+.inventory-number-settings button {
+  min-height: 34px;
+  padding: 0 12px;
+  border-radius: 6px;
+  background: var(--inv-primary);
+  color: #fff;
+  font-weight: 700;
+}
+.inventory-number-settings small {
+  align-self: center;
+  color: var(--inv-muted);
 }
 .inventory-bulk-actions {
   flex-basis: 100%;

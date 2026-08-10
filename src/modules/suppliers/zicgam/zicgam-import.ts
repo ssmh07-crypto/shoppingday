@@ -43,7 +43,12 @@ export class ZicgamImportService {
   async importCaptured(input: ZicgamCapturedProduct, ownerId: string) {
     await this.database
       .insert(suppliers)
-      .values({ code: "zicgam", name: "직감", status: "active" })
+      .values({
+        code: "zicgam",
+        name: "직감",
+        productNumberPrefix: "ZG",
+        status: "active",
+      })
       .onConflictDoNothing({ target: suppliers.code });
 
     const product = toSupplierProduct(input);

@@ -1276,7 +1276,10 @@ export function ProductEditor({
       <div className="drawer-source-summary">
         <div>
           <span>상품번호</span>
-          <strong>{initial.supplier.externalProductId}</strong>
+          <strong>
+            {initial.supplier.productNumberPrefix ?? ""}
+            {initial.supplier.externalProductId}
+          </strong>
         </div>
         <div>
           <span>공급가</span>

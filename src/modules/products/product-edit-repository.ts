@@ -59,6 +59,7 @@ export type ListQuery = {
   ownerId: string;
   search?: string;
   filter?: string;
+  supplier?: string;
   sort?: string;
   page: number;
   pageSize: number;
@@ -81,9 +82,12 @@ export class ProductEditRepository {
           ilike(products.title, `%${search}%`),
           ilike(supplierProducts.originalName, `%${search}%`),
           ilike(supplierProducts.externalProductId, `%${search}%`),
+          sql`concat(coalesce(${suppliers.productNumberPrefix}, ''), ${supplierProducts.externalProductId}) ilike ${`%${search}%`}`,
           sql`${products.id}::text ilike ${`%${search}%`}`,
         )!,
       );
+    if (query.supplier)
+      conditions.push(eq(suppliers.code, query.supplier));
     if (["draft", "editing", "ready"].includes(query.filter ?? ""))
       conditions.push(
         eq(products.status, query.filter as "draft" | "editing" | "ready"),
@@ -134,6 +138,8 @@ export class ProductEditRepository {
         )`,
         updatedAt: products.updatedAt,
         supplierName: suppliers.name,
+        supplierCode: suppliers.code,
+        productNumberPrefix: suppliers.productNumberPrefix,
         externalProductId: supplierProducts.externalProductId,
         originalName: supplierProducts.originalName,
         supplierPrice: supplierProducts.supplierPrice,
@@ -150,7 +156,7 @@ export class ProductEditRepository {
       )
       .innerJoin(suppliers, eq(suppliers.id, supplierProducts.supplierId))
       .where(where);
-    const needsFilteredCount = Boolean(search || query.filter);
+    const needsFilteredCount = Boolean(search || query.filter || query.supplier);
     const countRequest = needsFilteredCount
       ? this.database
           .select({ count: sql<number>`count(*)::int` })
@@ -166,7 +172,7 @@ export class ProductEditRepository {
           .innerJoin(suppliers, eq(suppliers.id, supplierProducts.supplierId))
           .where(where)
       : Promise.resolve([] as Array<{ count: number }>);
-    const [items, countRows, statsRows] = await Promise.all([
+    const [items, countRows, statsRows, supplierRows] = await Promise.all([
       base
         .orderBy(order)
         .limit(query.pageSize)
@@ -192,6 +198,15 @@ export class ProductEditRepository {
         )
         .innerJoin(suppliers, eq(suppliers.id, supplierProducts.supplierId))
         .where(and(ownership, ne(suppliers.code, "sourcing"))),
+      this.database
+        .select({
+          code: suppliers.code,
+          name: suppliers.name,
+          productNumberPrefix: suppliers.productNumberPrefix,
+        })
+        .from(suppliers)
+        .where(ne(suppliers.code, "sourcing"))
+        .orderBy(asc(suppliers.name)),
     ]);
     const result = {
       items,
@@ -206,6 +221,7 @@ export class ProductEditRepository {
         soldOut: 0,
         unregistered: 0,
       },
+      suppliers: supplierRows,
     };
     const durationMs = Math.round(performance.now() - started);
     if (durationMs >= 500) {
@@ -216,6 +232,7 @@ export class ProductEditRepository {
         page: query.page,
         pageSize: query.pageSize,
         filter: query.filter ?? "all",
+        supplier: query.supplier ?? "all",
         sort: query.sort ?? "created",
         searched: Boolean(search),
       });
@@ -252,6 +269,7 @@ export class ProductEditRepository {
         supplier: {
           code: suppliers.code,
           name: suppliers.name,
+          productNumberPrefix: suppliers.productNumberPrefix,
           externalProductId: supplierProducts.externalProductId,
           originalName: supplierProducts.originalName,
           supplierPrice: supplierProducts.supplierPrice,

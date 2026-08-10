@@ -29,6 +29,7 @@ async function renderProductsPage(
   const result = await createProductEditService(database).list(user.id, {
     search: params.search,
     filter: params.filter,
+    supplier: params.supplier,
     sort: params.sort,
     page: Number(params.page) || 1,
     pageSize: Number(params.size) || 30,

@@ -8,6 +8,7 @@ import { ProductEditorDrawer } from "./[id]/edit/product-editor-drawer";
 import { ProductSyncControl } from "./product-sync-control";
 import { ProductTitleInlineEditor } from "./product-title-inline-editor";
 import { ProductBulkActions } from "./product-bulk-actions";
+import { SupplierProductNumberSettings } from "./supplier-product-number-settings";
 
 export type ProductListSearchParams = Record<string, string | undefined>;
 export type ProductListResult = {
@@ -20,6 +21,8 @@ export type ProductListResult = {
     primaryImage: SelectedImage | null;
     updatedAt: Date;
     supplierName: string;
+    supplierCode: string;
+    productNumberPrefix: string | null;
     externalProductId: string;
     originalName: string | null;
     supplierPrice: string | null;
@@ -34,6 +37,11 @@ export type ProductListResult = {
     soldOut: number;
     unregistered: number;
   };
+  suppliers: Array<{
+    code: string;
+    name: string;
+    productNumberPrefix: string | null;
+  }>;
 };
 
 const dateFormatter = new Intl.DateTimeFormat("ko-KR", {
@@ -73,6 +81,9 @@ export function ProductListView({
           {params.filter && (
             <input type="hidden" name="filter" value={params.filter} />
           )}
+          {params.supplier && (
+            <input type="hidden" name="supplier" value={params.supplier} />
+          )}
           {params.sort && (
             <input type="hidden" name="sort" value={params.sort} />
           )}
@@ -91,7 +102,7 @@ export function ProductListView({
           <div>
             <span className="inventory-eyebrow">위탁상품 운영</span>
             <h1>위탁상품관리</h1>
-            <p>친구도매에서 가져온 상품을 확인하고 판매 정보를 편집하세요.</p>
+            <p>공급처에서 가져온 상품을 확인하고 판매 정보를 편집하세요.</p>
           </div>
           <ProductSyncControl mode="changes" />
         </section>
@@ -135,6 +146,17 @@ export function ProductListView({
                 <input type="hidden" name="search" value={params.search} />
               )}
               <label>
+                <span className="sr-only">공급처 필터</span>
+                <select name="supplier" defaultValue={params.supplier ?? ""}>
+                  <option value="">모든 공급처</option>
+                  {result.suppliers.map((supplier) => (
+                    <option key={supplier.code} value={supplier.code}>
+                      {supplier.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
                 <span className="sr-only">상태 필터</span>
                 <select name="filter" defaultValue={params.filter ?? ""}>
                   <option value="">모든 상태</option>
@@ -170,12 +192,13 @@ export function ProductListView({
                 <Icon name="filter" />
                 적용
               </button>
-              {(params.search || params.filter || params.sort) && (
+              {(params.search || params.filter || params.supplier || params.sort) && (
                 <Link className="inventory-reset-link" href="/admin/products">
                   초기화
                 </Link>
               )}
             </form>
+            <SupplierProductNumberSettings suppliers={result.suppliers} />
             <ProductBulkActions
               productIds={result.items.map((item) => item.id)}
             />
@@ -225,7 +248,12 @@ export function ProductListView({
                         <span>{item.originalName || "원본 상품명 없음"}</span>
                       </td>
                       <td className="inventory-product-number">
-                        <code>{item.externalProductId}</code>
+                        <code>
+                          {formatProductNumber(
+                            item.productNumberPrefix,
+                            item.externalProductId,
+                          )}
+                        </code>
                       </td>
                       <td>
                         <span className="inventory-supplier">
@@ -370,6 +398,10 @@ function formatWon(value: string | number | null) {
   const number = Number(value);
   if (!Number.isFinite(number)) return "미입력";
   return `${Math.round(number).toLocaleString("ko-KR")}원`;
+}
+
+function formatProductNumber(prefix: string | null, externalProductId: string) {
+  return `${prefix ?? ""}${externalProductId}`;
 }
 
 function formatDate(value: Date) {
