@@ -30,7 +30,8 @@ describe("소싱 조사 화면", () => {
     expect(screen.getByText("인증이 필요한 제품인가?")).toBeInTheDocument();
     expect(screen.getByText("엑셀 파일 선택")).toBeInTheDocument();
     expect(screen.getByLabelText("직접 추가할 연관키워드")).toBeInTheDocument();
-    expect(screen.getByText("소싱 목록")).toBeInTheDocument();
+    expect(screen.getByRole("complementary", { name: "소싱 목록" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "소싱 목록 열기 (0개)" })).toHaveAttribute("aria-expanded", "false");
     expect(screen.getByRole("button", { name: "소싱 리스트 추가" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "임시저장" })).toBeInTheDocument();
     expect(screen.getByText("리뷰 파일 선택")).toBeInTheDocument();
@@ -214,6 +215,19 @@ describe("소싱 조사 화면", () => {
 
     expect(within(screen.getByRole("table")).getByText("물빠짐 욕실화")).toBeInTheDocument();
     expect(within(screen.getByRole("table")).getByText("욕실화")).toBeInTheDocument();
+  });
+
+  it("반폭용 소싱 목록 서랍을 열고 닫는다", () => {
+    render(<SourcingWorkspace initialItems={[]} initialDetail={researchWithKeywords()} />);
+    const trigger = screen.getByRole("button", { name: "소싱 목록 열기 (0개)" });
+
+    fireEvent.click(trigger);
+    expect(trigger).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByRole("complementary", { name: "소싱 목록" })).toHaveClass("open");
+
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+    expect(screen.getByRole("complementary", { name: "소싱 목록" })).not.toHaveClass("open");
   });
 
   it("엑셀에서 가져온 키워드만 전체 삭제하고 직접 입력한 키워드는 유지한다", () => {

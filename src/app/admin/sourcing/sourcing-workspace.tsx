@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, type ChangeEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ChangeEvent, type ReactNode } from "react";
 import {
   mergeImportedKeywords,
   parseItemScoutWorkbook,
@@ -112,6 +112,7 @@ export function SourcingWorkspace({
   const [keywordVolumeFilter, setKeywordVolumeFilter] =
     useState<KeywordVolumeFilter>("all");
   const [keywordVolumeSort, setKeywordVolumeSort] = useState<"desc" | "asc">("desc");
+  const [sourcingListOpen, setSourcingListOpen] = useState(false);
   const [productOptions, setProductOptions] = useState<ProductOption[]>([]);
   const [productSearch, setProductSearch] = useState("");
   const [targetProductId, setTargetProductId] = useState("");
@@ -184,6 +185,15 @@ export function SourcingWorkspace({
     [draft.relatedKeywords, draft.sourcingKeyword],
   );
 
+  useEffect(() => {
+    if (!sourcingListOpen) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setSourcingListOpen(false);
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [sourcingListOpen]);
+
   async function selectItem(id: string) {
     setBusy(true);
     setMessage(null);
@@ -193,6 +203,7 @@ export function SourcingWorkspace({
       setDetail(response.data!);
       setDraft(recordToInput(response.data!));
       setCreating(false);
+      setSourcingListOpen(false);
       resetRegistrationPreparation();
     } catch (caught) {
       setError(errorMessage(caught));
@@ -521,10 +532,32 @@ export function SourcingWorkspace({
         {message && <div className="sourcing-callout success">{message}</div>}
         {error && <div className="sourcing-callout error">{error}</div>}
         <div className="sourcing-workspace">
-          <aside className="sourcing-list">
+          {sourcingListOpen ? (
+            <button
+              type="button"
+              className="sourcing-list-backdrop"
+              aria-label="소싱 목록 닫기"
+              onClick={() => setSourcingListOpen(false)}
+            />
+          ) : null}
+          <aside
+            id="sourcing-list-panel"
+            className={`sourcing-list${sourcingListOpen ? " open" : ""}`}
+            aria-label="소싱 목록"
+          >
             <div className="sourcing-list-head">
-              <strong>소싱 목록</strong>
-              <span>{items.length}개</span>
+              <div>
+                <strong>소싱 목록</strong>
+                <span>{items.length}개</span>
+              </div>
+              <button
+                type="button"
+                className="sourcing-list-close"
+                aria-label="소싱 목록 닫기"
+                onClick={() => setSourcingListOpen(false)}
+              >
+                ×
+              </button>
             </div>
             {items.length ? items.map((item) => (
               <button
@@ -547,7 +580,19 @@ export function SourcingWorkspace({
 
           <div className="sourcing-editor">
             <div className="sourcing-editor-bar">
-              <div>
+              <div className="sourcing-editor-title">
+                <button
+                  type="button"
+                  className="sourcing-list-trigger"
+                  aria-controls="sourcing-list-panel"
+                  aria-expanded={sourcingListOpen}
+                  aria-label={`소싱 목록 열기 (${items.length}개)`}
+                  onClick={() => setSourcingListOpen(true)}
+                >
+                  <span aria-hidden="true">☰</span>
+                  소싱 목록
+                  <strong>{items.length}</strong>
+                </button>
                 <strong>{draft.sourcingKeyword || "새 소싱 아이템"}</strong>
                 <span>각 항목은 직접 확인한 값만 입력하세요.</span>
               </div>
