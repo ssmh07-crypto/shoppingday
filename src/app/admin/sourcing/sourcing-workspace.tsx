@@ -146,6 +146,11 @@ export function SourcingWorkspace({
     return counts;
   }, [draft.relatedKeywords]);
 
+  const itemScoutKeywordCount = useMemo(
+    () => draft.relatedKeywords.filter((item) => item.source === "itemscout-xlsx").length,
+    [draft.relatedKeywords],
+  );
+
   const visibleRelatedKeywords = useMemo(() => {
     const normalizedQuery = keywordQuery.trim().replace(/\s+/g, "").toLocaleLowerCase("ko-KR");
     return draft.relatedKeywords.filter(
@@ -301,6 +306,31 @@ export function SourcingWorkspace({
     setError(null);
     setMessage(
       `직접 입력한 키워드 ${parsed.keywords.length}개를 누적 목록에 반영했습니다.`,
+    );
+  }
+
+  function clearItemScoutKeywords() {
+    if (!itemScoutKeywordCount) return;
+    if (
+      !window.confirm(
+        `엑셀에서 가져온 연관키워드 ${itemScoutKeywordCount}개를 삭제할까요? 직접 추가한 키워드는 유지됩니다.`,
+      )
+    ) {
+      return;
+    }
+
+    setDraft((current) => ({
+      ...current,
+      relatedKeywords: current.relatedKeywords.filter(
+        (item) => item.source !== "itemscout-xlsx",
+      ),
+    }));
+    setKeywordPlacementFilter("all");
+    setKeywordVolumeFilter("all");
+    setKeywordQuery("");
+    setError(null);
+    setMessage(
+      `엑셀에서 가져온 연관키워드 ${itemScoutKeywordCount}개를 삭제했습니다. 변경사항을 저장하려면 임시저장 또는 저장을 눌러 주세요.`,
     );
   }
 
@@ -607,6 +637,11 @@ export function SourcingWorkspace({
                     <input value={keywordQuery} onChange={(event) => setKeywordQuery(event.target.value)} placeholder="키워드 검색" aria-label="가져온 키워드 검색" />
                     <span>표시 중 {visibleRelatedKeywords.length}개</span>
                     <button type="button" onClick={() => setDraft((current) => ({ ...current, relatedKeywords: current.relatedKeywords.map((item) => ({ ...item, placement: "unclassified" })) }))}>분류 초기화</button>
+                    {itemScoutKeywordCount > 0 ? (
+                      <button type="button" onClick={clearItemScoutKeywords}>
+                        엑셀 키워드 삭제 ({itemScoutKeywordCount})
+                      </button>
+                    ) : null}
                   </div>
                   <div className="sourcing-keyword-volume-filters" aria-label="검색수 필터">
                     {(Object.entries(keywordVolumeFilterLabels) as Array<[KeywordVolumeFilter, string]>).map(([value, label]) => (

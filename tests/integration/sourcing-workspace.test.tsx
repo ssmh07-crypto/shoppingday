@@ -215,6 +215,37 @@ describe("소싱 조사 화면", () => {
     expect(within(screen.getByRole("table")).getByText("물빠짐 욕실화")).toBeInTheDocument();
     expect(within(screen.getByRole("table")).getByText("욕실화")).toBeInTheDocument();
   });
+
+  it("엑셀에서 가져온 키워드만 전체 삭제하고 직접 입력한 키워드는 유지한다", () => {
+    const initial = researchWithKeywords();
+    initial.relatedKeywords.push({
+      id: "00000000-0000-4000-8000-000000000004",
+      keyword: "직접 추가 키워드",
+      normalizedKeyword: "직접추가키워드",
+      monthlySearchVolume: 320,
+      placement: "tag",
+      source: "manual",
+      importedAt: "2026-07-19T00:00:00.000Z",
+    });
+    const confirmMock = vi.fn(() => true);
+    vi.stubGlobal("confirm", confirmMock);
+
+    render(<SourcingWorkspace initialItems={[]} initialDetail={initial} />);
+    fireEvent.click(screen.getByRole("button", { name: "엑셀 키워드 삭제 (2)" }));
+
+    expect(confirmMock).toHaveBeenCalledWith(
+      "엑셀에서 가져온 연관키워드 2개를 삭제할까요? 직접 추가한 키워드는 유지됩니다.",
+    );
+    const keywordTable = within(screen.getByRole("table"));
+    expect(keywordTable.queryByText("욕실화")).not.toBeInTheDocument();
+    expect(keywordTable.queryByText("낮은 욕실화")).not.toBeInTheDocument();
+    expect(keywordTable.getByText("직접 추가 키워드")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "엑셀에서 가져온 연관키워드 2개를 삭제했습니다. 변경사항을 저장하려면 임시저장 또는 저장을 눌러 주세요.",
+      ),
+    ).toBeInTheDocument();
+  });
 });
 
 function researchWithKeywords(): SourcingResearchRecord {
