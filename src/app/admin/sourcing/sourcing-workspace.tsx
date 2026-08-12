@@ -6,8 +6,6 @@ import {
   parseItemScoutWorkbook,
   parseManualRelatedKeywords,
 } from "@/modules/sourcing/itemscout-import";
-import { buildSourcingRegistrationDraft } from "@/modules/sourcing/registration-draft";
-import { assessSearchTag } from "@/modules/keywords/search-tag-quality";
 import {
   analyzeReviews,
   formatReviewEvidence,
@@ -24,7 +22,6 @@ import {
   type SourcingResearchSignals,
   type SourcingResearchStatus,
   type SourcingReviewInput,
-  type SourcingSample,
 } from "@/modules/sourcing/types";
 
 type ListItem = Pick<
@@ -35,16 +32,10 @@ type ListItem = Pick<
   | "monthlySearchVolume"
   | "sixMonthRevenue"
   | "maximumPurchasePrice"
+  | "registrationProductId"
   | "createdAt"
   | "updatedAt"
 >;
-
-type ProductOption = {
-  id: string;
-  title: string;
-  originalName: string | null;
-  status: string;
-};
 
 const statusLabels: Record<SourcingResearchStatus, string> = {
   researching: "조사 중",
@@ -113,27 +104,12 @@ export function SourcingWorkspace({
     useState<KeywordVolumeFilter>("all");
   const [keywordVolumeSort, setKeywordVolumeSort] = useState<"desc" | "asc">("desc");
   const [sourcingListOpen, setSourcingListOpen] = useState(false);
-  const [productOptions, setProductOptions] = useState<ProductOption[]>([]);
-  const [productSearch, setProductSearch] = useState("");
-  const [targetProductId, setTargetProductId] = useState("");
-  const [registrationTitle, setRegistrationTitle] = useState("");
-  const [registrationTags, setRegistrationTags] = useState<string[]>([]);
-  const [registrationPrepared, setRegistrationPrepared] = useState(false);
-  const [appliedProductId, setAppliedProductId] = useState<string | null>(null);
   const [reviewRawText, setReviewRawText] = useState("");
   const [reviewListExpanded, setReviewListExpanded] = useState(true);
   const [reviewAnalysis, setReviewAnalysis] = useState<SourcingReviewAnalysis | null>(null);
   const [reviewImporting, setReviewImporting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-
-  const maximumPurchasePrice = useMemo(
-    () =>
-      draft.expectedSellingPrice == null
-        ? null
-        : Math.floor(draft.expectedSellingPrice * 0.7),
-    [draft.expectedSellingPrice],
-  );
 
   const keywordCounts = useMemo(() => {
     const counts: Record<SourcingKeywordPlacement, number> = {
@@ -180,11 +156,6 @@ export function SourcingWorkspace({
     });
   }, [draft.relatedKeywords, keywordPlacementFilter, keywordQuery, keywordVolumeFilter, keywordVolumeSort]);
 
-  const registrationDraft = useMemo(
-    () => buildSourcingRegistrationDraft(draft.sourcingKeyword, draft.relatedKeywords),
-    [draft.relatedKeywords, draft.sourcingKeyword],
-  );
-
   useEffect(() => {
     if (!sourcingListOpen) return;
     const closeOnEscape = (event: KeyboardEvent) => {
@@ -204,7 +175,7 @@ export function SourcingWorkspace({
       setDraft(recordToInput(response.data!));
       setCreating(false);
       setSourcingListOpen(false);
-      resetRegistrationPreparation();
+      resetEditorTransientState();
     } catch (caught) {
       setError(errorMessage(caught));
     } finally {
@@ -232,7 +203,7 @@ export function SourcingWorkspace({
       setDetail(response.data!);
       setDraft(recordToInput(response.data!));
       setCreating(false);
-      resetRegistrationPreparation();
+      resetEditorTransientState();
       const listResponse = await api<never, ListItem[]>("/api/sourcing-researches");
       setItems(listResponse.items ?? []);
       setMessage("새 소싱 아이템을 목록에 추가했습니다.");
@@ -345,45 +316,14 @@ export function SourcingWorkspace({
     );
   }
 
-  async function prepareRegistration() {
-    setRegistrationTitle(registrationDraft.title);
-    setRegistrationTags(registrationDraft.searchTags);
-    setRegistrationPrepared(true);
-    setAppliedProductId(null);
-    setMessage(null);
-    setError(null);
-    if (productOptions.length) return;
-    await loadProductOptions();
+  function removeRelatedKeyword(id: string) {
+    setDraft((current) => ({
+      ...current,
+      relatedKeywords: current.relatedKeywords.filter((item) => item.id !== id),
+    }));
   }
 
-  function toggleRegistrationTag(tag: string) {
-    setRegistrationTags((current) => {
-      if (current.includes(tag)) {
-        setError(null);
-        return current.filter((item) => item !== tag);
-      }
-      if (current.length >= 10) {
-        setError("검색 태그는 최대 10개까지 선택할 수 있습니다.");
-        return current;
-      }
-      setError(null);
-      return [...current, tag];
-    });
-  }
-
-  async function loadProductOptions(search = productSearch) {
-    try {
-      const query = new URLSearchParams({ pageSize: "100" });
-      if (search.trim()) query.set("search", search.trim());
-      const response = await api<never, ProductOption[]>(`/api/products?${query}`);
-      setProductOptions(response.items ?? []);
-    } catch (caught) {
-      setError(errorMessage(caught));
-    }
-  }
-
-  async function applyRegistrationToProduct() {
-    if (!targetProductId || !registrationTitle.trim()) return;
+  async function saveAndCreateRegistration() {
     setBusy(true);
     setMessage(null);
     setError(null);
@@ -397,22 +337,62 @@ export function SourcingWorkspace({
         },
       );
       const savedResearch = saved.data!;
-      setDetail(savedResearch);
-      setDraft(recordToInput(savedResearch));
-      setCreating(false);
-      await api(`/api/sourcing-researches/${savedResearch.id}/apply-to-product`, {
+      const registration = await api<{ productId: string; alreadyExists: boolean }>(
+        `/api/sourcing-researches/${savedResearch.id}/registration-product`,
+        {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          productId: targetProductId,
-          title: registrationTitle,
-          searchTags: registrationTags,
-        }),
-      });
-      setAppliedProductId(targetProductId);
-      setMessage("상품명과 검색 태그를 상품 등록 초안에 반영했습니다.");
+        },
+      );
+      const refreshed = await api<SourcingResearchRecord>(
+        `/api/sourcing-researches/${savedResearch.id}`,
+      );
+      setDetail(refreshed.data!);
+      setDraft(recordToInput(refreshed.data!));
+      setCreating(false);
+      setMessage(
+        registration.data?.alreadyExists
+          ? "소싱 아이템을 저장하고 기존 등록 초안을 갱신했습니다."
+          : "소싱 아이템을 저장하고 상품 등록 초안을 만들었습니다.",
+      );
       const listResponse = await api<never, ListItem[]>("/api/sourcing-researches");
       setItems(listResponse.items ?? []);
+    } catch (caught) {
+      setError(errorMessage(caught));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function deleteItem(item: ListItem) {
+    if (item.registrationProductId) {
+      setError("등록 초안이 만들어진 소싱 아이템은 상품등록관리에서 먼저 정리해 주세요.");
+      return;
+    }
+    if (!window.confirm(`'${item.sourcingKeyword || "새 소싱 아이템"}'을 소싱 목록에서 삭제할까요?`)) {
+      return;
+    }
+    setBusy(true);
+    setMessage(null);
+    setError(null);
+    try {
+      await api(`/api/sourcing-researches/${item.id}`, { method: "DELETE" });
+      const remaining = items.filter((candidate) => candidate.id !== item.id);
+      setItems(remaining);
+      if (detail?.id === item.id) {
+        if (remaining[0]) {
+          const response = await api<SourcingResearchRecord>(
+            `/api/sourcing-researches/${remaining[0].id}`,
+          );
+          setDetail(response.data!);
+          setDraft(recordToInput(response.data!));
+          setCreating(false);
+        } else {
+          setDetail(null);
+          setDraft(emptyResearch());
+          setCreating(true);
+        }
+      }
+      setMessage("소싱 아이템을 삭제했습니다.");
     } catch (caught) {
       setError(errorMessage(caught));
     } finally {
@@ -511,7 +491,7 @@ export function SourcingWorkspace({
       <header className="inventory-topbar sourcing-topbar">
         <div>
           <strong>소싱 조사</strong>
-          <span>키워드에서 시작해 국내 시장·리뷰·샘플을 순서대로 검토합니다.</span>
+          <span>키워드에서 시작해 시장·품목 위험·리뷰를 순서대로 검토합니다.</span>
         </div>
         <div className="sourcing-topbar-actions">
           <a href="/admin/registration">상품 등록관리</a>
@@ -560,19 +540,28 @@ export function SourcingWorkspace({
               </button>
             </div>
             {items.length ? items.map((item) => (
-              <button
-                type="button"
+              <div
                 key={item.id}
-                className={!creating && detail?.id === item.id ? "active" : undefined}
-                onClick={() => selectItem(item.id)}
-                disabled={busy}
+                className={`sourcing-list-item${!creating && detail?.id === item.id ? " active" : ""}`}
               >
-                <strong>{item.sourcingKeyword || "새 소싱 아이템"}</strong>
-                <span>{statusLabels[item.status]}</span>
-                <small>
-                  검색 {formatNumber(item.monthlySearchVolume)} · 6개월 {formatManwon(item.sixMonthRevenue)}
-                </small>
-              </button>
+                <button type="button" className="sourcing-list-select" onClick={() => selectItem(item.id)} disabled={busy}>
+                  <strong>{item.sourcingKeyword || "새 소싱 아이템"}</strong>
+                  <span className={item.status === "selected" ? "selected" : undefined}>{statusLabels[item.status]}</span>
+                  <small>
+                    검색 {formatNumber(item.monthlySearchVolume)} · 6개월 {formatManwon(item.sixMonthRevenue)}
+                  </small>
+                </button>
+                <button
+                  type="button"
+                  className="sourcing-list-delete"
+                  onClick={() => deleteItem(item)}
+                  disabled={busy || Boolean(item.registrationProductId)}
+                  aria-label={`${item.sourcingKeyword || "새 소싱 아이템"} 삭제`}
+                  title={item.registrationProductId ? "등록 초안이 있는 항목은 상품등록관리에서 먼저 정리해야 합니다." : "소싱 아이템 삭제"}
+                >
+                  삭제
+                </button>
+              </div>
             )) : (
               <div className="sourcing-list-empty">첫 소싱 키워드를 기록해 보세요.</div>
             )}
@@ -698,7 +687,7 @@ export function SourcingWorkspace({
                   </div>
                   <div className="sourcing-keyword-table-wrap">
                     <table className="sourcing-keyword-table">
-                      <thead><tr><th>키워드</th><th>총 검색수</th><th>직접 분류</th></tr></thead>
+                      <thead><tr><th>키워드</th><th>총 검색수</th><th>직접 분류</th><th><span className="sr-only">삭제</span></th></tr></thead>
                       <tbody>
                         {visibleRelatedKeywords.map((item) => (
                           <tr key={item.id}>
@@ -719,6 +708,17 @@ export function SourcingWorkspace({
                                 ))}
                               </div>
                             </td>
+                            <td>
+                              <button
+                                type="button"
+                                className="sourcing-keyword-delete"
+                                onClick={() => removeRelatedKeyword(item.id)}
+                                aria-label={`${item.keyword} 키워드 삭제`}
+                                title="키워드 삭제"
+                              >
+                                삭제
+                              </button>
+                            </td>
                           </tr>
                         ))}
                       </tbody>
@@ -730,18 +730,7 @@ export function SourcingWorkspace({
               )}
             </ResearchSection>
 
-            <ResearchSection number="03" title="품목 조사" description="가격 구조와 진입 위험을 확인하고, 어떤 제품을 찾아야 하는지 기준을 세웁니다.">
-              <div className="sourcing-grid four sourcing-price-grid">
-                <Field label="쿠팡 평균단가"><MoneyInput value={draft.coupangAveragePrice} onChange={(value) => setField("coupangAveragePrice", value)} /></Field>
-                <Field label="네이버 평균단가"><MoneyInput value={draft.naverAveragePrice} onChange={(value) => setField("naverAveragePrice", value)} /></Field>
-                <Field label="내 예상 판매단가"><MoneyInput value={draft.expectedSellingPrice} onChange={(value) => setField("expectedSellingPrice", value)} /></Field>
-                <Field label="최대 구매단가 (마진 30%)" help="판매가의 70% 단순 계산값입니다.">
-                  <div className="sourcing-calculated-price">{formatWon(maximumPurchasePrice)}</div>
-                </Field>
-              </div>
-              <div className="sourcing-margin-warning">
-                실제 최대 매입가는 수수료·배송비·관부가세·포장비·반품비를 뺀 뒤 다시 계산해야 합니다.
-              </div>
+            <ResearchSection number="03" title="품목 조사" description="진입 위험을 확인하고, 어떤 제품을 찾아야 하는지 기준을 세웁니다.">
               <div className="sourcing-signal-grid">
                 {signalQuestions.map(({ key, ...question }) => (
                   <SignalQuestion
@@ -876,112 +865,15 @@ export function SourcingWorkspace({
               </div>
             </ResearchSection>
 
-            <ResearchSection number="05" title="샘플 확인" description="1688 후보를 비교하고 국내 시장에서 찾은 소구 조건을 충족하는지 기록합니다.">
-              <div className="sourcing-samples">
-                {draft.samples.map((sample, index) => (
-                  <SampleEditor key={sample.id} sample={sample} index={index} onChange={(next) => updateSample(index, next)} onRemove={() => removeSample(index)} />
-                ))}
-                <button type="button" className="sourcing-add-sample" onClick={addSample} disabled={draft.samples.length >= 10}>+ 1688 샘플 후보 추가</button>
-              </div>
-            </ResearchSection>
-
-            <ResearchSection number="06" title="상품 등록 초안" description="상품명은 직접 분류한 검색수 1,000 이하 키워드로 만들고, 태그 후보는 검색수와 관계없이 모두 추출해 직접 선택합니다.">
-              <div className="sourcing-registration-rule">
-                <strong>
-                  분류용 카테고리 키워드는 상품명 후보로 쓰지 않고, 실제 상품을
-                  나타내는 구체 상품 유형은 유지합니다.
-                </strong>
-                <span>속성 키워드는 네이버 공식 속성값을 확인한 뒤 상품 편집 화면에서 선택합니다.</span>
-              </div>
-              <button
-                type="button"
-                className="sourcing-prepare-registration"
-                onClick={prepareRegistration}
-                disabled={!draft.relatedKeywords.length}
-              >
-                등록 초안 만들기
-              </button>
-              {registrationPrepared && (
-                <div className="sourcing-registration-draft">
-                  <Field label="판매용 상품명 초안" help={`${registrationTitle.length}/50자 · 정확성, 반복, 특수문자, 홍보어와 관련성을 최종 확인하세요.`}>
-                    <input
-                      value={registrationTitle}
-                      maxLength={50}
-                      onChange={(event) => setRegistrationTitle(event.target.value)}
-                      placeholder="상품명 키워드를 먼저 분류해 주세요."
-                    />
-                  </Field>
-                  <div className="sourcing-registration-group">
-                    <strong>검색 태그 선택 ({registrationTags.length}/10)</strong>
-                    {registrationDraft.tagCandidates.length ? (
-                      <div className="sourcing-registration-tag-options">
-                        {registrationDraft.tagCandidates.map((tag) => {
-                          const tooLong = tag.length > 30;
-                          const qualityIssues = assessSearchTag(tag, {
-                            title: registrationTitle,
-                          });
-                          const selected = registrationTags.includes(tag);
-                          return (
-                            <label key={tag} className={selected ? "selected" : undefined}>
-                              <input
-                                type="checkbox"
-                                checked={selected}
-                                disabled={tooLong || qualityIssues.length > 0}
-                                onChange={() => toggleRegistrationTag(tag)}
-                              />
-                              <span>{tag}</span>
-                              <small>
-                                {tooLong
-                                  ? "30자 초과"
-                                  : qualityIssues[0]?.message ?? "태그 후보"}
-                              </small>
-                            </label>
-                          );
-                        })}
-                      </div>
-                    ) : <span className="sourcing-registration-empty">분류된 태그 키워드가 없습니다.</span>}
-                  </div>
-                  <KeywordReviewGroup title="네이버 속성 확인 목록" keywords={registrationDraft.attributeKeywords} empty="분류된 속성 키워드가 없습니다." />
-                  <KeywordReviewGroup title="카테고리 선택 참고 목록 (상품명 제외)" keywords={registrationDraft.categoryKeywords} empty="분류된 카테고리 키워드가 없습니다." />
-                  {registrationDraft.warnings.length > 0 && (
-                    <ul className="sourcing-registration-warnings">
-                      {registrationDraft.warnings.map((warning) => <li key={warning}>{warning}</li>)}
-                    </ul>
-                  )}
-                  <div className="sourcing-product-apply">
-                    <div className="sourcing-product-search">
-                      <input value={productSearch} onChange={(event) => setProductSearch(event.target.value)} placeholder="상품명 또는 공급사 원본명 검색" />
-                      <button type="button" onClick={() => loadProductOptions()} disabled={busy}>상품 찾기</button>
-                    </div>
-                    <label>
-                      <span>반영할 등록 상품</span>
-                      <select value={targetProductId} onChange={(event) => setTargetProductId(event.target.value)}>
-                        <option value="">상품을 선택하세요</option>
-                        {productOptions.map((product) => (
-                          <option value={product.id} key={product.id}>
-                            {product.title || product.originalName || product.id} · {product.status}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <button type="button" onClick={applyRegistrationToProduct} disabled={busy || !targetProductId || !registrationTitle.trim()}>
-                      {busy ? "반영 중…" : "상품 초안에 반영"}
-                    </button>
-                    {appliedProductId && <a href={`/admin/products/${appliedProductId}/edit`}>상품 편집 화면 열기 →</a>}
-                  </div>
-                </div>
-              )}
-            </ResearchSection>
-
             <div className="sourcing-final-note">
               <strong>최종 판단은 직접 하세요.</strong>
               <span>검색수·매출·체크리스트는 참고 자료이며 재고 소진, 노출 순위 또는 판매 성과를 보장하지 않습니다.</span>
             </div>
             <div className="sourcing-save-bar">
-              <span>{maximumPurchasePrice == null ? "예상 판매가를 입력하면 최대 구매단가를 계산합니다." : `단순 최대 구매단가 ${formatWon(maximumPurchasePrice)}`}</span>
+              <span>임시저장은 조사 목록에만 남고, 소싱 아이템 저장은 등록 초안을 만들어 상품등록관리로 보냅니다.</span>
               <div className="sourcing-save-actions">
                 <button type="button" className="secondary" onClick={() => save(true)} disabled={busy}>{busy ? "저장 중…" : "임시저장"}</button>
-                <button type="button" onClick={() => save(false)} disabled={busy || !draft.sourcingKeyword.trim()}>{busy ? "저장 중…" : "소싱 아이템 저장"}</button>
+                <button type="button" onClick={saveAndCreateRegistration} disabled={busy || !draft.sourcingKeyword.trim()}>{busy ? "등록 초안 생성 중…" : "소싱 아이템 저장"}</button>
               </div>
             </div>
           </div>
@@ -993,15 +885,6 @@ export function SourcingWorkspace({
   function setField<K extends keyof SourcingResearchInput>(key: K, value: SourcingResearchInput[K]) {
     setDraft((current) => ({ ...current, [key]: value }));
   }
-  function addSample() {
-    setDraft((current) => ({ ...current, samples: [...current.samples, { id: crypto.randomUUID(), url: "", price: null, features: "" }] }));
-  }
-  function updateSample(index: number, sample: SourcingSample) {
-    setDraft((current) => ({ ...current, samples: current.samples.map((item, itemIndex) => itemIndex === index ? sample : item) }));
-  }
-  function removeSample(index: number) {
-    setDraft((current) => ({ ...current, samples: current.samples.filter((_, itemIndex) => itemIndex !== index) }));
-  }
   function updateKeywordPlacement(id: string, placement: SourcingKeywordPlacement) {
     setDraft((current) => ({
       ...current,
@@ -1010,14 +893,8 @@ export function SourcingWorkspace({
       ),
     }));
   }
-  function resetRegistrationPreparation() {
-    setRegistrationPrepared(false);
-    setRegistrationTitle("");
-    setRegistrationTags([]);
+  function resetEditorTransientState() {
     setManualKeywordText("");
-    setTargetProductId("");
-    setProductSearch("");
-    setAppliedProductId(null);
     setReviewRawText("");
     setReviewListExpanded(true);
     setReviewAnalysis(null);
@@ -1048,15 +925,12 @@ function appendReviewEntries(
 }
 
 function ResearchSection({ number, title, description, children }: { number: string; title: string; description: string; children: ReactNode }) {
-  return <section className="sourcing-section"><div className="sourcing-section-head"><span>{number}</span><div><h2>{title}</h2><p>{description}</p></div></div>{children}</section>;
+  const [expanded, setExpanded] = useState(false);
+  return <section className={`sourcing-section${expanded ? " expanded" : " collapsed"}`}><button type="button" className="sourcing-section-head" onClick={() => setExpanded((current) => !current)} aria-expanded={expanded}><span>{number}</span><div><h2>{title}</h2><p>{description}</p></div><b aria-hidden="true">{expanded ? "접기 −" : "펼치기 +"}</b></button>{expanded ? <div className="sourcing-section-content">{children}</div> : null}</section>;
 }
 
 function Field({ label, help, required, wide, children }: { label: string; help?: string; required?: boolean; wide?: boolean; children: ReactNode }) {
   return <label className={wide ? "wide" : undefined}><span>{label}{required ? " *" : ""}</span>{children}{help && <small>{help}</small>}</label>;
-}
-
-function KeywordReviewGroup({ title, keywords, empty }: { title: string; keywords: string[]; empty: string }) {
-  return <div className="sourcing-registration-group"><strong>{title}</strong><div className="sourcing-registration-chips read-only">{keywords.length ? keywords.map((keyword) => <span key={keyword}>{keyword}</span>) : <span>{empty}</span>}</div></div>;
 }
 
 function ReviewTypeSummary({ title, types }: { title: string; types: Array<{ term: string; count: number }> }) {
@@ -1076,9 +950,6 @@ function FormattedNumberInput({ value, onChange, placeholder }: { value: number 
 function NumberInput({ value, onChange, placeholder }: { value: number | null; onChange: (value: number | null) => void; placeholder?: string }) {
   return <FormattedNumberInput value={value} onChange={onChange} placeholder={placeholder} />;
 }
-function MoneyInput({ value, onChange }: { value: number | null; onChange: (value: number | null) => void }) {
-  return <div className="sourcing-money-input"><NumberInput value={value} onChange={onChange} placeholder="0" /><span>원</span></div>;
-}
 function PreferenceBadge({ met, metText, pendingText }: { met: boolean; metText: string; pendingText: string }) {
   return <span className={`sourcing-preference ${met ? "met" : "pending"}`}>{met ? metText : pendingText}</span>;
 }
@@ -1086,10 +957,6 @@ function PreferenceBadge({ met, metText, pendingText }: { met: boolean; metText:
 function SignalQuestion({ label, description, preferred, value, onChange }: { label: string; description: string; preferred: "yes" | "no"; value: SourcingResearchSignal; onChange: (value: SourcingResearchSignal) => void }) {
   const favorable = value !== "unknown" && value === preferred;
   return <div className="sourcing-signal"><div className="sourcing-signal-copy"><strong>{label}</strong><p>{description}</p></div><div className="sourcing-signal-actions" role="group" aria-label={label}>{(["yes", "no", "unknown"] as const).map((option) => <button type="button" key={option} className={value === option ? "active" : undefined} onClick={() => onChange(option)}>{option === "yes" ? "예" : option === "no" ? "아니오" : "미확인"}</button>)}</div><span className={`sourcing-signal-result ${value === "unknown" ? "unknown" : favorable ? "favorable" : "caution"}`}>{value === "unknown" ? "확인 필요" : favorable ? "선호 조건" : "주의 조건"}</span></div>;
-}
-
-function SampleEditor({ sample, index, onChange, onRemove }: { sample: SourcingSample; index: number; onChange: (sample: SourcingSample) => void; onRemove: () => void }) {
-  return <article className="sourcing-sample"><div className="sourcing-sample-head"><strong>샘플 후보 {index + 1}</strong><button type="button" onClick={onRemove}>삭제</button></div><div className="sourcing-grid two"><Field label="1688 링크"><input type="url" value={sample.url} onChange={(event) => onChange({ ...sample, url: event.target.value })} placeholder="https://detail.1688.com/..." /></Field><Field label="1688 가격"><MoneyInput value={sample.price} onChange={(price) => onChange({ ...sample, price })} /></Field><Field label="제품 특징" wide><textarea rows={4} value={sample.features} onChange={(event) => onChange({ ...sample, features: event.target.value })} placeholder="소재, 크기, MOQ, 국내 제품과 다른 점, 확인할 사항" /></Field></div></article>;
 }
 
 function emptyResearch(): SourcingResearchInput {
@@ -1120,8 +987,6 @@ function recordToInput(record: SourcingResearchRecord): SourcingResearchInput {
 }
 function formatNumber(value: number | null) { return value == null ? "미입력" : new Intl.NumberFormat("ko-KR").format(value); }
 function formatManwon(value: number | null) { return value == null ? "미입력" : `${(value / 10_000).toLocaleString("ko-KR", { maximumFractionDigits: 1 })}만원`; }
-function formatWon(value: number | null) { return value == null ? "미계산" : `${new Intl.NumberFormat("ko-KR").format(value)}원`; }
-
 async function api<T, I = never>(url: string, init?: RequestInit): Promise<{ data?: T; items?: I }> {
   const response = await fetch(url, { ...init, cache: "no-store" });
   const body = await response.json() as { data?: T; items?: I; error?: { message?: string } };

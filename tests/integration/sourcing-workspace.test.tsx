@@ -11,35 +11,34 @@ afterEach(() => {
 });
 
 describe("소싱 조사 화면", () => {
-  it("요청한 네 단계와 위험 확인 항목을 표시한다", () => {
+  it("네 조사 항목을 기본으로 접고 제거한 항목은 표시하지 않는다", () => {
     render(<SourcingWorkspace initialItems={[]} initialDetail={null} />);
 
     expect(screen.getByRole("heading", { name: "키워드 시장 조사" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "연관 키워드 분류" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "품목 조사" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "상품 리뷰 조사" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "샘플 확인" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "상품 등록 초안" })).toBeInTheDocument();
-    expect(
-      screen.getByText(
-        "분류용 카테고리 키워드는 상품명 후보로 쓰지 않고, 실제 상품을 나타내는 구체 상품 유형은 유지합니다.",
-      ),
-    ).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "샘플 확인" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "상품 등록 초안" })).not.toBeInTheDocument();
+    expect(sectionButton("01 키워드 시장 조사")).toHaveAttribute("aria-expanded", "false");
+    expect(sectionButton("02 연관 키워드 분류")).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(sectionButton("03 품목 조사"));
     expect(screen.getByText("가격 스펙트럼이 넓은가?")).toBeInTheDocument();
     expect(screen.getByText("메인 키워드가 명확하고 대다수 상품이 일치하는가?")).toBeInTheDocument();
     expect(screen.getByText("인증이 필요한 제품인가?")).toBeInTheDocument();
-    expect(screen.getByText("엑셀 파일 선택")).toBeInTheDocument();
-    expect(screen.getByLabelText("직접 추가할 연관키워드")).toBeInTheDocument();
+    expect(screen.queryByText("쿠팡 평균단가")).not.toBeInTheDocument();
+    expect(screen.queryByText("네이버 평균단가")).not.toBeInTheDocument();
+    expect(screen.queryByText("내 예상 판매단가")).not.toBeInTheDocument();
     expect(screen.getByRole("complementary", { name: "소싱 목록" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "소싱 목록 열기 (0개)" })).toHaveAttribute("aria-expanded", "false");
     expect(screen.getByRole("button", { name: "소싱 리스트 추가" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "임시저장" })).toBeInTheDocument();
-    expect(screen.getByText("리뷰 파일 선택")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "규칙 기반 리뷰 분석" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "소싱 아이템 저장" })).toBeDisabled();
   });
 
   it("붙여넣은 경쟁 상품 리뷰를 분석해 조사 항목에 반영한다", () => {
     render(<SourcingWorkspace initialItems={[]} initialDetail={null} />);
+    fireEvent.click(sectionButton("04 상품 리뷰 조사"));
     fireEvent.change(screen.getByLabelText("분석할 리뷰 원문"), {
       target: { value: "5점 튼튼하고 좋아요\n1점 접착력이 약해 떨어져요\n2점 접착력이 약해 또 떨어져요" },
     });
@@ -59,6 +58,7 @@ describe("소싱 조사 화면", () => {
 
   it("리뷰 입력란을 추가하고 한 줄씩 붙여넣어 함께 분석한다", () => {
     render(<SourcingWorkspace initialItems={[]} initialDetail={null} />);
+    fireEvent.click(sectionButton("04 상품 리뷰 조사"));
 
     fireEvent.change(screen.getByLabelText("리뷰 1"), {
       target: { value: "5점 튼튼하고 좋아요" },
@@ -106,6 +106,7 @@ describe("소싱 조사 화면", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     render(<SourcingWorkspace initialItems={[]} initialDetail={initial} />);
+    fireEvent.click(sectionButton("04 상품 리뷰 조사"));
     expect(screen.getByLabelText("리뷰 1")).toHaveValue("기존에 저장한 리뷰");
     fireEvent.change(screen.getByLabelText("리뷰 1"), {
       target: { value: "임시저장할 리뷰 원문" },
@@ -147,19 +148,9 @@ describe("소싱 조사 화면", () => {
     expect(screen.getAllByText("새 소싱 아이템").length).toBeGreaterThanOrEqual(2);
   });
 
-  it("예상 판매가를 입력하면 마진 30% 기준 단순 최대 구매단가를 보여준다", () => {
+  it("검색수는 천 단위 쉼표로, 6개월 매출은 만원 단위로 입력한다", () => {
     render(<SourcingWorkspace initialItems={[]} initialDetail={null} />);
-    const expectedPrice = screen.getByText("내 예상 판매단가").closest("label")!;
-    fireEvent.change(expectedPrice.querySelector("input")!, {
-      target: { value: "30000" },
-    });
-    expect(expectedPrice.querySelector("input")).toHaveValue("30,000");
-    expect(screen.getAllByText("21,000원").length).toBeGreaterThan(0);
-    expect(screen.getByText(/수수료·배송비·관부가세/)).toBeInTheDocument();
-  });
-
-  it("검색수와 가격은 천 단위 쉼표로, 6개월 매출은 만원 단위로 입력한다", () => {
-    render(<SourcingWorkspace initialItems={[]} initialDetail={null} />);
+    fireEvent.click(sectionButton("01 키워드 시장 조사"));
 
     const searchVolume = screen.getByText("월간 검색수").closest("label")!;
     fireEvent.change(searchVolume.querySelector("input")!, {
@@ -174,24 +165,11 @@ describe("소싱 조사 화면", () => {
     expect(revenue.querySelector("input")).toHaveValue("12,345");
     expect(within(revenue).getByText("만원")).toBeInTheDocument();
 
-    for (const label of ["쿠팡 평균단가", "네이버 평균단가", "내 예상 판매단가"]) {
-      const field = screen.getByText(label).closest("label")!;
-      fireEvent.change(field.querySelector("input")!, {
-        target: { value: "19900" },
-      });
-      expect(field.querySelector("input")).toHaveValue("19,900");
-    }
-  });
-
-  it("1688 샘플 후보를 여러 개 추가할 수 있다", () => {
-    render(<SourcingWorkspace initialItems={[]} initialDetail={null} />);
-    fireEvent.click(screen.getByRole("button", { name: "+ 1688 샘플 후보 추가" }));
-    expect(screen.getByText("샘플 후보 1")).toBeInTheDocument();
-    expect(screen.getByText("1688 링크")).toBeInTheDocument();
   });
 
   it("키워드를 한 번 클릭해 분류하고 검색수 구간으로 필터링한다", () => {
     render(<SourcingWorkspace initialItems={[]} initialDetail={researchWithKeywords()} />);
+    fireEvent.click(sectionButton("02 연관 키워드 분류"));
 
     const initialKeywordTable = screen.getByRole("table");
     const bathroomRow = within(initialKeywordTable).getByText("욕실화").closest("tr")!;
@@ -207,6 +185,7 @@ describe("소싱 조사 화면", () => {
 
   it("직접 입력한 연관키워드를 기존 목록에 누적한다", () => {
     render(<SourcingWorkspace initialItems={[]} initialDetail={researchWithKeywords()} />);
+    fireEvent.click(sectionButton("02 연관 키워드 분류"));
 
     fireEvent.change(screen.getByLabelText("직접 추가할 연관키워드"), {
       target: { value: "물빠짐 욕실화, 420" },
@@ -245,6 +224,8 @@ describe("소싱 조사 화면", () => {
     vi.stubGlobal("confirm", confirmMock);
 
     render(<SourcingWorkspace initialItems={[]} initialDetail={initial} />);
+    fireEvent.click(sectionButton("02 연관 키워드 분류"));
+    fireEvent.click(sectionButton("04 상품 리뷰 조사"));
     fireEvent.click(screen.getByRole("button", { name: "엑셀 키워드 삭제 (2)" }));
 
     expect(confirmMock).toHaveBeenCalledWith(
@@ -260,7 +241,74 @@ describe("소싱 조사 화면", () => {
       ),
     ).toBeInTheDocument();
   });
+
+  it("연관 키워드 한 개를 목록에서 삭제한다", () => {
+    render(<SourcingWorkspace initialItems={[]} initialDetail={researchWithKeywords()} />);
+    fireEvent.click(sectionButton("02 연관 키워드 분류"));
+
+    fireEvent.click(screen.getByRole("button", { name: "욕실화 키워드 삭제" }));
+
+    expect(within(screen.getByRole("table")).queryByText("욕실화")).not.toBeInTheDocument();
+    expect(within(screen.getByRole("table")).getByText("낮은 욕실화")).toBeInTheDocument();
+  });
+
+  it("소싱 아이템 저장 시 소싱 결정으로 저장하고 등록 초안을 생성한다", async () => {
+    const initial = researchWithKeywords();
+    const selected = { ...initial, status: "selected" as const };
+    const registered = { ...selected, registrationProductId: "00000000-0000-4000-8000-000000000010" };
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ data: selected }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ data: { productId: registered.registrationProductId, alreadyExists: false } }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ data: registered }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ items: [] }) });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<SourcingWorkspace initialItems={[]} initialDetail={initial} />);
+    fireEvent.click(screen.getByRole("button", { name: "소싱 아이템 저장" }));
+
+    expect(await screen.findByText("소싱 아이템을 저장하고 상품 등록 초안을 만들었습니다.")).toBeInTheDocument();
+    expect(JSON.parse((fetchMock.mock.calls[0]![1] as RequestInit).body as string).status).toBe("researching");
+    expect(fetchMock.mock.calls[1]![0]).toBe(`/api/sourcing-researches/${initial.id}/registration-product`);
+    expect(screen.getByLabelText("진행 상태")).toHaveValue("selected");
+  });
+
+  it("등록 초안이 없는 소싱 아이템을 목록에서 삭제한다", async () => {
+    const initial = researchWithKeywords();
+    const listItem = {
+      id: initial.id,
+      status: initial.status,
+      sourcingKeyword: initial.sourcingKeyword,
+      monthlySearchVolume: initial.monthlySearchVolume,
+      sixMonthRevenue: initial.sixMonthRevenue,
+      maximumPurchasePrice: initial.maximumPurchasePrice,
+      registrationProductId: null,
+      createdAt: initial.createdAt,
+      updatedAt: initial.updatedAt,
+    };
+    const confirmMock = vi.fn(() => true);
+    const fetchMock = vi.fn().mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ data: { id: initial.id } }),
+    });
+    vi.stubGlobal("confirm", confirmMock);
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<SourcingWorkspace initialItems={[listItem]} initialDetail={initial} />);
+    fireEvent.click(screen.getByRole("button", { name: "욕실화 삭제" }));
+
+    expect(await screen.findByText("소싱 아이템을 삭제했습니다.")).toBeInTheDocument();
+    expect(confirmMock).toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/api/sourcing-researches/${initial.id}`,
+      expect.objectContaining({ method: "DELETE", cache: "no-store" }),
+    );
+    expect(screen.getByText("첫 소싱 키워드를 기록해 보세요.")).toBeInTheDocument();
+  });
 });
+
+function sectionButton(name: string) {
+  return screen.getByRole("button", { name: new RegExp(name) });
+}
 
 function researchWithKeywords(): SourcingResearchRecord {
   return {

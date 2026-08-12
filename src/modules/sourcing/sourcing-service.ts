@@ -86,6 +86,26 @@ export class SourcingResearchService {
     return this.get(ownerId, id);
   }
 
+  async delete(ownerId: string, id: string) {
+    const research = await this.get(ownerId, id);
+    if (research.registrationProductId) {
+      throw new SourcingResearchError(
+        "registration_already_created",
+        "등록 초안이 만들어진 소싱 아이템은 상품등록관리에서 먼저 정리해 주세요.",
+        409,
+      );
+    }
+    const deleted = await this.repository.delete(ownerId, id);
+    if (!deleted) {
+      throw new SourcingResearchError(
+        "not_found",
+        "소싱 조사 항목을 찾을 수 없습니다.",
+        404,
+      );
+    }
+    return deleted;
+  }
+
   async createRegistrationProduct(ownerId: string, id: string) {
     const research = await this.get(ownerId, id);
     if (!research.sourcingKeyword.trim()) {
