@@ -2,6 +2,7 @@
 .sourcing-page {
   --sourcing-line: #dfe4ea;
   --sourcing-muted: #667085;
+  margin-left: 0;
   font-size: 16px;
 }
 .sourcing-topbar > div:first-child {
@@ -1095,7 +1096,7 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
-@media (max-width: 1200px) {
+@media (max-width: 1500px) {
   .sourcing-heading {
     display: none;
   }
@@ -1181,7 +1182,7 @@
     font-size: 11px;
   }
 }
-@media (max-width: 1200px) and (prefers-reduced-motion: reduce) {
+@media (max-width: 1500px) and (prefers-reduced-motion: reduce) {
   .sourcing-list {
     transition: none;
   }
