@@ -79,7 +79,7 @@ describe("소싱 상품 등록 초안", () => {
     expect(draft.title).toBe("미끄럼방지 욕실화");
     expect(draft.title).not.toMatch(/무료배송|인기|주방정리/);
     expect(draft.warnings.join(" ")).toContain("홍보성 표현");
-    expect(draft.warnings.join(" ")).toContain("기본 상품 유형과 연결되지 않은");
+    expect(draft.warnings.join(" ")).toContain("자동 연결하지 못한 상품명 후보");
   });
 
   it("사용자가 고른 상품명 검색어의 수식어를 먼저 배치한다", () => {
@@ -136,7 +136,7 @@ describe("소싱 상품 등록 초안", () => {
     );
   });
 
-  it("기본 상품 유형과 연결되지 않은 후보는 조합에서 제외한다", () => {
+  it("자동 연결하지 못한 후보를 숨기지 않고 직접 선택 대상으로 표시한다", () => {
     const draft = buildSourcingRegistrationDraft("욕실화", [
       keyword("문에안걸리는슬리퍼", 990, "product_name"),
       keyword("낮은욕실화", 950, "product_name"),
@@ -150,8 +150,42 @@ describe("소싱 상품 등록 초안", () => {
     expect(draft.title).toContain("낮은");
     expect(draft.title).toContain("미끄럼방지");
     expect(draft.title).toContain("빅사이즈");
-    expect(draft.warnings.join(" ")).toContain("문에안걸리는슬리퍼");
+    expect(draft.warnings.join(" ")).toContain("자동 연결하지 못한 상품명 후보가 1개");
+    expect(
+      draft.titleCandidateDetails.find(
+        (candidate) => candidate.keyword === "문에안걸리는슬리퍼",
+      )?.connection,
+    ).toBe("confirmation_required");
     expect(draft.usedTitleKeywords).not.toContain("문에안걸리는슬리퍼");
+  });
+
+  it("사용자가 선택한 자동 연결 실패 후보와 서로 다른 상품형을 함께 반영한다", () => {
+    const keywords = [
+      keyword("채소탈수기", 940, "product_name"),
+      keyword("두부탈수기", 360, "product_name"),
+      keyword("채소물기제거기", 140, "product_name"),
+      keyword("가정용 야채짤순이", 20, "product_name"),
+    ];
+    const draft = buildSourcingRegistrationDraft("야채짤순이", keywords, {
+      selectedTitleKeywords: [
+        "채소탈수기",
+        "채소물기제거기",
+        "가정용 야채짤순이",
+      ],
+    });
+
+    expect(draft.title).toContain("채소탈수기");
+    expect(draft.title).toContain("채소물기제거기");
+    expect(draft.title).toContain("가정용 야채짤순이");
+    expect(draft.title).not.toContain("두부탈수기");
+    expect(draft.usedTitleKeywords).toEqual(
+      expect.arrayContaining([
+        "채소탈수기",
+        "채소물기제거기",
+        "가정용 야채짤순이",
+      ]),
+    );
+    expect(draft.title.length).toBeLessThanOrEqual(50);
   });
 
   it("50자를 넘지 않는 조합 중 우선 키워드를 유지하며 가장 긴 제목을 고른다", () => {

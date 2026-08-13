@@ -5,7 +5,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import type { NaverProductAttribute, SelectedImage } from "@/lib/db/schema";
 import { buildSourcingRegistrationDraft } from "@/modules/sourcing/registration-draft";
-import { assessSearchTag } from "@/modules/keywords/search-tag-quality";
+import {
+  assessSearchTag,
+  isBlockingSearchTagIssue,
+} from "@/modules/keywords/search-tag-quality";
+import {
+  detectProductTitleAnalysis,
+  type ProductTitleAnalysisCriteria,
+} from "@/modules/keywords/product-title-analysis";
 import type {
   NaverCategoryOption,
   ProductEditorInitial,
@@ -120,8 +127,31 @@ type TitleRecommendation = {
   relatedKeywords: Array<{
     keyword: string;
     totalMonthlySearchVolume: number | null;
+    competition?: "low" | "medium" | "high" | "unknown";
+    status?: "success" | "not-found" | "error";
   }>;
   notices: string[];
+};
+
+type ProductTitleAnalysisDraft = {
+  productType: string;
+  materials: string;
+  uses: string;
+  modifiers: string;
+  removedTerms: string;
+};
+
+type SupplierSourceCandidate = {
+  supplierProductId: string;
+  productId: string;
+  externalProductId: string;
+  originalName: string;
+  supplierPrice: number | null;
+  thumbnailUrl: string | null;
+  imageCount: number;
+  optionCount: number;
+  hasDescription: boolean;
+  url: string | null;
 };
 
 export function ProductEditor({
@@ -139,6 +169,7 @@ export function ProductEditor({
   const [baseline, setBaseline] = useState(() =>
     JSON.stringify(fromInitial(initial)),
   );
+  const [activeSupplier, setActiveSupplier] = useState(initial.supplier);
   const [activeTab, setActiveTab] = useState<EditorTab>("basic");
   const [status, setStatus] = useState(initial.product.status);
   const [saving, setSaving] = useState(false);
@@ -172,13 +203,48 @@ export function ProductEditor({
     useState<TitleRecommendation | null>(null);
   const [titleRecommendationStatus, setTitleRecommendationStatus] =
     useState("");
-  const [preferredSourcingTitleKeyword, setPreferredSourcingTitleKeyword] =
+  const [keywordWorkspaceOpen, setKeywordWorkspaceOpen] = useState(false);
+  const [titleAnalysisCriteria, setTitleAnalysisCriteria] =
+    useState<ProductTitleAnalysisDraft>(() =>
+      toProductTitleAnalysisDraft(
+        detectProductTitleAnalysis({
+          title: initial.product.title,
+          originalTitle: activeSupplier.originalName ?? "",
+          categoryPath: initial.naverCategory?.wholeCategoryName ?? "",
+        }),
+      ),
+    );
+  const [titleAnalysisStatus, setTitleAnalysisStatus] = useState(
+    "판매용 상품명과 카테고리에서 자동 감지했습니다. 추천 전에 수정할 수 있습니다.",
+  );
+  const [selectedSourcingTitleKeywords, setSelectedSourcingTitleKeywords] =
+    useState<string[]>(() =>
+      registrationContext
+        ? buildSourcingRegistrationDraft(
+            registrationContext.sourcingKeyword,
+            registrationContext.relatedKeywords,
+          ).usedTitleKeywords
+        : [],
+    );
+  const [sourcingTitleKeywordQuery, setSourcingTitleKeywordQuery] =
     useState("");
+  const [showAllSourcingTitleKeywords, setShowAllSourcingTitleKeywords] =
+    useState(false);
   const [tagSelectionStatus, setTagSelectionStatus] = useState("");
   const [message, setMessage] = useState("저장됨");
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [thumbnailUrl, setThumbnailUrl] = useState("");
   const [detailImageUrls, setDetailImageUrls] = useState("");
+  const [supplierSourceQuery, setSupplierSourceQuery] = useState("");
+  const [supplierSourceCandidates, setSupplierSourceCandidates] = useState<
+    SupplierSourceCandidate[]
+  >([]);
+  const [searchingSupplierSource, setSearchingSupplierSource] =
+    useState(false);
+  const [applyingSupplierSourceId, setApplyingSupplierSourceId] = useState<
+    string | null
+  >(null);
+  const [supplierSourceStatus, setSupplierSourceStatus] = useState("");
   const [draggedImageId, setDraggedImageId] = useState<string | null>(null);
   const [imageDropTargetId, setImageDropTargetId] = useState<string | null>(
     null,
@@ -221,11 +287,29 @@ export function ProductEditor({
   const dirty = JSON.stringify(form) !== baseline;
   const margin = useMemo(
     () =>
-      form.sellingPrice && initial.supplier.supplierPrice
-        ? form.sellingPrice - Number(initial.supplier.supplierPrice)
+      form.sellingPrice && activeSupplier.supplierPrice
+        ? form.sellingPrice - Number(activeSupplier.supplierPrice)
         : null,
-    [form.sellingPrice, initial.supplier.supplierPrice],
+    [form.sellingPrice, activeSupplier.supplierPrice],
   );
+  const compactTitleKeywords = useMemo(() => {
+    if (registrationContext) return selectedSourcingTitleKeywords;
+    if (form.sourceTitleKeywords.length) return form.sourceTitleKeywords;
+    const criteria = fromProductTitleAnalysisDraft(titleAnalysisCriteria);
+    return Array.from(
+      new Set([
+        criteria.productType,
+        ...criteria.materials,
+        ...criteria.uses,
+        ...criteria.modifiers,
+      ].filter(Boolean)),
+    );
+  }, [
+    form.sourceTitleKeywords,
+    registrationContext,
+    selectedSourcingTitleKeywords,
+    titleAnalysisCriteria,
+  ]);
 
   async function selectStoreTarget(storeConnectionId: string) {
     setSelectedStoreId(storeConnectionId);
@@ -303,6 +387,24 @@ export function ProductEditor({
         : null,
     [registrationContext],
   );
+  const sourcingTitleCandidateGroups = useMemo(() => {
+    if (!sourcingRegistrationDraft) {
+      return { automatic: [], confirmationRequired: [] };
+    }
+    const query = normalizeCandidateSearch(sourcingTitleKeywordQuery);
+    const filtered = sourcingRegistrationDraft.titleCandidateDetails.filter(
+      (candidate) =>
+        !query || normalizeCandidateSearch(candidate.keyword).includes(query),
+    );
+    return {
+      automatic: filtered.filter(
+        (candidate) => candidate.connection === "automatic",
+      ),
+      confirmationRequired: filtered.filter(
+        (candidate) => candidate.connection === "confirmation_required",
+      ),
+    };
+  }, [sourcingRegistrationDraft, sourcingTitleKeywordQuery]);
 
   useEffect(() => {
     const listener = (event: BeforeUnloadEvent) => {
@@ -631,6 +733,111 @@ export function ProductEditor({
     setActiveTab(nextTab);
   }
 
+  async function searchSupplierSource() {
+    const query = supplierSourceQuery.trim();
+    if (!query) {
+      setSupplierSourceStatus("직감 상품명, 상품번호 또는 상세페이지 URL을 입력해 주세요.");
+      return;
+    }
+    setSearchingSupplierSource(true);
+    setSupplierSourceStatus("직감 상품을 찾는 중…");
+    try {
+      const response = await fetch(
+        `/api/products/${initial.product.id}/supplier-source?q=${encodeURIComponent(query)}`,
+        { cache: "no-store" },
+      );
+      const body = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(
+          body?.error?.message ?? "직감 상품을 검색하지 못했습니다.",
+        );
+      }
+      const candidates = (body.items ?? []) as SupplierSourceCandidate[];
+      setSupplierSourceCandidates(candidates);
+      setSupplierSourceStatus(
+        candidates.length
+          ? `직감 상품 ${candidates.length}개를 찾았습니다.`
+          : "수집된 직감 상품에서 일치하는 항목을 찾지 못했습니다. 직감 상품을 먼저 가져온 뒤 다시 검색해 주세요.",
+      );
+    } catch (error) {
+      setSupplierSourceCandidates([]);
+      setSupplierSourceStatus(
+        error instanceof Error
+          ? error.message
+          : "직감 상품을 검색하지 못했습니다.",
+      );
+    } finally {
+      setSearchingSupplierSource(false);
+    }
+  }
+
+  async function applySupplierSource(candidate: SupplierSourceCandidate) {
+    if (
+      !confirm(
+        `'${candidate.originalName}'의 이미지, 상세페이지와 옵션을 가져올까요?\n\n현재 이미지·상세설명·옵션 편집 내용은 덮어쓰지만 상품명·검색태그·판매가·카테고리는 유지합니다.`,
+      )
+    ) {
+      return;
+    }
+    if (dirty && !(await submit("draft"))) return;
+    setApplyingSupplierSourceId(candidate.supplierProductId);
+    setSupplierSourceStatus("직감 상품 데이터를 가져오는 중…");
+    try {
+      const response = await fetch(
+        `/api/products/${initial.product.id}/supplier-source`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            supplierProductId: candidate.supplierProductId,
+          }),
+        },
+      );
+      const body = await response.json().catch(() => null);
+      if (!response.ok || !body?.data?.product) {
+        throw new Error(
+          body?.error?.message ?? "직감 상품 데이터를 가져오지 못했습니다.",
+        );
+      }
+      const imported = body.data.product;
+      const next = {
+        ...form,
+        draftVersion: imported.draftVersion,
+        description: imported.description,
+        selectedImages: imported.selectedImages,
+        editedOptions: imported.editedOptions,
+      };
+      setForm(next);
+      setBaseline(JSON.stringify(next));
+      setStatus(imported.status);
+      setActiveSupplier((current) => ({
+        ...current,
+        externalProductId: body.data.source.externalProductId,
+        originalName: body.data.source.originalName,
+        supplierPrice:
+          body.data.source.supplierPrice == null
+            ? null
+            : String(body.data.source.supplierPrice),
+        currency: body.data.source.currency,
+        availability: body.data.source.availability,
+      }));
+      setOptionEditorOpen(imported.editedOptions.groups.length > 0);
+      setSupplierSourceStatus(
+        `${candidate.originalName}에서 이미지 ${body.data.source.imageCount}개, 상세페이지${body.data.source.hasDescription ? " 있음" : " 없음"}, 옵션 ${body.data.source.optionCount}개를 가져왔습니다.`,
+      );
+      setMessage("직감 상품 데이터를 등록 초안에 저장했습니다.");
+      onMutated?.();
+    } catch (error) {
+      setSupplierSourceStatus(
+        error instanceof Error
+          ? error.message
+          : "직감 상품 데이터를 가져오지 못했습니다.",
+      );
+    } finally {
+      setApplyingSupplierSourceId(null);
+    }
+  }
+
   async function resetImages() {
     if (
       !confirm(
@@ -668,6 +875,57 @@ export function ProductEditor({
     }
   }
 
+  function currentTitleCategoryPath() {
+    return selectedNaverCategory?.id === form.naverCategoryId
+      ? selectedNaverCategory.wholeCategoryName
+      : initial.naverCategory?.id === form.naverCategoryId
+        ? initial.naverCategory.wholeCategoryName
+        : "";
+  }
+
+  function redetectTitleAnalysis() {
+    const detected = detectProductTitleAnalysis({
+      title: form.title,
+      originalTitle: activeSupplier.originalName ?? "",
+      categoryPath: currentTitleCategoryPath(),
+    });
+    setTitleAnalysisCriteria(toProductTitleAnalysisDraft(detected));
+    setTitleRecommendation(null);
+    setTitleRecommendationStatus("");
+    setTitleAnalysisStatus(
+      detected.productType
+        ? "현재 상품명과 카테고리 기준으로 다시 감지했습니다."
+        : "상품 유형을 자동으로 확정하지 못했습니다. 실제 상품 유형을 직접 입력해 주세요.",
+    );
+  }
+
+  function updateTitleAnalysisCriteria(next: ProductTitleAnalysisDraft) {
+    setTitleAnalysisCriteria(next);
+    setTitleRecommendation(null);
+    setTitleRecommendationStatus("");
+    setTitleAnalysisStatus(
+      "수정한 분석 기준을 다음 상품명·검색 키워드 추천에 사용합니다.",
+    );
+  }
+
+  function toggleSourcingTitleKeyword(keyword: string) {
+    setSelectedSourcingTitleKeywords((current) =>
+      current.includes(keyword)
+        ? current.filter((item) => item !== keyword)
+        : [...current, keyword],
+    );
+    setTitleRecommendation(null);
+    setTitleRecommendationStatus("");
+  }
+
+  function resetSourcingTitleKeywordsToRecommended() {
+    setSelectedSourcingTitleKeywords(
+      sourcingRegistrationDraft?.usedTitleKeywords ?? [],
+    );
+    setTitleRecommendation(null);
+    setTitleRecommendationStatus("");
+  }
+
   async function recommendProductTitle() {
     const title = form.title.trim();
     if (registrationContext && sourcingRegistrationDraft) {
@@ -679,11 +937,11 @@ export function ProductEditor({
       const draft = buildSourcingRegistrationDraft(
         registrationContext.sourcingKeyword,
         registrationContext.relatedKeywords,
-        { preferredTitleKeyword: preferredSourcingTitleKeyword },
+        { selectedTitleKeywords: selectedSourcingTitleKeywords },
       );
       if (!draft.title) {
         setTitleRecommendationStatus(
-          "검색수 1,000 이하로 분류된 상품명 키워드를 먼저 선택해 주세요.",
+          "추천에 사용할 상품명 키워드를 하나 이상 선택해 주세요.",
         );
         setRecommendingTitle(false);
         return;
@@ -726,18 +984,19 @@ export function ProductEditor({
       );
       return;
     }
+    if (!titleAnalysisCriteria.productType.trim()) {
+      setTitleRecommendationStatus(
+        "상품 분석 기준에서 상품 유형을 입력해 주세요.",
+      );
+      return;
+    }
     setRecommendingTitle(true);
     setTitleRecommendation(null);
     setTitleRecommendationStatus(
       "상품 구조를 분석하고 네이버 키워드 검색량을 확인하는 중입니다.",
     );
     try {
-      const categoryPath =
-        selectedNaverCategory?.id === form.naverCategoryId
-          ? selectedNaverCategory.wholeCategoryName
-          : initial.naverCategory?.id === form.naverCategoryId
-            ? initial.naverCategory.wholeCategoryName
-            : "";
+      const categoryPath = currentTitleCategoryPath();
       const response = await fetch(
         `/api/products/${initial.product.id}/title-recommendation`,
         {
@@ -745,11 +1004,14 @@ export function ProductEditor({
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
             title,
-            originalTitle: initial.supplier.originalName ?? "",
+            originalTitle: activeSupplier.originalName ?? "",
             categoryPath,
             searchTags: form.searchTags
               .map((tag) => tag.trim())
               .filter(Boolean),
+            analysisCriteria: fromProductTitleAnalysisDraft(
+              titleAnalysisCriteria,
+            ),
           }),
         },
       );
@@ -772,15 +1034,19 @@ export function ProductEditor({
     }
   }
 
-  function toggleSourcingTag(tag: string) {
+  function toggleSearchTag(tag: string) {
     setForm((current) => {
       const normalized = tag.trim();
-      const selected = current.searchTags.includes(normalized);
+      const selected = current.searchTags.some(
+        (item) => item.trim() === normalized,
+      );
       if (selected) {
         setTagSelectionStatus("");
         return {
           ...current,
-          searchTags: current.searchTags.filter((item) => item !== normalized),
+          searchTags: current.searchTags.filter(
+            (item) => item.trim() !== normalized,
+          ),
         };
       }
       if (current.searchTags.filter((item) => item.trim()).length >= 10) {
@@ -795,6 +1061,36 @@ export function ProductEditor({
           normalized,
         ],
       };
+    });
+  }
+
+  function applyRecommendedSearchTags() {
+    if (!titleRecommendation?.relatedKeywords.length) return;
+    setForm((current) => {
+      const existing = current.searchTags
+        .map((item) => item.trim())
+        .filter(Boolean);
+      const candidates = titleRecommendation.relatedKeywords
+        .map((item) => item.keyword.trim())
+        .filter(
+          (keyword) =>
+            keyword &&
+            !existing.includes(keyword) &&
+            assessSearchTag(keyword, { title: current.title }).length === 0,
+        );
+      const added = candidates.slice(0, Math.max(0, 10 - existing.length));
+      if (!added.length) {
+        setTagSelectionStatus(
+          existing.length >= 10
+            ? "검색 태그는 최대 10개까지 선택할 수 있습니다."
+            : "추가할 수 있는 새 추천 키워드가 없습니다.",
+        );
+        return current;
+      }
+      setTagSelectionStatus(
+        `추천 키워드 ${added.length}개를 검색 태그에 적용했습니다.`,
+      );
+      return { ...current, searchTags: [...existing, ...added] };
     });
   }
 
@@ -1277,18 +1573,18 @@ export function ProductEditor({
         <div>
           <span>상품번호</span>
           <strong>
-            {initial.supplier.productNumberPrefix ?? ""}
-            {initial.supplier.externalProductId}
+            {activeSupplier.productNumberPrefix ?? ""}
+            {activeSupplier.externalProductId}
           </strong>
         </div>
         <div>
           <span>공급가</span>
-          <strong>{formatWon(initial.supplier.supplierPrice)}</strong>
+          <strong>{formatWon(activeSupplier.supplierPrice)}</strong>
         </div>
         <div>
           <span>공급 상태</span>
           <strong>
-            {initial.supplier.availability === "sold_out"
+            {activeSupplier.availability === "sold_out"
               ? "품절"
               : "판매 가능"}
           </strong>
@@ -1484,58 +1780,275 @@ export function ProductEditor({
                   </small>
                 )}
               </div>
+              {!keywordWorkspaceOpen ? (
+                <div className="drawer-search-optimization-summary">
+                  <div className="drawer-product-title-heading">
+                    <label htmlFor="product-selling-title">판매용 상품명</label>
+                    <button
+                      type="button"
+                      onClick={() => setKeywordWorkspaceOpen(true)}
+                    >
+                      키워드 편집
+                    </button>
+                  </div>
+                  <input
+                    id="product-selling-title"
+                    value={form.title}
+                    maxLength={registrationContext ? 50 : 200}
+                    onChange={(event) => {
+                      setForm({ ...form, title: event.target.value });
+                      setTitleRecommendation(null);
+                      setTitleRecommendationStatus("");
+                      setTitleAnalysisStatus(
+                        "상품명이 변경되었습니다. 분석 기준을 확인하거나 다시 감지해 주세요.",
+                      );
+                    }}
+                    onBlur={() => {
+                      if (!form.naverCategoryId)
+                        void recommendNaverCategory(form.title);
+                    }}
+                  />
+                  <div className="drawer-search-optimization-meta">
+                    <span>{form.title.length}/{registrationContext ? 50 : 200}자</span>
+                    <span>상품명 키워드 {compactTitleKeywords.length}개</span>
+                    <span>검색 태그 {form.searchTags.filter((tag) => tag.trim()).length}/10</span>
+                    {sourcingTitleCandidateGroups.confirmationRequired.length >
+                      0 && (
+                      <span className="needs-review">
+                        연결 확인 {sourcingTitleCandidateGroups.confirmationRequired.length}개
+                      </span>
+                    )}
+                  </div>
+                  {compactTitleKeywords.length > 0 && (
+                    <div
+                      className="drawer-search-optimization-chips"
+                      aria-label="추천에 사용할 상품명 키워드 요약"
+                    >
+                      {compactTitleKeywords.slice(0, 6).map((keyword) => (
+                        <span key={keyword}>{keyword}</span>
+                      ))}
+                      {compactTitleKeywords.length > 6 && (
+                        <small>+{compactTitleKeywords.length - 6}</small>
+                      )}
+                    </div>
+                  )}
+                  {form.searchTags.some((tag) => tag.trim()) && (
+                    <div
+                      className="drawer-search-tag-chips"
+                      aria-label="검색 태그 요약"
+                    >
+                      {form.searchTags
+                        .map((tag) => tag.trim())
+                        .filter(Boolean)
+                        .slice(0, 6)
+                        .map((tag) => <span key={tag}>{tag}</span>)}
+                    </div>
+                  )}
+                  {registrationContext && form.title.length > 40 && (
+                    <small className="registration-title-length-warning">
+                      40자를 넘었습니다. 핵심 상품과 수식어가 바로 이해되는지
+                      검토해 주세요.
+                    </small>
+                  )}
+                  {errors.title && (
+                    <small className="field-error">{errors.title}</small>
+                  )}
+                  <span className="drawer-original-title">
+                    <small>원본 상품명</small>
+                    <strong>{activeSupplier.originalName ?? "-"}</strong>
+                  </span>
+                </div>
+              ) : (
+                <div
+                  className="keyword-workspace-backdrop"
+                  role="dialog"
+                  aria-modal="true"
+                  aria-labelledby="keyword-workspace-title"
+                  onMouseDown={(event) => {
+                    if (event.target === event.currentTarget)
+                      setKeywordWorkspaceOpen(false);
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === "Escape") setKeywordWorkspaceOpen(false);
+                  }}
+                >
+                  <section className="keyword-workspace-panel">
+                    <header className="keyword-workspace-header">
+                      <div>
+                        <small>{registrationContext ? "소싱 키워드 재사용" : "위탁상품 빠른 등록"}</small>
+                        <h3 id="keyword-workspace-title">검색 최적화</h3>
+                        <p>
+                          상품명 추천 재료와 검색 태그를 한곳에서 정리합니다.
+                          저장 전까지 스마트스토어에는 반영되지 않습니다.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setKeywordWorkspaceOpen(false)}
+                        aria-label="검색 최적화 닫기"
+                      >
+                        완료
+                      </button>
+                    </header>
+                    <div className="keyword-workspace-body">
               <div className="drawer-product-title-field">
                 {sourcingRegistrationDraft && (
-                  <label className="registration-title-basis">
-                    기준 상품명 검색어
-                    <select
-                      value={preferredSourcingTitleKeyword}
-                      onChange={(event) => {
-                        setPreferredSourcingTitleKeyword(event.target.value);
-                        setTitleRecommendation(null);
-                        setTitleRecommendationStatus("");
-                      }}
-                    >
-                      <option value="">검색수 높은 순으로 자동 조합</option>
-                      {sourcingRegistrationDraft.titleCandidates.map(
-                        (keyword) => {
-                          const source =
-                            registrationContext?.relatedKeywords.find(
-                              (item) =>
-                                item.placement === "product_name" &&
-                                item.keyword === keyword,
-                            );
-                          return (
-                            <option value={keyword} key={keyword}>
-                              {keyword}
-                              {source?.monthlySearchVolume == null
-                                ? ""
-                                : ` · 월 ${source.monthlySearchVolume.toLocaleString("ko-KR")}`}
-                            </option>
-                          );
+                  <div className="registration-title-keywords">
+                    <div className="registration-title-keywords-head">
+                      <div>
+                        <strong>
+                          추천에 사용할 상품명 키워드 ({selectedSourcingTitleKeywords.length}개 선택)
+                        </strong>
+                        <span>
+                          키워드를 클릭해 추천 재료를 고르세요. 서로 다른 상품 유형 표현은 50자 안에서 함께 반영합니다.
+                        </span>
+                      </div>
+                      <div>
+                        <button
+                          type="button"
+                          onClick={resetSourcingTitleKeywordsToRecommended}
+                        >
+                          자동 추천 선택
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedSourcingTitleKeywords([]);
+                            setTitleRecommendation(null);
+                            setTitleRecommendationStatus("");
+                          }}
+                        >
+                          선택 초기화
+                        </button>
+                      </div>
+                    </div>
+                    <input
+                      type="search"
+                      value={sourcingTitleKeywordQuery}
+                      onChange={(event) =>
+                        setSourcingTitleKeywordQuery(event.target.value)
+                      }
+                      placeholder="상품명 키워드 검색"
+                      aria-label="추천 상품명 키워드 검색"
+                    />
+                    {selectedSourcingTitleKeywords.length ? (
+                      <div
+                        className="registration-title-selected-keywords"
+                        aria-label="선택한 상품명 키워드"
+                      >
+                        {selectedSourcingTitleKeywords.map((keyword) => (
+                          <button
+                            type="button"
+                            key={keyword}
+                            onClick={() => toggleSourcingTitleKeyword(keyword)}
+                            aria-label={`${keyword} 선택 해제`}
+                          >
+                            {keyword} <span aria-hidden="true">×</span>
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+                    <div className="registration-title-keyword-groups">
+                      {([
+                        {
+                          key: "automatic",
+                          title: "자동 연결 후보",
+                          description: `‘${registrationContext?.sourcingKeyword}’ 또는 확인된 동의 상품형과 연결된 키워드입니다.`,
+                          candidates: sourcingTitleCandidateGroups.automatic,
                         },
-                      )}
-                    </select>
-                    <small>
-                      검색수 1,000 이하 상품명 후보가 여러 개면 하나를 골라 해당
-                      표현을 우선한 추천을 만들 수 있습니다.
-                    </small>
-                  </label>
+                        {
+                          key: "confirmation",
+                          title: "자동 연결 확인 필요",
+                          description: `‘${registrationContext?.sourcingKeyword}’ 문자열이 없지만 실제 같은 상품이면 직접 선택할 수 있습니다.`,
+                          candidates:
+                            sourcingTitleCandidateGroups.confirmationRequired,
+                        },
+                      ] as const).map((group) => {
+                        const visibleCandidates =
+                          showAllSourcingTitleKeywords ||
+                          sourcingTitleKeywordQuery.trim()
+                            ? group.candidates
+                            : group.candidates.slice(0, 8);
+                        return (
+                          <section key={group.key}>
+                            <div>
+                              <strong>
+                                {group.title} ({group.candidates.length})
+                              </strong>
+                              <span>{group.description}</span>
+                            </div>
+                            {visibleCandidates.length ? (
+                              <div>
+                                {visibleCandidates.map((candidate) => {
+                                  const selected =
+                                    selectedSourcingTitleKeywords.includes(
+                                      candidate.keyword,
+                                    );
+                                  return (
+                                    <label
+                                      key={candidate.keyword}
+                                      className={selected ? "selected" : undefined}
+                                    >
+                                      <input
+                                        type="checkbox"
+                                        checked={selected}
+                                        onChange={() =>
+                                          toggleSourcingTitleKeyword(
+                                            candidate.keyword,
+                                          )
+                                        }
+                                        aria-label={`${candidate.keyword} 추천 상품명 키워드 선택`}
+                                      />
+                                      <span>{candidate.keyword}</span>
+                                      <small>
+                                        월 검색수 {candidate.monthlySearchVolume.toLocaleString("ko-KR")}
+                                        {candidate.connection ===
+                                        "confirmation_required"
+                                          ? " · 자동 연결 실패, 직접 선택 가능"
+                                          : " · 자동 연결"}
+                                      </small>
+                                    </label>
+                                  );
+                                })}
+                              </div>
+                            ) : (
+                              <small>표시할 후보가 없습니다.</small>
+                            )}
+                          </section>
+                        );
+                      })}
+                    </div>
+                    {(sourcingTitleCandidateGroups.automatic.length > 8 ||
+                      sourcingTitleCandidateGroups.confirmationRequired.length >
+                        8) && !sourcingTitleKeywordQuery.trim() ? (
+                      <button
+                        type="button"
+                        className="registration-title-keywords-more"
+                        onClick={() =>
+                          setShowAllSourcingTitleKeywords((current) => !current)
+                        }
+                      >
+                        {showAllSourcingTitleKeywords
+                          ? "후보 간단히 보기"
+                          : `전체 후보 ${sourcingRegistrationDraft.titleCandidateDetails.length}개 보기`}
+                      </button>
+                    ) : null}
+                  </div>
                 )}
                 <div className="drawer-product-title-heading">
                   <label htmlFor="product-selling-title">판매용 상품명</label>
-                  <button
-                    type="button"
-                    disabled={
-                      recommendingTitle ||
-                      (sourcingRegistrationDraft
-                        ? !sourcingRegistrationDraft.titleCandidates.length
-                        : form.title.trim().length < 2)
-                    }
-                    onClick={() => void recommendProductTitle()}
-                  >
-                    {recommendingTitle ? "추천 분석 중…" : "상품명 추천"}
-                  </button>
+                  {sourcingRegistrationDraft && (
+                    <button
+                      type="button"
+                      disabled={
+                        recommendingTitle ||
+                        !selectedSourcingTitleKeywords.length
+                      }
+                      onClick={() => void recommendProductTitle()}
+                    >
+                      {recommendingTitle ? "추천 분석 중…" : "상품명 추천"}
+                    </button>
+                  )}
                 </div>
                 <input
                   id="product-selling-title"
@@ -1545,6 +2058,9 @@ export function ProductEditor({
                     setForm({ ...form, title: event.target.value });
                     setTitleRecommendation(null);
                     setTitleRecommendationStatus("");
+                    setTitleAnalysisStatus(
+                      "상품명이 변경되었습니다. 분석 기준을 확인하거나 다시 감지해 주세요.",
+                    );
                   }}
                   onBlur={() => {
                     if (!form.naverCategoryId)
@@ -1565,8 +2081,122 @@ export function ProductEditor({
                 )}
                 <span className="drawer-original-title">
                   <small>원본 상품명</small>
-                  <strong>{initial.supplier.originalName ?? "-"}</strong>
+                  <strong>{activeSupplier.originalName ?? "-"}</strong>
                 </span>
+                {!sourcingRegistrationDraft && (
+                  <section className="drawer-title-analysis-criteria">
+                    <div className="drawer-title-analysis-heading">
+                      <div>
+                        <strong>추천에 사용할 상품명 키워드</strong>
+                        <p>
+                          자동 감지한 상품 유형·소재·용도·특징 중 실제 상품에
+                          맞는 표현만 남기면 상품명과 검색 키워드 추천에 반영됩니다.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        className="drawer-button-secondary"
+                        onClick={redetectTitleAnalysis}
+                      >
+                        현재 상품명으로 다시 감지
+                      </button>
+                    </div>
+                    <div className="drawer-title-analysis-grid">
+                      <label>
+                        <span>
+                          상품 유형 <strong>필수</strong>
+                        </span>
+                        <input
+                          value={titleAnalysisCriteria.productType}
+                          placeholder="예: 공구함, 골무, 욕실화"
+                          onChange={(event) =>
+                            updateTitleAnalysisCriteria({
+                              ...titleAnalysisCriteria,
+                              productType: event.target.value,
+                            })
+                          }
+                        />
+                      </label>
+                      <label>
+                        소재·재질
+                        <input
+                          value={titleAnalysisCriteria.materials}
+                          placeholder="쉼표로 구분"
+                          onChange={(event) =>
+                            updateTitleAnalysisCriteria({
+                              ...titleAnalysisCriteria,
+                              materials: event.target.value,
+                            })
+                          }
+                        />
+                      </label>
+                      <label>
+                        용도
+                        <input
+                          value={titleAnalysisCriteria.uses}
+                          placeholder="예: 수납, 캠핑"
+                          onChange={(event) =>
+                            updateTitleAnalysisCriteria({
+                              ...titleAnalysisCriteria,
+                              uses: event.target.value,
+                            })
+                          }
+                        />
+                      </label>
+                      <label>
+                        핵심 특징
+                        <input
+                          value={titleAnalysisCriteria.modifiers}
+                          placeholder="예: 휴대용, 미니"
+                          onChange={(event) =>
+                            updateTitleAnalysisCriteria({
+                              ...titleAnalysisCriteria,
+                              modifiers: event.target.value,
+                            })
+                          }
+                        />
+                      </label>
+                      <label className="wide">
+                        추천에서 제외할 표현
+                        <input
+                          value={titleAnalysisCriteria.removedTerms}
+                          placeholder="예: 무료배송, 부자재"
+                          onChange={(event) =>
+                            updateTitleAnalysisCriteria({
+                              ...titleAnalysisCriteria,
+                              removedTerms: event.target.value,
+                            })
+                          }
+                        />
+                      </label>
+                    </div>
+                    <div className="drawer-title-analysis-actions">
+                      <small
+                        className={
+                          titleAnalysisCriteria.productType
+                            ? "drawer-title-analysis-status"
+                            : "field-error"
+                        }
+                      >
+                        {titleAnalysisStatus}
+                      </small>
+                      <button
+                        type="button"
+                        className="drawer-button-primary"
+                        disabled={
+                          recommendingTitle ||
+                          form.title.trim().length < 2 ||
+                          !titleAnalysisCriteria.productType.trim()
+                        }
+                        onClick={() => void recommendProductTitle()}
+                      >
+                        {recommendingTitle
+                          ? "추천 분석 중…"
+                          : "이 기준으로 상품명·키워드 추천"}
+                      </button>
+                    </div>
+                  </section>
+                )}
                 {titleRecommendationStatus && (
                   <small className="drawer-title-recommendation-status">
                     {titleRecommendationStatus}
@@ -1600,7 +2230,14 @@ export function ProductEditor({
                                 ? titleRecommendation.keywordEvidence.map(
                                     (item) => item.keyword,
                                   )
-                                : current.sourceTitleKeywords,
+                                : Array.from(
+                                    new Set([
+                                      titleRecommendation.analysis.productType,
+                                      ...titleRecommendation.analysis.materials,
+                                      ...titleRecommendation.analysis.uses,
+                                      ...titleRecommendation.analysis.modifiers,
+                                    ].filter(Boolean)),
+                                  ),
                           }));
                           setTitleRecommendationStatus(
                             "추천 상품명을 적용했습니다. 저장 전까지 네이버에는 반영되지 않습니다.",
@@ -1617,10 +2254,10 @@ export function ProductEditor({
                           <dd>{titleRecommendation.analysis.productType}</dd>
                         </div>
                         <div>
-                          <dt>우선 기준 검색어</dt>
+                          <dt>선택한 추천 키워드</dt>
                           <dd>
-                            {preferredSourcingTitleKeyword ||
-                              "검색수 높은 순 자동 조합"}
+                            {selectedSourcingTitleKeywords.join(", ") ||
+                              "선택 없음"}
                           </dd>
                         </div>
                       </dl>
@@ -1674,6 +2311,96 @@ export function ProductEditor({
                         </div>
                       </div>
                     )}
+                    {titleRecommendation.source !== "sourcing_rules" &&
+                      titleRecommendation.relatedKeywords.length > 0 && (
+                        <div className="drawer-related-keywords">
+                          <div className="drawer-related-keywords-heading">
+                            <div>
+                              <strong>검색 키워드 추천</strong>
+                              <small>
+                                상품과 관련 있는 연관 검색어를 검색량순으로
+                                정리했습니다.
+                              </small>
+                            </div>
+                            <div>
+                              <span>
+                                {
+                                  form.searchTags.filter((tag) => tag.trim())
+                                    .length
+                                }
+                                /10 선택
+                              </span>
+                              <button
+                                type="button"
+                                className="drawer-button-secondary"
+                                onClick={applyRecommendedSearchTags}
+                              >
+                                추천 키워드 채우기
+                              </button>
+                            </div>
+                          </div>
+                          <div className="drawer-related-keyword-list">
+                            {titleRecommendation.relatedKeywords.map((item) => {
+                              const keyword = item.keyword.trim();
+                              const qualityIssues = assessSearchTag(keyword, {
+                                title: form.title,
+                              });
+                              const blockingIssues = qualityIssues.filter(
+                                isBlockingSearchTagIssue,
+                              );
+                              const selected = form.searchTags.some(
+                                (tag) => tag.trim() === keyword,
+                              );
+                              const selectionLimitReached =
+                                !selected &&
+                                form.searchTags.filter((tag) => tag.trim())
+                                  .length >= 10;
+                              return (
+                                <label
+                                  key={item.keyword}
+                                  className={selected ? "selected" : undefined}
+                                  title={qualityIssues[0]?.message}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={selected}
+                                    disabled={
+                                      selectionLimitReached ||
+                                      blockingIssues.length > 0
+                                    }
+                                    onChange={() => toggleSearchTag(keyword)}
+                                  />
+                                  <span>{item.keyword}</span>
+                                  <small>
+                                    {item.totalMonthlySearchVolume == null
+                                      ? "검색량 조회 안 됨"
+                                      : `월 ${item.totalMonthlySearchVolume.toLocaleString("ko-KR")}회`}
+                                    {qualityIssues.some(
+                                      (issue) =>
+                                        issue.code === "duplicate-product-info",
+                                    )
+                                      ? " · 상품명과 중복 · 직접 선택 가능"
+                                      : blockingIssues[0]
+                                        ? ` · ${blockingIssues[0].message}`
+                                        : ""}
+                                  </small>
+                                </label>
+                              );
+                            })}
+                          </div>
+                          {tagSelectionStatus && (
+                            <small
+                              className={
+                                tagSelectionStatus.includes("최대")
+                                  ? "field-error"
+                                  : "drawer-tag-selection-status"
+                              }
+                            >
+                              {tagSelectionStatus}
+                            </small>
+                          )}
+                        </div>
+                      )}
                     {titleRecommendation.notices.map((notice) => (
                       <p key={notice}>{notice}</p>
                     ))}
@@ -1692,8 +2419,10 @@ export function ProductEditor({
                     {form.searchTags.filter((tag) => tag.trim()).length}/10)
                   </strong>
                   <p>
-                    소싱 조사에서 태그로 분류한 후보입니다. 월 검색수를 참고해
-                    실제 등록할 태그를 최대 10개까지 직접 선택하세요.
+                    소싱 조사에서 태그로 분류한 후보입니다. 월 검색수 1,000은
+                    상품명 후보 기준이며 검색 태그의 선택 제한이 아닙니다. 후보가
+                    부족하면 1,000을 초과한 키워드도 포함해 최대 10개까지 직접
+                    선택하세요.
                   </p>
                   {sourcingRegistrationDraft.tagCandidates.length ? (
                     <div>
@@ -1702,6 +2431,9 @@ export function ProductEditor({
                         const qualityIssues = assessSearchTag(tag, {
                           title: form.title,
                         });
+                        const blockingIssues = qualityIssues.filter(
+                          isBlockingSearchTagIssue,
+                        );
                         const selected = form.searchTags.includes(tag);
                         const source =
                           registrationContext?.relatedKeywords.find(
@@ -1716,17 +2448,25 @@ export function ProductEditor({
                             <input
                               type="checkbox"
                               checked={selected}
-                              disabled={tooLong || qualityIssues.length > 0}
-                              onChange={() => toggleSourcingTag(tag)}
+                              disabled={tooLong || blockingIssues.length > 0}
+                              onChange={() => toggleSearchTag(tag)}
                             />
                             <span>{tag}</span>
                             <small>
                               {source?.monthlySearchVolume == null
                                 ? "월 검색수 미입력"
                                 : `월 검색수 ${source.monthlySearchVolume.toLocaleString("ko-KR")}`}
+                              {(source?.monthlySearchVolume ?? 0) > 1_000
+                                ? " · 1,000 초과도 선택 가능"
+                                : ""}
                               {tooLong ? " · 30자 초과" : ""}
-                              {qualityIssues.length
-                                ? ` · ${qualityIssues[0]?.message}`
+                              {qualityIssues.some(
+                                (issue) =>
+                                  issue.code === "duplicate-product-info",
+                              )
+                                ? " · 상품명과 중복 · 직접 선택 가능"
+                                : blockingIssues.length
+                                  ? ` · ${blockingIssues[0]?.message}`
                                 : ""}
                             </small>
                           </label>
@@ -1756,13 +2496,18 @@ export function ProductEditor({
                     }
                   />
                   <small>
-                    최대 10개까지 입력할 수 있습니다. 상품명과 중복되거나
-                    배송·할인 등 홍보성인 태그는 저장할 수 없습니다.
+                    최대 10개까지 입력할 수 있습니다. 상품명과 중복되는 태그는
+                    경고 후 직접 선택할 수 있지만 배송·할인 등 홍보성 태그는
+                    저장할 수 없습니다.
                   </small>
                   {form.searchTags.flatMap((tag) =>
                     assessSearchTag(tag, { title: form.title }).map((issue) => (
                       <small
-                        className="field-error"
+                        className={
+                          isBlockingSearchTagIssue(issue)
+                            ? "field-error"
+                            : "registration-title-length-warning"
+                        }
                         key={`${tag}-${issue.code}`}
                       >
                         {tag.trim()}: {issue.message}
@@ -1771,11 +2516,15 @@ export function ProductEditor({
                   )}
                 </label>
               )}
+                    </div>
+                  </section>
+                </div>
+              )}
               <div className="drawer-price-grid">
                 <label>
                   공급가
                   <input
-                    value={formatWon(initial.supplier.supplierPrice)}
+                    value={formatWon(activeSupplier.supplierPrice)}
                     disabled
                   />
                 </label>
@@ -1804,7 +2553,7 @@ export function ProductEditor({
                 </p>
               )}
               <MarginCalculator
-                supplierCost={Number(initial.supplier.supplierPrice ?? 0)}
+                supplierCost={Number(activeSupplier.supplierPrice ?? 0)}
                 onApply={(sellingPrice) =>
                   setForm((current) => ({ ...current, sellingPrice }))
                 }
@@ -1852,6 +2601,108 @@ export function ProductEditor({
 
         {activeTab === "content" && (
           <div className="drawer-section-stack">
+            {registrationContext && (
+              <section className="drawer-form-section sourcing-supplier-source">
+                <div className="drawer-section-title">
+                  <span>직감</span>
+                  <div>
+                    <h3>타겟 직감 상품 데이터 가져오기</h3>
+                    <p>
+                      직감에 수집된 상품의 이미지·상세페이지·옵션·공급가를 이
+                      소싱 등록 초안에 연결합니다. 상품명·검색태그·판매가·카테고리는
+                      유지합니다.
+                    </p>
+                  </div>
+                </div>
+                <div className="sourcing-supplier-source-search">
+                  <input
+                    type="search"
+                    value={supplierSourceQuery}
+                    onChange={(event) =>
+                      setSupplierSourceQuery(event.target.value)
+                    }
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        void searchSupplierSource();
+                      }
+                    }}
+                    placeholder="직감 상품명, 상품번호 또는 상세페이지 URL"
+                    aria-label="가져올 직감 상품 검색"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => void searchSupplierSource()}
+                    disabled={searchingSupplierSource}
+                  >
+                    {searchingSupplierSource ? "검색 중…" : "직감 상품 찾기"}
+                  </button>
+                </div>
+                {supplierSourceStatus && (
+                  <p className="sourcing-supplier-source-status" role="status">
+                    {supplierSourceStatus}
+                  </p>
+                )}
+                {supplierSourceCandidates.length > 0 && (
+                  <div
+                    className="sourcing-supplier-source-results"
+                    aria-label="직감 상품 검색 결과"
+                  >
+                    {supplierSourceCandidates.map((candidate) => (
+                      <article key={candidate.supplierProductId}>
+                        <div className="sourcing-supplier-source-thumbnail">
+                          {candidate.thumbnailUrl ? (
+                            <img
+                              src={candidate.thumbnailUrl}
+                              alt=""
+                              loading="lazy"
+                            />
+                          ) : (
+                            <span>이미지 없음</span>
+                          )}
+                        </div>
+                        <div>
+                          <strong>{candidate.originalName}</strong>
+                          <span>
+                            직감 {candidate.externalProductId} · 공급가{" "}
+                            {candidate.supplierPrice == null
+                              ? "미입력"
+                              : `${candidate.supplierPrice.toLocaleString("ko-KR")}원`}
+                          </span>
+                          <small>
+                            이미지 {candidate.imageCount}개 · 상세페이지{" "}
+                            {candidate.hasDescription ? "있음" : "없음"} · 옵션{" "}
+                            {candidate.optionCount}개
+                          </small>
+                          {candidate.url && (
+                            <a
+                              href={candidate.url}
+                              target="_blank"
+                              rel="noreferrer"
+                            >
+                              직감 상품 확인
+                            </a>
+                          )}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => void applySupplierSource(candidate)}
+                          disabled={
+                            applyingSupplierSourceId !== null ||
+                            searchingSupplierSource
+                          }
+                        >
+                          {applyingSupplierSourceId ===
+                          candidate.supplierProductId
+                            ? "가져오는 중…"
+                            : "이 상품 데이터 사용"}
+                        </button>
+                      </article>
+                    ))}
+                  </div>
+                )}
+              </section>
+            )}
             <section className="drawer-form-section">
               <div className="drawer-section-title with-action">
                 <span>02</span>
@@ -2420,7 +3271,7 @@ export function ProductEditor({
         </div>
         <button
           type="button"
-          className="secondary"
+          className="drawer-button-secondary"
           disabled={!dirty || saving}
           onClick={() => setForm(JSON.parse(baseline))}
         >
@@ -2428,12 +3279,18 @@ export function ProductEditor({
         </button>
         <button
           type="button"
+          className="drawer-button-draft"
           disabled={!dirty || saving}
           onClick={() => submit("draft")}
         >
           {saving ? "저장 중…" : "임시저장"}
         </button>
-        <button type="button" disabled={saving} onClick={() => submit("ready")}>
+        <button
+          type="button"
+          className="drawer-button-primary"
+          disabled={saving}
+          onClick={() => submit("ready")}
+        >
           등록 준비 완료
         </button>
       </footer>
@@ -2623,6 +3480,49 @@ function fromInitial(initial: ProductEditorInitial) {
     selectedImages: product.selectedImages,
     editedOptions: product.editedOptions,
     naverAttributes: product.naverAttributes ?? [],
+  };
+}
+
+function splitKeywordList(value: string) {
+  return Array.from(
+    new Set(
+      value
+        .split(",")
+        .map((item) => item.trim())
+        .filter(Boolean),
+    ),
+  );
+}
+
+function normalizeCandidateSearch(value: string) {
+  return value
+    .normalize("NFKC")
+    .trim()
+    .replace(/\s+/g, "")
+    .toLocaleLowerCase("ko-KR");
+}
+
+function toProductTitleAnalysisDraft(
+  criteria: ProductTitleAnalysisCriteria,
+): ProductTitleAnalysisDraft {
+  return {
+    productType: criteria.productType,
+    materials: criteria.materials.join(", "),
+    uses: criteria.uses.join(", "),
+    modifiers: criteria.modifiers.join(", "),
+    removedTerms: criteria.removedTerms.join(", "),
+  };
+}
+
+function fromProductTitleAnalysisDraft(
+  draft: ProductTitleAnalysisDraft,
+): ProductTitleAnalysisCriteria {
+  return {
+    productType: draft.productType.trim(),
+    materials: splitKeywordList(draft.materials),
+    uses: splitKeywordList(draft.uses),
+    modifiers: splitKeywordList(draft.modifiers),
+    removedTerms: splitKeywordList(draft.removedTerms),
   };
 }
 

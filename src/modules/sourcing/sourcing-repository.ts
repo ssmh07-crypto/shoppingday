@@ -1,6 +1,6 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, isNotNull, sql } from "drizzle-orm";
 import type { Database } from "@/lib/db";
 import {
   productSupplierLinks,
@@ -94,7 +94,12 @@ export class SourcingResearchRepository {
         products,
         eq(products.id, sourcingResearches.registrationProductId),
       )
-      .where(eq(sourcingResearches.ownerId, ownerId))
+      .where(
+        and(
+          eq(sourcingResearches.ownerId, ownerId),
+          isNotNull(sourcingResearches.registrationProductId),
+        ),
+      )
       .orderBy(desc(sourcingResearches.updatedAt));
   }
 
@@ -255,6 +260,19 @@ export class SourcingResearchRepository {
     });
   }
 
+  async delete(ownerId: string, id: string) {
+    const [row] = await this.database
+      .delete(sourcingResearches)
+      .where(
+        and(
+          eq(sourcingResearches.ownerId, ownerId),
+          eq(sourcingResearches.id, id),
+        ),
+      )
+      .returning({ id: sourcingResearches.id });
+    return row ?? null;
+  }
+
   async createRegistrationProduct(
     ownerId: string,
     researchId: string,
@@ -277,6 +295,10 @@ export class SourcingResearchRepository {
         .for("update");
       if (!research) return null;
       if (research.registrationProductId) {
+        await tx
+          .update(sourcingResearches)
+          .set({ status: "selected", updatedAt: new Date() })
+          .where(eq(sourcingResearches.id, researchId));
         return {
           productId: research.registrationProductId,
           alreadyExists: true,
@@ -336,7 +358,11 @@ export class SourcingResearchRepository {
       });
       await tx
         .update(sourcingResearches)
-        .set({ registrationProductId: product!.id, updatedAt: new Date() })
+        .set({
+          registrationProductId: product!.id,
+          status: "selected",
+          updatedAt: new Date(),
+        })
         .where(eq(sourcingResearches.id, researchId));
       return { productId: product!.id, alreadyExists: false };
     });

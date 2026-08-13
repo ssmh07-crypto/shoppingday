@@ -228,12 +228,27 @@ describe("상품 편집 서랍", () => {
         }),
       );
     vi.stubGlobal("fetch", fetchMock);
-    render(<ProductEditorDrawer initialProductId="title-recommendation-product" />);
+    render(
+      <ProductEditorDrawer initialProductId="title-recommendation-product" />,
+    );
 
     await screen.findByDisplayValue("철제 바느질 골무 바느질부자재");
-    fireEvent.click(screen.getByRole("button", { name: "상품명 추천" }));
+    fireEvent.click(screen.getByRole("button", { name: "키워드 편집" }));
+    expect(screen.getByDisplayValue("골무")).toBeVisible();
+    expect(screen.getByDisplayValue("철제")).toBeVisible();
+    expect(screen.getByDisplayValue("바느질")).toBeVisible();
+    fireEvent.change(screen.getByPlaceholderText("예: 수납, 캠핑"), {
+      target: { value: "재봉, 공예" },
+    });
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "이 기준으로 상품명·키워드 추천",
+      }),
+    );
 
-    expect(await screen.findByText("규칙 분석 + 네이버 검색광고 실제 데이터")).toBeVisible();
+    expect(
+      await screen.findByText("규칙 분석 + 네이버 검색광고 실제 데이터"),
+    ).toBeVisible();
     expect(screen.getByText("골무", { selector: "dd" })).toBeVisible();
     expect(screen.getByText("골무 · 월 3,290")).toBeVisible();
     expect(
@@ -242,10 +257,29 @@ describe("상품 편집 서랍", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "이 상품명 적용" }));
     expect(screen.getByDisplayValue("철제 바느질 골무")).toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole("button", { name: "검색 최적화 닫기" }),
+    );
+    expect(screen.queryByRole("dialog", { name: "검색 최적화" })).not.toBeInTheDocument();
+    expect(
+      screen.getByLabelText("추천에 사용할 상품명 키워드 요약"),
+    ).toHaveTextContent("골무");
+    expect(
+      screen.getByLabelText("추천에 사용할 상품명 키워드 요약"),
+    ).toHaveTextContent("철제");
     expect(fetchMock).toHaveBeenLastCalledWith(
       "/api/products/title-recommendation-product/title-recommendation",
       expect.objectContaining({ method: "POST" }),
     );
+    expect(
+      JSON.parse(String(fetchMock.mock.calls.at(-1)?.[1]?.body))
+        .analysisCriteria,
+    ).toMatchObject({
+      productType: "골무",
+      materials: ["철제"],
+      uses: ["재봉", "공예"],
+      removedTerms: ["바느질부자재"],
+    });
   });
 
   it("변경 후 다른 탭을 누르면 초안을 저장한 뒤 이동한다", async () => {
@@ -331,6 +365,62 @@ describe("상품 편집 서랍", () => {
         .getAllByRole("listitem")
         .map((item) => item.querySelector("img")?.getAttribute("alt")),
     ).toEqual(["두 번째 이미지", "첫 이미지"]);
+  });
+
+  it("네이버 연관 키워드를 검색 태그에 선택 적용한다", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        editorResponse({
+          id: "related-keyword-product",
+          title: "스테인리스 공구함",
+        }),
+      )
+      .mockResolvedValueOnce(
+        Response.json({
+          success: true,
+          recommendation: {
+            title: "스테인리스 공구함",
+            source: "rules_naver_search_ad",
+            analysis: {
+              productType: "공구함",
+              materials: ["스테인리스"],
+              uses: [],
+              modifiers: [],
+              removedTerms: [],
+            },
+            keywordEvidence: [],
+            relatedKeywords: [
+              {
+                keyword: "작업공구보관함",
+                totalMonthlySearchVolume: 120,
+                competition: "medium",
+                status: "success",
+              },
+            ],
+            notices: [],
+          },
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    render(<ProductEditorDrawer initialProductId="related-keyword-product" />);
+
+    await screen.findByDisplayValue("스테인리스 공구함");
+    fireEvent.click(screen.getByRole("button", { name: "키워드 편집" }));
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "이 기준으로 상품명·키워드 추천",
+      }),
+    );
+
+    expect(await screen.findByText("검색 키워드 추천")).toBeVisible();
+    expect(screen.getByText("월 120회")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "추천 키워드 채우기" }));
+
+    expect(screen.getByDisplayValue("작업공구보관함")).toBeInTheDocument();
+    expect(
+      screen.getByText("추천 키워드 1개를 검색 태그에 적용했습니다."),
+    ).toBeVisible();
   });
 });
 

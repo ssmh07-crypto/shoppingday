@@ -21,6 +21,10 @@ export type SearchTagQualityIssue = {
   message: string;
 };
 
+export function isBlockingSearchTagIssue(issue: SearchTagQualityIssue) {
+  return issue.code === "promotional-term";
+}
+
 export function assessSearchTag(
   tag: string,
   context: { title?: string } = {},
@@ -57,7 +61,9 @@ export function addSearchTagQualityIssues(
   title: string,
 ) {
   searchTags.forEach((tag, index) => {
-    for (const issue of assessSearchTag(tag, { title })) {
+    for (const issue of assessSearchTag(tag, { title }).filter(
+      isBlockingSearchTagIssue,
+    )) {
       context.addIssue({
         code: "custom",
         path: ["searchTags", index],

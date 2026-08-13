@@ -36,3 +36,17 @@ export async function PUT(
     );
   });
 }
+
+export async function DELETE(
+  _: Request,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  return withAdminSourcingRoute(async (user, database) => {
+    const { id } = await params;
+    const data = await createSourcingResearchService(database).delete(user.id, id);
+    return NextResponse.json(
+      { success: true, data },
+      { headers: { "Cache-Control": "private, no-store" } },
+    );
+  });
+}

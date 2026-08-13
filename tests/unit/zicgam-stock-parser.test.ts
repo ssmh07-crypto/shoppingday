@@ -121,6 +121,73 @@ describe("Zicgam dropship availability parser", () => {
     expect(result.status).toBe("available");
   });
 
+  it("records an optionless Cafe24 product available from an image purchase button", () => {
+    document.body.innerHTML = `
+      <section class="xans-product-detail">
+        <div class="infoArea">
+          <h2>(윤도자기) 윤슬 2칸 소스볼</h2>
+          <div class="xans-product-action">
+            <a href="#none" onclick="product_submit(1, '/exec/front/order/basket/', this)">
+              <img src="/btn_buy_big_off.png" alt="바로구매">
+            </a>
+          </div>
+        </div>
+      </section>
+    `;
+
+    const result = parserGlobal.ShoppingdayZicgamStockParser.inspect(
+      document,
+      { pathname: "/product/detail.html" },
+      productUrl,
+    );
+
+    expect(result.status).toBe("available");
+  });
+
+  it("does not trust a purchase image without an actionable order control", () => {
+    document.body.innerHTML = `
+      <section class="xans-product-detail">
+        <div class="infoArea">
+          <h2>구매 불명 상품</h2>
+          <div class="xans-product-action">
+            <a href="#none"><img src="/btn_buy.png" alt="바로구매"></a>
+          </div>
+        </div>
+      </section>
+    `;
+
+    const result = parserGlobal.ShoppingdayZicgamStockParser.inspect(
+      document,
+      { pathname: "/product/detail.html" },
+      productUrl,
+    );
+
+    expect(result.status).toBe("unknown");
+  });
+
+  it("ignores hidden image purchase controls", () => {
+    document.body.innerHTML = `
+      <section class="xans-product-detail">
+        <div class="infoArea">
+          <h2>숨김 구매 상품</h2>
+          <div class="xans-product-action displaynone">
+            <a href="#none" onclick="product_submit(1, '/order', this)">
+              <img src="/btn_buy.png" alt="바로구매">
+            </a>
+          </div>
+        </div>
+      </section>
+    `;
+
+    const result = parserGlobal.ShoppingdayZicgamStockParser.inspect(
+      document,
+      { pathname: "/product/detail.html" },
+      productUrl,
+    );
+
+    expect(result.status).toBe("unknown");
+  });
+
   it("records available when selectable options exist without a recognized purchase button", () => {
     document.body.innerHTML = `
       <section class="xans-product-detail">

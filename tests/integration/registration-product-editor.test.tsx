@@ -12,7 +12,7 @@ afterEach(() => {
 });
 
 describe("소싱 상품 등록 전용 편집", () => {
-  it("기준 상품명 후보로 추천 순서를 바꾸고 태그를 직접 선택한다", async () => {
+  it("상품명 키워드를 여러 개 선택하고 자동 연결 실패 후보도 추천에 반영한다", async () => {
     const fetchMock = vi.fn().mockResolvedValueOnce(editorResponse());
     vi.stubGlobal("fetch", fetchMock);
 
@@ -23,16 +23,30 @@ describe("소싱 상품 등록 전용 편집", () => {
       />,
     );
 
-    const basis = await screen.findByRole("combobox", {
-      name: /기준 상품명 검색어/,
+    await screen.findByDisplayValue("물빠짐 미끄럼방지 욕실화");
+    fireEvent.click(screen.getByRole("button", { name: "키워드 편집" }));
+    const unconnectedKeyword = await screen.findByRole("checkbox", {
+      name: "두부탈수기 추천 상품명 키워드 선택",
     });
-    fireEvent.change(basis, { target: { value: "미끄럼방지욕실화" } });
+    expect(screen.getByText("자동 연결 확인 필요 (1)")).toBeVisible();
+    expect(unconnectedKeyword.closest("label")).toHaveTextContent(
+      "두부탈수기",
+    );
+    expect(unconnectedKeyword.closest("label")).toHaveTextContent(
+      "자동 연결 실패, 직접 선택 가능",
+    );
+    expect(unconnectedKeyword).not.toBeChecked();
+    fireEvent.click(unconnectedKeyword);
+    expect(unconnectedKeyword).toBeChecked();
+    expect(screen.getByText(/3개 선택/)).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "상품명 추천" }));
 
     expect(screen.getByText("소싱 분류 + 검색 품질 규칙")).toBeVisible();
-    expect(screen.getByText("미끄럼방지 물빠짐 욕실화")).toBeVisible();
     expect(
-      screen.getByText("추천에 사용한 상품명 키워드 (2개)"),
+      screen.getByText("두부탈수기 미끄럼방지 물빠짐 욕실화"),
+    ).toBeVisible();
+    expect(
+      screen.getByText("추천에 사용한 상품명 키워드 (3개)"),
     ).toBeVisible();
     expect(fetchMock).toHaveBeenCalledTimes(1);
 
@@ -49,16 +63,42 @@ describe("소싱 상품 등록 전용 편집", () => {
     const highVolumeTag = screen.getByRole("checkbox", {
       name: /화장실슬리퍼/,
     });
-    expect(
-      screen.getByText("월 검색수 12,000"),
-    ).toBeVisible();
     expect(screen.getByText("월 검색수 700")).toBeVisible();
+    expect(
+      screen.getByText(/월 검색수 1,000은 상품명 후보 기준이며/),
+    ).toBeVisible();
+    expect(
+      screen.getByText(/월 검색수 12,000 · 1,000 초과도 선택 가능/),
+    ).toBeVisible();
     expect(screen.getByText("검색 태그 선택 (1/10)")).toBeVisible();
     expect(bathroomTag).toBeChecked();
     expect(highVolumeTag).not.toBeChecked();
+    expect(highVolumeTag).toBeEnabled();
 
     fireEvent.click(highVolumeTag);
     await waitFor(() => expect(highVolumeTag).toBeChecked());
+  });
+
+  it("상품명과 중복되는 검색수 1,000 초과 태그도 직접 선택한다", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(editorResponse()));
+
+    render(
+      <RegistrationProductEditor
+        productId="00000000-0000-4000-8000-000000000010"
+        registrationContext={registrationContext()}
+      />,
+    );
+
+    await screen.findByDisplayValue("물빠짐 미끄럼방지 욕실화");
+    fireEvent.click(screen.getByRole("button", { name: "키워드 편집" }));
+    const duplicateHighVolumeTag = await screen.findByRole("checkbox", {
+      name: /욕실화.*월 검색수 20,000.*상품명과 중복.*직접 선택 가능/,
+    });
+    expect(duplicateHighVolumeTag).not.toBeChecked();
+    expect(duplicateHighVolumeTag).toBeEnabled();
+
+    fireEvent.click(duplicateHighVolumeTag);
+    await waitFor(() => expect(duplicateHighVolumeTag).toBeChecked());
   });
 
   it("카테고리 필수속성 조회 실패 후 다시 불러와 입력란을 표시한다", async () => {
@@ -208,6 +248,112 @@ describe("소싱 상품 등록 전용 편집", () => {
     );
     expect(requirementsAttempts).toBe(3);
   });
+
+  it("타겟 직감 상품을 찾아 이미지·상세페이지·옵션을 소싱 초안에 가져온다", async () => {
+    const fetchMock = vi.fn().mockImplementation((
+      input: RequestInfo | URL,
+      init?: RequestInit,
+    ) => {
+      const url = String(input);
+      if (url === "/api/products/00000000-0000-4000-8000-000000000010") {
+        return Promise.resolve(editorResponse());
+      }
+      if (url.includes("/supplier-source?q=")) {
+        return Promise.resolve(
+          Response.json({
+            success: true,
+            items: [
+              {
+                supplierProductId: "33333333-3333-4333-8333-333333333333",
+                productId: "44444444-4444-4444-8444-444444444444",
+                externalProductId: "15938",
+                originalName: "대용량 두부 탈수기",
+                supplierPrice: 8900,
+                thumbnailUrl: "https://example.com/thumb.jpg",
+                imageCount: 4,
+                optionCount: 2,
+                hasDescription: true,
+                url: "https://zicgam.com/product/detail.html?product_no=15938",
+              },
+            ],
+          }),
+        );
+      }
+      if (url.endsWith("/supplier-source") && init?.method === "POST") {
+        return Promise.resolve(
+          Response.json({
+            success: true,
+            data: {
+              product: {
+                draftVersion: 2,
+                status: "editing",
+                description: "<p>두부 탈수기 상세페이지</p>",
+                selectedImages: [
+                  {
+                    sourceUrl: "https://example.com/thumb.jpg",
+                    storedUrl: null,
+                    enabled: true,
+                    sortOrder: 0,
+                  },
+                ],
+                editedOptions: { groups: [], combinations: [] },
+              },
+              source: {
+                externalProductId: "15938",
+                originalName: "대용량 두부 탈수기",
+                supplierPrice: 8900,
+                currency: "KRW",
+                availability: "active",
+                imageCount: 1,
+                optionCount: 2,
+                hasDescription: true,
+              },
+            },
+          }),
+        );
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("confirm", vi.fn(() => true));
+
+    const { container } = render(
+      <RegistrationProductEditor
+        productId="00000000-0000-4000-8000-000000000010"
+        registrationContext={registrationContext()}
+      />,
+    );
+
+    await screen.findByDisplayValue("물빠짐 미끄럼방지 욕실화");
+    const contentTab = container.querySelectorAll<HTMLButtonElement>(
+      ".drawer-tabs button",
+    )[1];
+    fireEvent.click(contentTab);
+
+    const search = await screen.findByLabelText("가져올 직감 상품 검색");
+    fireEvent.change(search, { target: { value: "15938" } });
+    fireEvent.click(screen.getByRole("button", { name: "직감 상품 찾기" }));
+
+    expect(await screen.findByText("대용량 두부 탈수기")).toBeVisible();
+    expect(screen.getByText(/이미지 4개/)).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "이 상품 데이터 사용" }));
+
+    expect(
+      await screen.findByText(/이미지 1개, 상세페이지 있음, 옵션 2개를 가져왔습니다/),
+    ).toBeVisible();
+    expect(confirm).toHaveBeenCalledWith(
+      expect.stringContaining("상품명·검색태그·판매가·카테고리는 유지합니다"),
+    );
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/products/00000000-0000-4000-8000-000000000010/supplier-source",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          supplierProductId: "33333333-3333-4333-8333-333333333333",
+        }),
+      }),
+    );
+  });
 });
 
 function registrationContext(): SourcingRegistrationContext {
@@ -217,6 +363,8 @@ function registrationContext(): SourcingRegistrationContext {
     relatedKeywords: [
       keyword("물빠짐욕실화", 900, "product_name"),
       keyword("미끄럼방지욕실화", 400, "product_name"),
+      keyword("두부탈수기", 360, "product_name"),
+      keyword("욕실화", 20_000, "tag"),
       keyword("욕실슬리퍼", 700, "tag"),
       keyword("화장실슬리퍼", 12_000, "tag"),
     ],

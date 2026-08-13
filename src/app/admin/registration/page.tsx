@@ -8,7 +8,6 @@ import { registrationDisplay } from "@/modules/sourcing/registration-display";
 import { createSourcingResearchService } from "@/modules/sourcing/sourcing-factory";
 import { RegistrationNaverActions } from "./registration-naver-actions";
 import { RegistrationStartButton } from "./registration-start-button";
-import "../admin-operations.css";
 
 export const dynamic = "force-dynamic";
 

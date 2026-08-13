@@ -104,12 +104,13 @@
       root.querySelectorAll(
         "#btnBuy, .xans-product-action a, .xans-product-action button, [onclick*='product_submit']",
       ),
-    ).find((element) =>
-      /구매|바로구매|장바구니|BUY NOW/i.test(
-        normalizeText(
-          element.textContent ?? element.getAttribute("alt") ?? "",
+    ).find(
+      (element) =>
+        hasPurchaseAction(element) &&
+        !isUnavailableControl(element) &&
+        /구매|바로구매|장바구니|BUY NOW/i.test(
+          purchaseControlLabel(element),
         ),
-      ),
     );
     if (purchaseButton) {
       return makeResult(requestUrl, "available", {
@@ -145,6 +146,51 @@
       available: [...new Set(available)].slice(0, 100),
       soldOut: [...new Set(soldOut)].slice(0, 100),
     };
+  }
+
+  function purchaseControlLabel(element) {
+    const nestedLabels = Array.from(
+      element.querySelectorAll("img[alt], input[value], [title]"),
+      (child) =>
+        child.getAttribute("alt") ??
+        child.getAttribute("value") ??
+        child.getAttribute("title") ??
+        "",
+    );
+    return normalizeText(
+      [
+        element.textContent,
+        element.getAttribute("alt"),
+        element.getAttribute("title"),
+        element.getAttribute("value"),
+        ...nestedLabels,
+      ]
+        .filter(Boolean)
+        .join(" "),
+    );
+  }
+
+  function hasPurchaseAction(element) {
+    return Boolean(
+      element.matches("#btnBuy, [onclick*='product_submit']") ||
+        element.querySelector("#btnBuy, [onclick*='product_submit']"),
+    );
+  }
+
+  function isUnavailableControl(element) {
+    if (
+      element.matches(":disabled, [aria-disabled='true']") ||
+      element.closest("[hidden], [aria-hidden='true'], .displaynone")
+    ) {
+      return true;
+    }
+    for (let current = element; current; current = current.parentElement) {
+      const style = current.getAttribute("style") ?? "";
+      if (/display\s*:\s*none|visibility\s*:\s*hidden/i.test(style)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   function makeResult(url, status, values = {}) {
