@@ -243,6 +243,16 @@ export interface NaverProductAttribute {
   unitCode: string | null;
 }
 
+export interface ProductKeywordDraft {
+  id: string;
+  keyword: string;
+  normalizedKeyword: string;
+  monthlySearchVolume: number | null;
+  placement: "unclassified" | "product_name" | "tag";
+  source: "itemscout-xlsx";
+  importedAt: string;
+}
+
 export type PublicationChannel = "naver";
 export type DatabaseJsonValue =
   string | number | boolean | null | DatabaseJsonObject | DatabaseJsonValue[];
@@ -390,6 +400,10 @@ export const products = pgTable(
     title: text("title").notNull().default(""),
     sourceTitleKeywords: jsonb("source_title_keywords")
       .$type<string[]>()
+      .notNull()
+      .default([]),
+    keywordDrafts: jsonb("keyword_drafts")
+      .$type<ProductKeywordDraft[]>()
       .notNull()
       .default([]),
     searchTags: jsonb("search_tags").$type<string[]>().notNull().default([]),

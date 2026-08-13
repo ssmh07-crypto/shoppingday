@@ -105,6 +105,7 @@ export class ProductEditService {
       draftVersion,
       title,
       sourceTitleKeywords: current.product.sourceTitleKeywords,
+      keywordDrafts: current.product.keywordDrafts,
       searchTags: current.product.searchTags,
       sellingPrice: current.product.sellingPrice,
       currency: current.product.currency as "KRW",
@@ -139,6 +140,7 @@ export class ProductEditService {
       draftVersion: remote.draftVersion,
       title: remote.title,
       sourceTitleKeywords: current.product.sourceTitleKeywords,
+      keywordDrafts: current.product.keywordDrafts,
       searchTags: remote.searchTags,
       sellingPrice: remote.sellingPrice ?? current.product.sellingPrice,
       currency: current.product.currency,
@@ -278,6 +280,7 @@ function changedFields(
     [
       "title",
       "sourceTitleKeywords",
+      "keywordDrafts",
       "searchTags",
       "sellingPrice",
       "currency",

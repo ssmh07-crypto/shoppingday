@@ -6,6 +6,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import Link from "next/link";
@@ -422,6 +423,66 @@ describe("상품 편집 서랍", () => {
       screen.getByText("추천 키워드 1개를 검색 태그에 적용했습니다."),
     ).toBeVisible();
   });
+
+  it("위탁상품에서 아이템스카우트 키워드를 상품명·태그로 분류하고 제목을 만든다", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValueOnce(
+        editorResponse({
+          id: "itemscout-keyword-product",
+          title: "야채짤순이",
+          keywordDrafts: [
+            productKeyword("채소탈수기", 940, 1),
+            productKeyword("채소물기제거기", 140, 2),
+            productKeyword("야채탈수기", 3200, 3),
+          ],
+        }),
+      ),
+    );
+    vi.stubGlobal("confirm", vi.fn(() => true));
+    render(<ProductEditorDrawer initialProductId="itemscout-keyword-product" />);
+
+    await screen.findByDisplayValue("야채짤순이");
+    fireEvent.click(screen.getByRole("button", { name: "키워드 편집" }));
+    const titleGroup = screen.getByRole("group", {
+      name: "채소탈수기 키워드 분류",
+    });
+    fireEvent.click(within(titleGroup).getByRole("button", { name: "상품명" }));
+    const secondTitleGroup = screen.getByRole("group", {
+      name: "채소물기제거기 키워드 분류",
+    });
+    fireEvent.click(
+      within(secondTitleGroup).getByRole("button", { name: "상품명" }),
+    );
+    const tagGroup = screen.getByRole("group", {
+      name: "야채탈수기 키워드 분류",
+    });
+    fireEvent.click(within(tagGroup).getByRole("button", { name: "태그" }));
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "분류 키워드로 상품명 만들기" }),
+    );
+    expect(
+      screen.getByText("아이템스카우트 분류 + 검색 품질 규칙"),
+    ).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "이 상품명 적용" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "검색 최적화 닫기" }),
+    );
+
+    expect(
+      screen.getByLabelText("추천에 사용할 상품명 키워드 요약"),
+    ).toHaveTextContent("채소탈수기");
+    expect(screen.getByLabelText("검색 태그 요약")).toHaveTextContent(
+      "야채탈수기",
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "키워드 편집" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "야채탈수기 키워드 삭제" }),
+    );
+    expect(screen.queryByText("야채탈수기")).not.toBeInTheDocument();
+  });
 });
 
 function editorResponse({
@@ -431,6 +492,7 @@ function editorResponse({
   naverCategoryId = "50001799",
   applyCategoryQueryToTitleByDefault = false,
   selectedImages = [],
+  keywordDrafts = [],
 }: {
   id: string;
   title: string;
@@ -438,6 +500,7 @@ function editorResponse({
   naverCategoryId?: string | null;
   applyCategoryQueryToTitleByDefault?: boolean;
   selectedImages?: ReturnType<typeof selectedImage>[];
+  keywordDrafts?: ReturnType<typeof productKeyword>[];
 }) {
   return Response.json({
     success: true,
@@ -450,6 +513,8 @@ function editorResponse({
         id,
         status: "draft",
         title,
+        sourceTitleKeywords: [],
+        keywordDrafts,
         searchTags: [],
         sellingPrice: null,
         currency: "KRW",
@@ -482,6 +547,18 @@ function editorResponse({
       },
     },
   });
+}
+
+function productKeyword(keyword: string, monthlySearchVolume: number, index: number) {
+  return {
+    id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+    keyword,
+    normalizedKeyword: keyword.replace(/\s+/g, "").toLocaleLowerCase("ko-KR"),
+    monthlySearchVolume,
+    placement: "unclassified" as const,
+    source: "itemscout-xlsx" as const,
+    importedAt: "2026-08-13T00:00:00.000Z",
+  };
 }
 
 function selectedImage(

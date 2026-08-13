@@ -13,11 +13,6 @@ import {
   suppliers,
 } from "@/lib/db/schema";
 import {
-  imagesFromSupplier,
-  optionsFromSupplier,
-  sanitizeDescription,
-} from "./product-domain";
-import {
   ProductNotFoundError,
   ProductValidationError,
 } from "./product-errors";
@@ -113,6 +108,7 @@ export class SourcingSupplierSourceService {
           product: products,
           supplierProduct: supplierProducts,
           supplierCode: suppliers.code,
+          researchId: sourcingResearches.id,
         })
         .from(products)
         .innerJoin(
@@ -145,6 +141,7 @@ export class SourcingSupplierSourceService {
 
       const [source] = await tx
         .select({
+          product: products,
           supplierProduct: supplierProducts,
           supplierCode: suppliers.code,
         })
@@ -162,7 +159,8 @@ export class SourcingSupplierSourceService {
             or(eq(products.ownerId, ownerId), isNull(products.ownerId)),
           ),
         )
-        .limit(1);
+        .limit(1)
+        .for("update");
       if (!source) {
         throw new ProductValidationError({
           supplierSource: "가져올 직감 상품을 찾지 못했습니다.",
@@ -170,77 +168,76 @@ export class SourcingSupplierSourceService {
       }
 
       const sourceProduct = source.supplierProduct;
-      const selectedImages = imagesFromSupplier(sourceProduct.originalImages);
-      const editedOptions = optionsFromSupplier(sourceProduct.originalOptions);
-      const description = sanitizeDescription(sourceProduct.rawDescription ?? "");
       const [updated] = await tx
         .update(products)
         .set({
           ownerId,
-          description,
-          selectedImages,
-          editedOptions,
+          title: current.product.title,
+          sourceTitleKeywords: current.product.sourceTitleKeywords,
+          keywordDrafts: current.product.keywordDrafts,
+          searchTags: current.product.searchTags,
+          sellingPrice: current.product.sellingPrice,
+          currency: current.product.currency,
+          categoryId: current.product.categoryId,
+          naverCategoryId: current.product.naverCategoryId,
+          naverAttributes: current.product.naverAttributes,
           status: "editing",
           readyAt: null,
           validationErrors: {},
           draftVersion: sql`${products.draftVersion}+1`,
           updatedAt: new Date(),
         })
-        .where(eq(products.id, productId))
+        .where(eq(products.id, source.product.id))
         .returning({ id: products.id, draftVersion: products.draftVersion });
       if (!updated) throw new ProductNotFoundError();
 
       const targetUrl = sourceUrl(sourceProduct.rawPayload);
       await tx
-        .update(supplierProducts)
+        .update(sourcingResearches)
         .set({
-          originalName: sourceProduct.originalName,
-          supplierPrice: sourceProduct.supplierPrice,
-          currency: sourceProduct.currency,
-          availability: sourceProduct.availability,
-          originalImages: sourceProduct.originalImages,
-          originalOptions: sourceProduct.originalOptions,
-          rawDescription: sourceProduct.rawDescription,
-          rawPayload: {
-            ...current.supplierProduct.rawPayload,
-            targetSupplierCode: "zicgam",
-            targetSupplierProductId: sourceProduct.id,
-            targetExternalProductId: sourceProduct.externalProductId,
-            targetUrl,
-            targetImportedAt: new Date().toISOString(),
-          },
-          lastSyncedAt: new Date(),
+          registrationProductId: source.product.id,
           updatedAt: new Date(),
         })
-        .where(eq(supplierProducts.id, current.supplierProduct.id));
+        .where(eq(sourcingResearches.id, current.researchId));
       await tx.insert(productAuditLogs).values({
         actorId: ownerId,
-        entityId: productId,
-        action: "sourcing_supplier_source_applied",
-        changedFields: ["description", "selectedImages", "editedOptions"],
+        entityId: source.product.id,
+        action: "sourcing_registration_linked_to_supplier_product",
+        changedFields: [
+          "title",
+          "sourceTitleKeywords",
+          "keywordDrafts",
+          "searchTags",
+          "sellingPrice",
+          "categoryId",
+          "naverCategoryId",
+          "naverAttributes",
+        ],
         oldValues: {
-          descriptionLength: current.product.description.length,
-          imageCount: current.product.selectedImages.length,
-          optionCount: current.product.editedOptions.combinations.length,
+          sourceProductId: productId,
+          targetTitle: source.product.title,
         },
         newValues: {
           sourceSupplier: "zicgam",
           sourceExternalProductId: sourceProduct.externalProductId,
-          descriptionLength: description.length,
-          imageCount: selectedImages.length,
-          optionCount: editedOptions.combinations.length,
+          sourcingResearchId: current.researchId,
+          title: current.product.title,
         },
         requestId: randomUUID(),
       });
+      await tx.delete(products).where(eq(products.id, productId));
+      await tx
+        .delete(supplierProducts)
+        .where(eq(supplierProducts.id, current.supplierProduct.id));
 
       return {
-        productId,
+        productId: source.product.id,
         product: {
           draftVersion: updated.draftVersion,
           status: "editing" as const,
-          description,
-          selectedImages,
-          editedOptions,
+          description: source.product.description,
+          selectedImages: source.product.selectedImages,
+          editedOptions: source.product.editedOptions,
         },
         source: {
           supplierProductId: sourceProduct.id,
@@ -255,9 +252,11 @@ export class SourcingSupplierSourceService {
           currency: sourceProduct.currency,
           availability: sourceProduct.availability,
           url: targetUrl,
-          imageCount: selectedImages.length,
+          imageCount: source.product.selectedImages.filter(
+            (image) => image.enabled,
+          ).length,
           optionCount: sourceProduct.originalOptions.length,
-          hasDescription: Boolean(description),
+          hasDescription: Boolean(source.product.description.trim()),
         },
       };
     });

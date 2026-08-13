@@ -249,7 +249,7 @@ describe("소싱 상품 등록 전용 편집", () => {
     expect(requirementsAttempts).toBe(3);
   });
 
-  it("타겟 직감 상품을 찾아 이미지·상세페이지·옵션을 소싱 초안에 가져온다", async () => {
+  it("타겟 직감 상품을 찾아 소싱 등록 상품으로 연결한다", async () => {
     const fetchMock = vi.fn().mockImplementation((
       input: RequestInfo | URL,
       init?: RequestInit,
@@ -317,7 +317,7 @@ describe("소싱 상품 등록 전용 편집", () => {
     vi.stubGlobal("fetch", fetchMock);
     vi.stubGlobal("confirm", vi.fn(() => true));
 
-    const { container } = render(
+    render(
       <RegistrationProductEditor
         productId="00000000-0000-4000-8000-000000000010"
         registrationContext={registrationContext()}
@@ -325,24 +325,20 @@ describe("소싱 상품 등록 전용 편집", () => {
     );
 
     await screen.findByDisplayValue("물빠짐 미끄럼방지 욕실화");
-    const contentTab = container.querySelectorAll<HTMLButtonElement>(
-      ".drawer-tabs button",
-    )[1];
-    fireEvent.click(contentTab);
-
     const search = await screen.findByLabelText("가져올 직감 상품 검색");
+    expect(search).toHaveValue("욕실화");
     fireEvent.change(search, { target: { value: "15938" } });
     fireEvent.click(screen.getByRole("button", { name: "직감 상품 찾기" }));
 
     expect(await screen.findByText("대용량 두부 탈수기")).toBeVisible();
     expect(screen.getByText(/이미지 4개/)).toBeVisible();
-    fireEvent.click(screen.getByRole("button", { name: "이 상품 데이터 사용" }));
+    fireEvent.click(screen.getByRole("button", { name: "이 상품으로 연결" }));
 
     expect(
       await screen.findByText(/이미지 1개, 상세페이지 있음, 옵션 2개를 가져왔습니다/),
     ).toBeVisible();
     expect(confirm).toHaveBeenCalledWith(
-      expect.stringContaining("상품명·검색태그·판매가·카테고리는 유지합니다"),
+      expect.stringContaining("중복 소싱 초안은 정리됩니다"),
     );
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/products/00000000-0000-4000-8000-000000000010/supplier-source",
