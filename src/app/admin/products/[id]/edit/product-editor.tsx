@@ -5,7 +5,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import type { NaverProductAttribute, SelectedImage } from "@/lib/db/schema";
 import { buildSourcingRegistrationDraft } from "@/modules/sourcing/registration-draft";
-import { assessSearchTag } from "@/modules/keywords/search-tag-quality";
+import {
+  assessSearchTag,
+  isBlockingSearchTagIssue,
+} from "@/modules/keywords/search-tag-quality";
 import {
   detectProductTitleAnalysis,
   type ProductTitleAnalysisCriteria,
@@ -2076,6 +2079,9 @@ export function ProductEditor({
                               const qualityIssues = assessSearchTag(keyword, {
                                 title: form.title,
                               });
+                              const blockingIssues = qualityIssues.filter(
+                                isBlockingSearchTagIssue,
+                              );
                               const selected = form.searchTags.some(
                                 (tag) => tag.trim() === keyword,
                               );
@@ -2094,7 +2100,7 @@ export function ProductEditor({
                                     checked={selected}
                                     disabled={
                                       selectionLimitReached ||
-                                      qualityIssues.length > 0
+                                      blockingIssues.length > 0
                                     }
                                     onChange={() => toggleSearchTag(keyword)}
                                   />
@@ -2103,9 +2109,14 @@ export function ProductEditor({
                                     {item.totalMonthlySearchVolume == null
                                       ? "검색량 조회 안 됨"
                                       : `월 ${item.totalMonthlySearchVolume.toLocaleString("ko-KR")}회`}
-                                    {qualityIssues.length > 0
-                                      ? " · 상품명과 중복"
-                                      : ""}
+                                    {qualityIssues.some(
+                                      (issue) =>
+                                        issue.code === "duplicate-product-info",
+                                    )
+                                      ? " · 상품명과 중복 · 직접 선택 가능"
+                                      : blockingIssues[0]
+                                        ? ` · ${blockingIssues[0].message}`
+                                        : ""}
                                   </small>
                                 </label>
                               );
@@ -2154,6 +2165,9 @@ export function ProductEditor({
                         const qualityIssues = assessSearchTag(tag, {
                           title: form.title,
                         });
+                        const blockingIssues = qualityIssues.filter(
+                          isBlockingSearchTagIssue,
+                        );
                         const selected = form.searchTags.includes(tag);
                         const source =
                           registrationContext?.relatedKeywords.find(
@@ -2168,7 +2182,7 @@ export function ProductEditor({
                             <input
                               type="checkbox"
                               checked={selected}
-                              disabled={tooLong || qualityIssues.length > 0}
+                              disabled={tooLong || blockingIssues.length > 0}
                               onChange={() => toggleSearchTag(tag)}
                             />
                             <span>{tag}</span>
@@ -2180,8 +2194,13 @@ export function ProductEditor({
                                 ? " · 1,000 초과도 선택 가능"
                                 : ""}
                               {tooLong ? " · 30자 초과" : ""}
-                              {qualityIssues.length
-                                ? ` · ${qualityIssues[0]?.message}`
+                              {qualityIssues.some(
+                                (issue) =>
+                                  issue.code === "duplicate-product-info",
+                              )
+                                ? " · 상품명과 중복 · 직접 선택 가능"
+                                : blockingIssues.length
+                                  ? ` · ${blockingIssues[0]?.message}`
                                 : ""}
                             </small>
                           </label>
@@ -2211,13 +2230,18 @@ export function ProductEditor({
                     }
                   />
                   <small>
-                    최대 10개까지 입력할 수 있습니다. 상품명과 중복되거나
-                    배송·할인 등 홍보성인 태그는 저장할 수 없습니다.
+                    최대 10개까지 입력할 수 있습니다. 상품명과 중복되는 태그는
+                    경고 후 직접 선택할 수 있지만 배송·할인 등 홍보성 태그는
+                    저장할 수 없습니다.
                   </small>
                   {form.searchTags.flatMap((tag) =>
                     assessSearchTag(tag, { title: form.title }).map((issue) => (
                       <small
-                        className="field-error"
+                        className={
+                          isBlockingSearchTagIssue(issue)
+                            ? "field-error"
+                            : "registration-title-length-warning"
+                        }
                         key={`${tag}-${issue.code}`}
                       >
                         {tag.trim()}: {issue.message}

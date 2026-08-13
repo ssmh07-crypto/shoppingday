@@ -50,7 +50,7 @@ describe("판매 상품 도메인", () => {
       }).success,
     ).toBe(false);
   });
-  it("상품명 중복 및 홍보성 검색 태그를 저장하지 않는다", () => {
+  it("상품명 중복 검색 태그는 허용하고 홍보성 검색 태그만 저장하지 않는다", () => {
     const result = draftInputSchema.safeParse({
       ...base,
       title: "미끄럼방지 욕실화",
@@ -60,7 +60,6 @@ describe("판매 상품 도메인", () => {
     expect(result.success).toBe(false);
     if (result.success) return;
     expect(result.error.issues.map((issue) => issue.path)).toEqual([
-      ["searchTags", 0],
       ["searchTags", 1],
     ]);
   });

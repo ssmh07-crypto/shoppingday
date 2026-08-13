@@ -77,6 +77,26 @@ describe("소싱 상품 등록 전용 편집", () => {
     await waitFor(() => expect(highVolumeTag).toBeChecked());
   });
 
+  it("상품명과 중복되는 검색수 1,000 초과 태그도 직접 선택한다", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(editorResponse()));
+
+    render(
+      <RegistrationProductEditor
+        productId="00000000-0000-4000-8000-000000000010"
+        registrationContext={registrationContext()}
+      />,
+    );
+
+    const duplicateHighVolumeTag = await screen.findByRole("checkbox", {
+      name: /욕실화.*월 검색수 20,000.*상품명과 중복.*직접 선택 가능/,
+    });
+    expect(duplicateHighVolumeTag).not.toBeChecked();
+    expect(duplicateHighVolumeTag).toBeEnabled();
+
+    fireEvent.click(duplicateHighVolumeTag);
+    await waitFor(() => expect(duplicateHighVolumeTag).toBeChecked());
+  });
+
   it("카테고리 필수속성 조회 실패 후 다시 불러와 입력란을 표시한다", async () => {
     let requirementsAttempts = 0;
     const fetchMock = vi.fn().mockImplementation((
@@ -234,6 +254,7 @@ function registrationContext(): SourcingRegistrationContext {
       keyword("물빠짐욕실화", 900, "product_name"),
       keyword("미끄럼방지욕실화", 400, "product_name"),
       keyword("두부탈수기", 360, "product_name"),
+      keyword("욕실화", 20_000, "tag"),
       keyword("욕실슬리퍼", 700, "tag"),
       keyword("화장실슬리퍼", 12_000, "tag"),
     ],
