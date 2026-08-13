@@ -252,6 +252,51 @@ describe("소싱 조사 화면", () => {
     expect(within(screen.getByRole("table")).getByText("낮은 욕실화")).toBeInTheDocument();
   });
 
+  it("입력한 단어가 포함된 연관키워드를 한 번에 삭제한다", () => {
+    const initial = researchWithKeywords();
+    initial.relatedKeywords.push(
+      {
+        id: "00000000-0000-4000-8000-000000000004",
+        keyword: "스텐 욕실 선반",
+        normalizedKeyword: "스텐욕실선반",
+        monthlySearchVolume: 320,
+        placement: "product_name",
+        source: "manual",
+        importedAt: "2026-07-19T00:00:00.000Z",
+      },
+      {
+        id: "00000000-0000-4000-8000-000000000005",
+        keyword: "올스 텐 코너선반",
+        normalizedKeyword: "올스텐코너선반",
+        monthlySearchVolume: 210,
+        placement: "tag",
+        source: "itemscout-xlsx",
+        importedAt: "2026-07-19T00:00:00.000Z",
+      },
+    );
+    const confirmMock = vi.fn(() => true);
+    vi.stubGlobal("confirm", confirmMock);
+
+    render(<SourcingWorkspace initialItems={[]} initialDetail={initial} />);
+    fireEvent.click(sectionButton("02 연관 키워드 분류"));
+    fireEvent.change(screen.getByLabelText("삭제할 키워드 포함어"), {
+      target: { value: "스텐" },
+    });
+
+    const deleteButton = screen.getByRole("button", { name: "일치 키워드 삭제 (2)" });
+    fireEvent.click(deleteButton);
+
+    expect(confirmMock).toHaveBeenCalledWith(
+      "'스텐'이(가) 포함된 연관키워드 2개를 삭제할까요?",
+    );
+    const keywordTable = within(screen.getByRole("table"));
+    expect(keywordTable.queryByText("스텐 욕실 선반")).not.toBeInTheDocument();
+    expect(keywordTable.queryByText("올스 텐 코너선반")).not.toBeInTheDocument();
+    expect(keywordTable.getByText("욕실화")).toBeInTheDocument();
+    expect(screen.getByLabelText("삭제할 키워드 포함어")).toHaveValue("");
+    expect(screen.getByText(/연관키워드 2개를 삭제했습니다/)).toBeInTheDocument();
+  });
+
   it("소싱 아이템 저장 시 소싱 결정으로 저장하고 등록 초안을 생성한다", async () => {
     const initial = researchWithKeywords();
     const selected = { ...initial, status: "selected" as const };

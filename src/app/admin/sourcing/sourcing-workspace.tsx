@@ -98,6 +98,7 @@ export function SourcingWorkspace({
   const [importingKeywords, setImportingKeywords] = useState(false);
   const [manualKeywordText, setManualKeywordText] = useState("");
   const [keywordQuery, setKeywordQuery] = useState("");
+  const [keywordExclusionText, setKeywordExclusionText] = useState("");
   const [keywordPlacementFilter, setKeywordPlacementFilter] =
     useState<SourcingKeywordPlacement | "all">("all");
   const [keywordVolumeFilter, setKeywordVolumeFilter] =
@@ -127,6 +128,14 @@ export function SourcingWorkspace({
     () => draft.relatedKeywords.filter((item) => item.source === "itemscout-xlsx").length,
     [draft.relatedKeywords],
   );
+
+  const excludedKeywordCount = useMemo(() => {
+    const exclusion = normalizeKeywordText(keywordExclusionText);
+    if (!exclusion) return 0;
+    return draft.relatedKeywords.filter((item) =>
+      normalizeKeywordText(item.keyword).includes(exclusion),
+    ).length;
+  }, [draft.relatedKeywords, keywordExclusionText]);
 
   const visibleRelatedKeywords = useMemo(() => {
     const normalizedQuery = keywordQuery.trim().replace(/\s+/g, "").toLocaleLowerCase("ko-KR");
@@ -321,6 +330,31 @@ export function SourcingWorkspace({
       ...current,
       relatedKeywords: current.relatedKeywords.filter((item) => item.id !== id),
     }));
+  }
+
+  function removeKeywordsContainingText() {
+    const exclusion = normalizeKeywordText(keywordExclusionText);
+    const label = keywordExclusionText.trim();
+    if (!exclusion || !excludedKeywordCount) return;
+    if (
+      !window.confirm(
+        `'${label}'이(가) 포함된 연관키워드 ${excludedKeywordCount}개를 삭제할까요?`,
+      )
+    ) {
+      return;
+    }
+
+    setDraft((current) => ({
+      ...current,
+      relatedKeywords: current.relatedKeywords.filter(
+        (item) => !normalizeKeywordText(item.keyword).includes(exclusion),
+      ),
+    }));
+    setKeywordExclusionText("");
+    setError(null);
+    setMessage(
+      `'${label}'이(가) 포함된 연관키워드 ${excludedKeywordCount}개를 삭제했습니다. 변경사항을 저장하려면 임시저장 또는 저장을 눌러 주세요.`,
+    );
   }
 
   async function saveAndCreateRegistration() {
@@ -677,6 +711,28 @@ export function SourcingWorkspace({
                       </button>
                     ) : null}
                   </div>
+                  <div className="sourcing-keyword-exclusion">
+                    <div>
+                      <strong>포함어 일괄 삭제</strong>
+                      <span>입력한 단어가 포함된 연관키워드를 출처와 분류에 관계없이 모두 삭제합니다.</span>
+                    </div>
+                    <input
+                      value={keywordExclusionText}
+                      onChange={(event) => setKeywordExclusionText(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") removeKeywordsContainingText();
+                      }}
+                      placeholder="예: 스텐"
+                      aria-label="삭제할 키워드 포함어"
+                    />
+                    <button
+                      type="button"
+                      onClick={removeKeywordsContainingText}
+                      disabled={!excludedKeywordCount}
+                    >
+                      일치 키워드 삭제 ({excludedKeywordCount})
+                    </button>
+                  </div>
                   <div className="sourcing-keyword-volume-filters" aria-label="검색수 필터">
                     {(Object.entries(keywordVolumeFilterLabels) as Array<[KeywordVolumeFilter, string]>).map(([value, label]) => (
                       <button type="button" key={value} className={keywordVolumeFilter === value ? "active" : undefined} onClick={() => setKeywordVolumeFilter(value)}>{label}</button>
@@ -895,10 +951,15 @@ export function SourcingWorkspace({
   }
   function resetEditorTransientState() {
     setManualKeywordText("");
+    setKeywordExclusionText("");
     setReviewRawText("");
     setReviewListExpanded(true);
     setReviewAnalysis(null);
   }
+}
+
+function normalizeKeywordText(value: string) {
+  return value.trim().replace(/\s+/g, "").toLocaleLowerCase("ko-KR");
 }
 
 function storedReview(

@@ -418,25 +418,124 @@
 .registration-editor-state.error {
   color: #b42318;
 }
-.registration-title-basis {
+.registration-title-keywords {
   display: grid;
-  gap: 7px;
+  gap: 10px;
   padding: 13px;
   border: 1px solid #bfdbfe;
   border-radius: 8px;
   background: #eff6ff;
   color: #1e3a8a;
   font-size: 13px;
-  font-weight: 800;
 }
-.registration-title-basis select {
-  background: #fff;
+.registration-title-keywords-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
 }
-.registration-title-basis small {
+.registration-title-keywords-head > div:first-child {
+  display: grid;
+  gap: 4px;
+}
+.registration-title-keywords-head strong {
+  font-size: 14px;
+}
+.registration-title-keywords-head span,
+.registration-title-keyword-groups section > div > span {
   color: #4b5f86;
   font-size: 11px;
-  font-weight: 500;
   line-height: 1.5;
+}
+.registration-title-keywords-head > div:last-child {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.registration-title-keywords-head button,
+.registration-title-keywords-more {
+  border: 1px solid #93c5fd;
+  border-radius: 7px;
+  padding: 7px 9px;
+  background: #fff;
+  color: #1d4ed8;
+  font-size: 11px;
+  font-weight: 800;
+}
+.registration-title-keywords > input {
+  background: #fff;
+}
+.registration-title-selected-keywords {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.registration-title-selected-keywords button {
+  border: 1px solid #60a5fa;
+  border-radius: 999px;
+  padding: 5px 9px;
+  background: #fff;
+  color: #1d4ed8;
+  font-size: 11px;
+  font-weight: 800;
+}
+.registration-title-keyword-groups {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+}
+.registration-title-keyword-groups section {
+  display: grid;
+  align-content: start;
+  gap: 7px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid #dbeafe;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.75);
+}
+.registration-title-keyword-groups section > div:first-child {
+  display: grid;
+  gap: 3px;
+}
+.registration-title-keyword-groups section > div:nth-child(2) {
+  display: grid;
+  gap: 6px;
+}
+.registration-title-keyword-groups label {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 2px 7px;
+  padding: 7px 8px;
+  border: 1px solid #d0d5dd;
+  border-radius: 7px;
+  background: #fff;
+  color: #344054;
+  cursor: pointer;
+}
+.registration-title-keyword-groups label.selected {
+  border-color: #2563eb;
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+.registration-title-keyword-groups label input {
+  grid-row: 1 / 3;
+}
+.registration-title-keyword-groups label span {
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  font-weight: 800;
+}
+.registration-title-keyword-groups label small,
+.registration-title-keyword-groups section > small {
+  color: #667085;
+  font-size: 10px;
+  line-height: 1.4;
+}
+.registration-title-keywords-more {
+  justify-self: center;
 }
 .registration-title-length-warning {
   color: #b45309;
@@ -512,6 +611,16 @@
   .registration-editor-page {
     width: min(100% - 20px, 1180px);
     padding-top: 16px;
+  }
+  .registration-title-keywords-head {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .registration-title-keywords-head > div:last-child {
+    justify-content: flex-start;
+  }
+  .registration-title-keyword-groups {
+    grid-template-columns: 1fr;
   }
   .registration-editor-heading {
     align-items: stretch;

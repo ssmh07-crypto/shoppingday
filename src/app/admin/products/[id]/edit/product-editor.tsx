@@ -199,8 +199,19 @@ export function ProductEditor({
   const [titleAnalysisStatus, setTitleAnalysisStatus] = useState(
     "판매용 상품명과 카테고리에서 자동 감지했습니다. 추천 전에 수정할 수 있습니다.",
   );
-  const [preferredSourcingTitleKeyword, setPreferredSourcingTitleKeyword] =
+  const [selectedSourcingTitleKeywords, setSelectedSourcingTitleKeywords] =
+    useState<string[]>(() =>
+      registrationContext
+        ? buildSourcingRegistrationDraft(
+            registrationContext.sourcingKeyword,
+            registrationContext.relatedKeywords,
+          ).usedTitleKeywords
+        : [],
+    );
+  const [sourcingTitleKeywordQuery, setSourcingTitleKeywordQuery] =
     useState("");
+  const [showAllSourcingTitleKeywords, setShowAllSourcingTitleKeywords] =
+    useState(false);
   const [tagSelectionStatus, setTagSelectionStatus] = useState("");
   const [message, setMessage] = useState("저장됨");
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -330,6 +341,24 @@ export function ProductEditor({
         : null,
     [registrationContext],
   );
+  const sourcingTitleCandidateGroups = useMemo(() => {
+    if (!sourcingRegistrationDraft) {
+      return { automatic: [], confirmationRequired: [] };
+    }
+    const query = normalizeCandidateSearch(sourcingTitleKeywordQuery);
+    const filtered = sourcingRegistrationDraft.titleCandidateDetails.filter(
+      (candidate) =>
+        !query || normalizeCandidateSearch(candidate.keyword).includes(query),
+    );
+    return {
+      automatic: filtered.filter(
+        (candidate) => candidate.connection === "automatic",
+      ),
+      confirmationRequired: filtered.filter(
+        (candidate) => candidate.connection === "confirmation_required",
+      ),
+    };
+  }, [sourcingRegistrationDraft, sourcingTitleKeywordQuery]);
 
   useEffect(() => {
     const listener = (event: BeforeUnloadEvent) => {
@@ -728,6 +757,24 @@ export function ProductEditor({
     );
   }
 
+  function toggleSourcingTitleKeyword(keyword: string) {
+    setSelectedSourcingTitleKeywords((current) =>
+      current.includes(keyword)
+        ? current.filter((item) => item !== keyword)
+        : [...current, keyword],
+    );
+    setTitleRecommendation(null);
+    setTitleRecommendationStatus("");
+  }
+
+  function resetSourcingTitleKeywordsToRecommended() {
+    setSelectedSourcingTitleKeywords(
+      sourcingRegistrationDraft?.usedTitleKeywords ?? [],
+    );
+    setTitleRecommendation(null);
+    setTitleRecommendationStatus("");
+  }
+
   async function recommendProductTitle() {
     const title = form.title.trim();
     if (registrationContext && sourcingRegistrationDraft) {
@@ -739,11 +786,11 @@ export function ProductEditor({
       const draft = buildSourcingRegistrationDraft(
         registrationContext.sourcingKeyword,
         registrationContext.relatedKeywords,
-        { preferredTitleKeyword: preferredSourcingTitleKeyword },
+        { selectedTitleKeywords: selectedSourcingTitleKeywords },
       );
       if (!draft.title) {
         setTitleRecommendationStatus(
-          "검색수 1,000 이하로 분류된 상품명 키워드를 먼저 선택해 주세요.",
+          "추천에 사용할 상품명 키워드를 하나 이상 선택해 주세요.",
         );
         setRecommendingTitle(false);
         return;
@@ -1584,41 +1631,147 @@ export function ProductEditor({
               </div>
               <div className="drawer-product-title-field">
                 {sourcingRegistrationDraft && (
-                  <label className="registration-title-basis">
-                    기준 상품명 검색어
-                    <select
-                      value={preferredSourcingTitleKeyword}
-                      onChange={(event) => {
-                        setPreferredSourcingTitleKeyword(event.target.value);
-                        setTitleRecommendation(null);
-                        setTitleRecommendationStatus("");
-                      }}
-                    >
-                      <option value="">검색수 높은 순으로 자동 조합</option>
-                      {sourcingRegistrationDraft.titleCandidates.map(
-                        (keyword) => {
-                          const source =
-                            registrationContext?.relatedKeywords.find(
-                              (item) =>
-                                item.placement === "product_name" &&
-                                item.keyword === keyword,
-                            );
-                          return (
-                            <option value={keyword} key={keyword}>
-                              {keyword}
-                              {source?.monthlySearchVolume == null
-                                ? ""
-                                : ` · 월 ${source.monthlySearchVolume.toLocaleString("ko-KR")}`}
-                            </option>
-                          );
+                  <div className="registration-title-keywords">
+                    <div className="registration-title-keywords-head">
+                      <div>
+                        <strong>
+                          추천에 사용할 상품명 키워드 ({selectedSourcingTitleKeywords.length}개 선택)
+                        </strong>
+                        <span>
+                          키워드를 클릭해 추천 재료를 고르세요. 서로 다른 상품 유형 표현은 50자 안에서 함께 반영합니다.
+                        </span>
+                      </div>
+                      <div>
+                        <button
+                          type="button"
+                          onClick={resetSourcingTitleKeywordsToRecommended}
+                        >
+                          자동 추천 선택
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedSourcingTitleKeywords([]);
+                            setTitleRecommendation(null);
+                            setTitleRecommendationStatus("");
+                          }}
+                        >
+                          선택 초기화
+                        </button>
+                      </div>
+                    </div>
+                    <input
+                      type="search"
+                      value={sourcingTitleKeywordQuery}
+                      onChange={(event) =>
+                        setSourcingTitleKeywordQuery(event.target.value)
+                      }
+                      placeholder="상품명 키워드 검색"
+                      aria-label="추천 상품명 키워드 검색"
+                    />
+                    {selectedSourcingTitleKeywords.length ? (
+                      <div
+                        className="registration-title-selected-keywords"
+                        aria-label="선택한 상품명 키워드"
+                      >
+                        {selectedSourcingTitleKeywords.map((keyword) => (
+                          <button
+                            type="button"
+                            key={keyword}
+                            onClick={() => toggleSourcingTitleKeyword(keyword)}
+                            aria-label={`${keyword} 선택 해제`}
+                          >
+                            {keyword} <span aria-hidden="true">×</span>
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+                    <div className="registration-title-keyword-groups">
+                      {([
+                        {
+                          key: "automatic",
+                          title: "자동 연결 후보",
+                          description: `‘${registrationContext?.sourcingKeyword}’ 또는 확인된 동의 상품형과 연결된 키워드입니다.`,
+                          candidates: sourcingTitleCandidateGroups.automatic,
                         },
-                      )}
-                    </select>
-                    <small>
-                      검색수 1,000 이하 상품명 후보가 여러 개면 하나를 골라 해당
-                      표현을 우선한 추천을 만들 수 있습니다.
-                    </small>
-                  </label>
+                        {
+                          key: "confirmation",
+                          title: "자동 연결 확인 필요",
+                          description: `‘${registrationContext?.sourcingKeyword}’ 문자열이 없지만 실제 같은 상품이면 직접 선택할 수 있습니다.`,
+                          candidates:
+                            sourcingTitleCandidateGroups.confirmationRequired,
+                        },
+                      ] as const).map((group) => {
+                        const visibleCandidates =
+                          showAllSourcingTitleKeywords ||
+                          sourcingTitleKeywordQuery.trim()
+                            ? group.candidates
+                            : group.candidates.slice(0, 8);
+                        return (
+                          <section key={group.key}>
+                            <div>
+                              <strong>
+                                {group.title} ({group.candidates.length})
+                              </strong>
+                              <span>{group.description}</span>
+                            </div>
+                            {visibleCandidates.length ? (
+                              <div>
+                                {visibleCandidates.map((candidate) => {
+                                  const selected =
+                                    selectedSourcingTitleKeywords.includes(
+                                      candidate.keyword,
+                                    );
+                                  return (
+                                    <label
+                                      key={candidate.keyword}
+                                      className={selected ? "selected" : undefined}
+                                    >
+                                      <input
+                                        type="checkbox"
+                                        checked={selected}
+                                        onChange={() =>
+                                          toggleSourcingTitleKeyword(
+                                            candidate.keyword,
+                                          )
+                                        }
+                                        aria-label={`${candidate.keyword} 추천 상품명 키워드 선택`}
+                                      />
+                                      <span>{candidate.keyword}</span>
+                                      <small>
+                                        월 검색수 {candidate.monthlySearchVolume.toLocaleString("ko-KR")}
+                                        {candidate.connection ===
+                                        "confirmation_required"
+                                          ? " · 자동 연결 실패, 직접 선택 가능"
+                                          : " · 자동 연결"}
+                                      </small>
+                                    </label>
+                                  );
+                                })}
+                              </div>
+                            ) : (
+                              <small>표시할 후보가 없습니다.</small>
+                            )}
+                          </section>
+                        );
+                      })}
+                    </div>
+                    {(sourcingTitleCandidateGroups.automatic.length > 8 ||
+                      sourcingTitleCandidateGroups.confirmationRequired.length >
+                        8) && !sourcingTitleKeywordQuery.trim() ? (
+                      <button
+                        type="button"
+                        className="registration-title-keywords-more"
+                        onClick={() =>
+                          setShowAllSourcingTitleKeywords((current) => !current)
+                        }
+                      >
+                        {showAllSourcingTitleKeywords
+                          ? "후보 간단히 보기"
+                          : `전체 후보 ${sourcingRegistrationDraft.titleCandidateDetails.length}개 보기`}
+                      </button>
+                    ) : null}
+                  </div>
                 )}
                 <div className="drawer-product-title-heading">
                   <label htmlFor="product-selling-title">판매용 상품명</label>
@@ -1627,7 +1780,7 @@ export function ProductEditor({
                       type="button"
                       disabled={
                         recommendingTitle ||
-                        !sourcingRegistrationDraft.titleCandidates.length
+                        !selectedSourcingTitleKeywords.length
                       }
                       onClick={() => void recommendProductTitle()}
                     >
@@ -1832,10 +1985,10 @@ export function ProductEditor({
                           <dd>{titleRecommendation.analysis.productType}</dd>
                         </div>
                         <div>
-                          <dt>우선 기준 검색어</dt>
+                          <dt>선택한 추천 키워드</dt>
                           <dd>
-                            {preferredSourcingTitleKeyword ||
-                              "검색수 높은 순 자동 조합"}
+                            {selectedSourcingTitleKeywords.join(", ") ||
+                              "선택 없음"}
                           </dd>
                         </div>
                       </dl>
@@ -1989,8 +2142,10 @@ export function ProductEditor({
                     {form.searchTags.filter((tag) => tag.trim()).length}/10)
                   </strong>
                   <p>
-                    소싱 조사에서 태그로 분류한 후보입니다. 월 검색수를 참고해
-                    실제 등록할 태그를 최대 10개까지 직접 선택하세요.
+                    소싱 조사에서 태그로 분류한 후보입니다. 월 검색수 1,000은
+                    상품명 후보 기준이며 검색 태그의 선택 제한이 아닙니다. 후보가
+                    부족하면 1,000을 초과한 키워드도 포함해 최대 10개까지 직접
+                    선택하세요.
                   </p>
                   {sourcingRegistrationDraft.tagCandidates.length ? (
                     <div>
@@ -2021,6 +2176,9 @@ export function ProductEditor({
                               {source?.monthlySearchVolume == null
                                 ? "월 검색수 미입력"
                                 : `월 검색수 ${source.monthlySearchVolume.toLocaleString("ko-KR")}`}
+                              {(source?.monthlySearchVolume ?? 0) > 1_000
+                                ? " · 1,000 초과도 선택 가능"
+                                : ""}
                               {tooLong ? " · 30자 초과" : ""}
                               {qualityIssues.length
                                 ? ` · ${qualityIssues[0]?.message}`
@@ -2938,6 +3096,14 @@ function splitKeywordList(value: string) {
         .filter(Boolean),
     ),
   );
+}
+
+function normalizeCandidateSearch(value: string) {
+  return value
+    .normalize("NFKC")
+    .trim()
+    .replace(/\s+/g, "")
+    .toLocaleLowerCase("ko-KR");
 }
 
 function toProductTitleAnalysisDraft(

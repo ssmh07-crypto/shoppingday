@@ -452,6 +452,45 @@
   color: #b42318;
   font-size: 12px;
 }
+.sourcing-keyword-exclusion {
+  display: grid;
+  grid-template-columns: minmax(190px, 1fr) minmax(180px, 0.8fr) auto;
+  align-items: end;
+  gap: 10px;
+  margin-top: 10px;
+  padding: 12px;
+  border: 1px solid #f1c7c2;
+  border-radius: 9px;
+  background: #fff8f7;
+}
+.sourcing-keyword-exclusion > div {
+  display: grid;
+  gap: 3px;
+}
+.sourcing-keyword-exclusion strong {
+  color: #7a271a;
+  font-size: 13px;
+}
+.sourcing-keyword-exclusion span {
+  color: var(--sourcing-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.sourcing-keyword-exclusion button {
+  min-height: 42px;
+  padding: 9px 13px;
+  border: 1px solid #d92d20;
+  border-radius: 8px;
+  background: #fff;
+  color: #b42318;
+  font-size: 12px;
+  font-weight: 900;
+}
+.sourcing-keyword-exclusion button:disabled {
+  border-color: #e4e7ec;
+  color: #98a2b3;
+  cursor: not-allowed;
+}
 .sourcing-keyword-volume-filters {
   display: flex;
   flex-wrap: wrap;
@@ -1280,6 +1319,10 @@
   }
   .sourcing-keyword-manual {
     grid-template-columns: 1fr;
+  }
+  .sourcing-keyword-exclusion {
+    grid-template-columns: 1fr;
+    align-items: stretch;
   }
   .sourcing-keyword-manual button {
     width: 100%;

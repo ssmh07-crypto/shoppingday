@@ -12,7 +12,7 @@ afterEach(() => {
 });
 
 describe("소싱 상품 등록 전용 편집", () => {
-  it("기준 상품명 후보로 추천 순서를 바꾸고 태그를 직접 선택한다", async () => {
+  it("상품명 키워드를 여러 개 선택하고 자동 연결 실패 후보도 추천에 반영한다", async () => {
     const fetchMock = vi.fn().mockResolvedValueOnce(editorResponse());
     vi.stubGlobal("fetch", fetchMock);
 
@@ -23,16 +23,28 @@ describe("소싱 상품 등록 전용 편집", () => {
       />,
     );
 
-    const basis = await screen.findByRole("combobox", {
-      name: /기준 상품명 검색어/,
+    const unconnectedKeyword = await screen.findByRole("checkbox", {
+      name: "두부탈수기 추천 상품명 키워드 선택",
     });
-    fireEvent.change(basis, { target: { value: "미끄럼방지욕실화" } });
+    expect(screen.getByText("자동 연결 확인 필요 (1)")).toBeVisible();
+    expect(unconnectedKeyword.closest("label")).toHaveTextContent(
+      "두부탈수기",
+    );
+    expect(unconnectedKeyword.closest("label")).toHaveTextContent(
+      "자동 연결 실패, 직접 선택 가능",
+    );
+    expect(unconnectedKeyword).not.toBeChecked();
+    fireEvent.click(unconnectedKeyword);
+    expect(unconnectedKeyword).toBeChecked();
+    expect(screen.getByText(/3개 선택/)).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "상품명 추천" }));
 
     expect(screen.getByText("소싱 분류 + 검색 품질 규칙")).toBeVisible();
-    expect(screen.getByText("미끄럼방지 물빠짐 욕실화")).toBeVisible();
     expect(
-      screen.getByText("추천에 사용한 상품명 키워드 (2개)"),
+      screen.getByText("두부탈수기 미끄럼방지 물빠짐 욕실화"),
+    ).toBeVisible();
+    expect(
+      screen.getByText("추천에 사용한 상품명 키워드 (3개)"),
     ).toBeVisible();
     expect(fetchMock).toHaveBeenCalledTimes(1);
 
@@ -49,13 +61,17 @@ describe("소싱 상품 등록 전용 편집", () => {
     const highVolumeTag = screen.getByRole("checkbox", {
       name: /화장실슬리퍼/,
     });
-    expect(
-      screen.getByText("월 검색수 12,000"),
-    ).toBeVisible();
     expect(screen.getByText("월 검색수 700")).toBeVisible();
+    expect(
+      screen.getByText(/월 검색수 1,000은 상품명 후보 기준이며/),
+    ).toBeVisible();
+    expect(
+      screen.getByText(/월 검색수 12,000 · 1,000 초과도 선택 가능/),
+    ).toBeVisible();
     expect(screen.getByText("검색 태그 선택 (1/10)")).toBeVisible();
     expect(bathroomTag).toBeChecked();
     expect(highVolumeTag).not.toBeChecked();
+    expect(highVolumeTag).toBeEnabled();
 
     fireEvent.click(highVolumeTag);
     await waitFor(() => expect(highVolumeTag).toBeChecked());
@@ -217,6 +233,7 @@ function registrationContext(): SourcingRegistrationContext {
     relatedKeywords: [
       keyword("물빠짐욕실화", 900, "product_name"),
       keyword("미끄럼방지욕실화", 400, "product_name"),
+      keyword("두부탈수기", 360, "product_name"),
       keyword("욕실슬리퍼", 700, "tag"),
       keyword("화장실슬리퍼", 12_000, "tag"),
     ],

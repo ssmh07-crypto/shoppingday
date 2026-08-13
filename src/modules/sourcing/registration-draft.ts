@@ -30,6 +30,11 @@ const GENERIC_PRODUCT_TERMS = [
 export interface SourcingRegistrationDraft {
   title: string;
   titleCandidates: string[];
+  titleCandidateDetails: Array<{
+    keyword: string;
+    monthlySearchVolume: number;
+    connection: "automatic" | "confirmation_required";
+  }>;
   usedTitleKeywords: string[];
   searchTags: string[];
   tagCandidates: string[];
@@ -41,7 +46,10 @@ export interface SourcingRegistrationDraft {
 export function buildSourcingRegistrationDraft(
   sourcingKeyword: string,
   relatedKeywords: SourcingRelatedKeyword[],
-  options: { preferredTitleKeyword?: string } = {},
+  options: {
+    preferredTitleKeyword?: string;
+    selectedTitleKeywords?: string[];
+  } = {},
 ): SourcingRegistrationDraft {
   const eligibleTitleCandidates = eligibleLowVolumeKeywords(
     relatedKeywords,
@@ -50,9 +58,37 @@ export function buildSourcingRegistrationDraft(
   const titleCandidates = eligibleTitleCandidates.map(
     (candidate) => candidate.keyword,
   );
+  const titleCandidateDetails = eligibleTitleCandidates.map((candidate) => ({
+    ...candidate,
+    connection:
+      connectedTitlePart(sourcingKeyword, candidate.keyword) === null
+        ? ("confirmation_required" as const)
+        : ("automatic" as const),
+  }));
+  const selectedNormalized =
+    options.selectedTitleKeywords === undefined
+      ? null
+      : new Set(options.selectedTitleKeywords.map(normalizeKeyword));
+  const selectedTitleCandidates = selectedNormalized
+    ? eligibleTitleCandidates.filter((candidate) =>
+        selectedNormalized.has(normalizeKeyword(candidate.keyword)),
+      )
+    : eligibleTitleCandidates;
+  const sourceNormalized = normalizeKeyword(sourcingKeyword);
+  const supplementalTitleCandidates = selectedNormalized
+    ? selectedTitleCandidates.filter(
+        (candidate) =>
+          !normalizeKeyword(candidate.keyword).includes(sourceNormalized),
+      )
+    : [];
+  const automaticallyComposableCandidates = selectedNormalized
+    ? selectedTitleCandidates.filter((candidate) =>
+        normalizeKeyword(candidate.keyword).includes(sourceNormalized),
+      )
+    : selectedTitleCandidates;
   const diverseTitleKeywords = selectDiverseTitleKeywords(
     sourcingKeyword,
-    eligibleTitleCandidates,
+    automaticallyComposableCandidates,
     options.preferredTitleKeyword,
   );
   const titleKeywords = orderTitleKeywordsForDisplay(
@@ -97,7 +133,12 @@ export function buildSourcingRegistrationDraft(
       alternateProductType: composedTitle.alternateAnchor?.productType,
     },
   );
-  const title = limitedTitle.title;
+  const titleWithSupplements = composeWithSupplementalKeywords(
+    limitedTitle.title,
+    supplementalTitleCandidates,
+    TITLE_LIMIT,
+  );
+  const title = titleWithSupplements.title;
   const lengthEligibleTagKeywords = tagCandidates.filter(
     (keyword) => keyword.length <= TAG_LENGTH_LIMIT,
   );
@@ -106,6 +147,7 @@ export function buildSourcingRegistrationDraft(
   );
   const usedTitleKeywords = uniqueKeywords(
     [
+      ...titleWithSupplements.usedKeywords,
       composedTitle.baseSourceKeyword,
       ...composedTitle.modifierSources
         .filter((source) =>
@@ -132,10 +174,15 @@ export function buildSourcingRegistrationDraft(
   const excludedUnrelatedKeywords = uniqueKeywords([
     ...diverseTitleKeywords.excludedUnrelated,
     ...composedTitle.excludedUnrelatedKeywords,
-  ]);
+  ]).filter(
+    (keyword) =>
+      !titleWithSupplements.usedKeywords.some(
+        (used) => normalizeKeyword(used) === normalizeKeyword(keyword),
+      ),
+  );
   if (excludedUnrelatedKeywords.length) {
     warnings.push(
-      `기본 상품 유형과 연결되지 않은 키워드는 나열하지 않았습니다: ${excludedUnrelatedKeywords.join(", ")}`,
+      `자동 연결하지 못한 상품명 후보가 ${excludedUnrelatedKeywords.length}개 있습니다. 후보 목록에서 직접 확인해 선택할 수 있습니다.`,
     );
   }
   if (diverseTitleKeywords.excludedRedundant.length) {
@@ -146,6 +193,11 @@ export function buildSourcingRegistrationDraft(
   if (limitedTitle.selectedModifiers.length < composedTitle.modifiers.length) {
     warnings.push(
       `상품명이 ${TITLE_LIMIT}자를 넘지 않도록 일부 수식 키워드를 제외했습니다.`,
+    );
+  }
+  if (titleWithSupplements.excludedKeywords.length) {
+    warnings.push(
+      `상품명이 ${TITLE_LIMIT}자를 넘지 않도록 선택한 키워드 일부를 제외했습니다: ${titleWithSupplements.excludedKeywords.join(", ")}`,
     );
   }
   if (title.length > TITLE_REVIEW_LENGTH) {
@@ -177,6 +229,7 @@ export function buildSourcingRegistrationDraft(
   return {
     title,
     titleCandidates,
+    titleCandidateDetails,
     usedTitleKeywords,
     searchTags,
     tagCandidates,
@@ -418,6 +471,51 @@ function compareByVolumeThenKeyword(
   const volumeDifference =
     (right.monthlySearchVolume ?? -1) - (left.monthlySearchVolume ?? -1);
   return volumeDifference || left.keyword.localeCompare(right.keyword, "ko");
+}
+
+function composeWithSupplementalKeywords(
+  coreTitle: string,
+  candidates: Array<{ keyword: string; monthlySearchVolume: number }>,
+  limit: number,
+) {
+  const selected: string[] = [];
+  const usedKeywords: string[] = [];
+  const excludedKeywords: string[] = [];
+  const coreNormalized = normalizeKeyword(coreTitle);
+
+  for (const candidate of candidates) {
+    const cleaned = cleanTitlePart(candidate.keyword).value;
+    const normalized = normalizeKeyword(cleaned);
+    if (!normalized) {
+      excludedKeywords.push(candidate.keyword);
+      continue;
+    }
+    const existing = [coreNormalized, ...selected.map(normalizeKeyword)].filter(Boolean);
+    if (
+      existing.some(
+        (value) => value.includes(normalized) || normalized.includes(value),
+      )
+    ) {
+      excludedKeywords.push(candidate.keyword);
+      continue;
+    }
+    const next = [...selected, cleaned, coreTitle]
+      .filter(Boolean)
+      .join(" ")
+      .trim();
+    if (next.length > limit) {
+      excludedKeywords.push(candidate.keyword);
+      continue;
+    }
+    selected.push(cleaned);
+    usedKeywords.push(candidate.keyword);
+  }
+
+  return {
+    title: [...selected, coreTitle].filter(Boolean).join(" ").trim(),
+    usedKeywords,
+    excludedKeywords,
+  };
 }
 
 function composeTitle(
