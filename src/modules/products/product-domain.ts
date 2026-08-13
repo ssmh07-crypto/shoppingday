@@ -154,6 +154,20 @@ export const draftStorageInputSchema = z.object({
     .array(z.string().trim().min(1).max(100))
     .max(20)
     .default([]),
+  keywordDrafts: z
+    .array(
+      z.object({
+        id: z.uuid(),
+        keyword: z.string().trim().min(1).max(100),
+        normalizedKeyword: z.string().trim().min(1).max(100),
+        monthlySearchVolume: z.number().int().nonnegative().nullable(),
+        placement: z.enum(["unclassified", "product_name", "tag"]),
+        source: z.literal("itemscout-xlsx"),
+        importedAt: z.iso.datetime(),
+      }),
+    )
+    .max(5_000)
+    .default([]),
   searchTags: z
     .array(z.string())
     .transform(normalizeTags)

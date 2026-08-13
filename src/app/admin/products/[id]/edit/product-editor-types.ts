@@ -45,6 +45,7 @@ export type ProductEditorInitial = {
     status: string;
     title: string;
     sourceTitleKeywords: string[];
+    keywordDrafts?: import("@/lib/db/schema").ProductKeywordDraft[];
     searchTags: string[];
     sellingPrice: number | null;
     currency: string;
@@ -63,6 +64,7 @@ export type ProductEditorInitial = {
     wholeCategoryName: string;
   } | null;
   supplier: {
+    code?: string;
     name: string;
     productNumberPrefix?: string | null;
     externalProductId: string;

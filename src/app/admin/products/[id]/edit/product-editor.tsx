@@ -3,7 +3,11 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
-import type { NaverProductAttribute, SelectedImage } from "@/lib/db/schema";
+import type {
+  NaverProductAttribute,
+  ProductKeywordDraft,
+  SelectedImage,
+} from "@/lib/db/schema";
 import { buildSourcingRegistrationDraft } from "@/modules/sourcing/registration-draft";
 import {
   assessSearchTag,
@@ -19,6 +23,14 @@ import type {
   ProductEditorMarketData,
   SourcingRegistrationContext,
 } from "./product-editor-types";
+import {
+  ProductKeywordWorkspaceShell,
+  ProductSearchOptimizationSummary,
+} from "./product-search-optimization-shell";
+import {
+  SupplierSourcePicker,
+  type SupplierSourceCandidate,
+} from "./supplier-source-picker";
 
 const OptionEditor = dynamic(
   () => import("./option-editor").then((module) => module.OptionEditor),
@@ -41,6 +53,13 @@ const NaverPublicationPolicyForm = dynamic(
       (module) => module.NaverPublicationPolicyForm,
     ),
   { loading: () => <PanelLoading label="판매 정책 편집기" /> },
+);
+const ProductKeywordImport = dynamic(
+  () =>
+    import("./product-keyword-import").then(
+      (module) => module.ProductKeywordImport,
+    ),
+  { loading: () => <PanelLoading label="아이템스카우트 키워드 편집기" /> },
 );
 
 type EditorTab = "basic" | "content" | "attributes" | "market";
@@ -110,7 +129,11 @@ type PublicationInspection = {
 
 type TitleRecommendation = {
   title: string;
-  source: "rules" | "rules_naver_search_ad" | "sourcing_rules";
+  source:
+    | "rules"
+    | "rules_naver_search_ad"
+    | "sourcing_rules"
+    | "itemscout_rules";
   analysis: {
     productType: string;
     materials: string[];
@@ -139,19 +162,6 @@ type ProductTitleAnalysisDraft = {
   uses: string;
   modifiers: string;
   removedTerms: string;
-};
-
-type SupplierSourceCandidate = {
-  supplierProductId: string;
-  productId: string;
-  externalProductId: string;
-  originalName: string;
-  supplierPrice: number | null;
-  thumbnailUrl: string | null;
-  imageCount: number;
-  optionCount: number;
-  hasDescription: boolean;
-  url: string | null;
 };
 
 export function ProductEditor({
@@ -235,7 +245,9 @@ export function ProductEditor({
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [thumbnailUrl, setThumbnailUrl] = useState("");
   const [detailImageUrls, setDetailImageUrls] = useState("");
-  const [supplierSourceQuery, setSupplierSourceQuery] = useState("");
+  const [supplierSourceQuery, setSupplierSourceQuery] = useState(
+    registrationContext?.sourcingKeyword ?? "",
+  );
   const [supplierSourceCandidates, setSupplierSourceCandidates] = useState<
     SupplierSourceCandidate[]
   >([]);
@@ -774,7 +786,7 @@ export function ProductEditor({
   async function applySupplierSource(candidate: SupplierSourceCandidate) {
     if (
       !confirm(
-        `'${candidate.originalName}'의 이미지, 상세페이지와 옵션을 가져올까요?\n\n현재 이미지·상세설명·옵션 편집 내용은 덮어쓰지만 상품명·검색태그·판매가·카테고리는 유지합니다.`,
+        `'${candidate.originalName}'을 소싱 등록 상품으로 연결할까요?\n\n직감 상품의 이미지·상세설명·옵션을 그대로 사용하고 현재 소싱 상품명·검색태그·판매가·카테고리를 직감 상품에 반영합니다. 중복 소싱 초안은 정리됩니다.`,
       )
     ) {
       return;
@@ -800,6 +812,13 @@ export function ProductEditor({
         );
       }
       const imported = body.data.product;
+      if (body.data.productId && body.data.productId !== initial.product.id) {
+        setSupplierSourceStatus(
+          "직감 상품과 소싱 등록을 하나로 연결했습니다. 편집 화면을 다시 불러옵니다.",
+        );
+        window.location.reload();
+        return;
+      }
       const next = {
         ...form,
         draftVersion: imported.draftVersion,
@@ -923,6 +942,109 @@ export function ProductEditor({
       sourcingRegistrationDraft?.usedTitleKeywords ?? [],
     );
     setTitleRecommendation(null);
+    setTitleRecommendationStatus("");
+  }
+
+  function updateProductKeywordDrafts(next: ProductKeywordDraft[]) {
+    setForm((current) => {
+      const previousTitleKeywords = new Set(
+        current.keywordDrafts
+          .filter((item) => item.placement === "product_name")
+          .map((item) => item.normalizedKeyword),
+      );
+      const previousTagKeywords = new Set(
+        current.keywordDrafts
+          .filter((item) => item.placement === "tag")
+          .map((item) => item.normalizedKeyword),
+      );
+      const retainedTitleKeywords = current.sourceTitleKeywords.filter(
+        (keyword) => !previousTitleKeywords.has(normalizeCompactKeyword(keyword)),
+      );
+      const retainedTags = current.searchTags.filter(
+        (keyword) => !previousTagKeywords.has(normalizeCompactKeyword(keyword)),
+      );
+      let remainingTitleSlots = Math.max(0, 20 - retainedTitleKeywords.length);
+      let remainingTagSlots = Math.max(0, 10 - retainedTags.length);
+      const normalizedNext = next.map((item) => {
+        if (item.placement === "product_name") {
+          if (remainingTitleSlots > 0) {
+            remainingTitleSlots -= 1;
+            return item;
+          }
+          return { ...item, placement: "unclassified" as const };
+        }
+        if (item.placement === "tag") {
+          if (remainingTagSlots > 0) {
+            remainingTagSlots -= 1;
+            return item;
+          }
+          return { ...item, placement: "unclassified" as const };
+        }
+        return item;
+      });
+      const importedTitleKeywords = normalizedNext
+        .filter((item) => item.placement === "product_name")
+        .map((item) => item.keyword);
+      const importedTags = normalizedNext
+        .filter((item) => item.placement === "tag")
+        .map((item) => item.keyword);
+      return {
+        ...current,
+        keywordDrafts: normalizedNext,
+        sourceTitleKeywords: uniqueKeywordValues([
+          ...retainedTitleKeywords,
+          ...importedTitleKeywords,
+        ]).slice(0, 20),
+        searchTags: uniqueKeywordValues([
+          ...retainedTags,
+          ...importedTags,
+        ]).slice(0, 10),
+      };
+    });
+    setTitleRecommendation(null);
+    setTitleRecommendationStatus("");
+  }
+
+  function recommendTitleFromProductKeywordDrafts() {
+    const selected = form.keywordDrafts.filter(
+      (item) => item.placement === "product_name",
+    );
+    if (!selected.length) {
+      setTitleRecommendationStatus("상품명으로 분류한 키워드가 없습니다.");
+      return;
+    }
+    const productType =
+      titleAnalysisCriteria.productType.trim() || form.title.trim();
+    const draft = buildSourcingRegistrationDraft(
+      productType,
+      form.keywordDrafts,
+      { selectedTitleKeywords: selected.map((item) => item.keyword) },
+    );
+    setTitleRecommendation({
+      title: draft.title,
+      source: "itemscout_rules",
+      analysis: {
+        productType,
+        materials: [],
+        uses: [],
+        modifiers: [],
+        removedTerms: [],
+      },
+      keywordEvidence: draft.usedTitleKeywords.map((keyword) => {
+        const source = selected.find((item) => item.keyword === keyword);
+        return {
+          keyword,
+          totalMonthlySearchVolume: source?.monthlySearchVolume ?? null,
+          competition: "unknown" as const,
+          status:
+            source?.monthlySearchVolume == null
+              ? ("not-found" as const)
+              : ("success" as const),
+        };
+      }),
+      relatedKeywords: [],
+      notices: draft.warnings,
+    });
     setTitleRecommendationStatus("");
   }
 
@@ -1634,6 +1756,18 @@ export function ProductEditor({
       <div className="drawer-editor-body">
         {activeTab === "basic" && (
           <div className="drawer-section-stack">
+            {registrationContext && activeSupplier.code !== "zicgam" && (
+              <SupplierSourcePicker
+                query={supplierSourceQuery}
+                candidates={supplierSourceCandidates}
+                status={supplierSourceStatus}
+                searching={searchingSupplierSource}
+                applyingId={applyingSupplierSourceId}
+                onQueryChange={setSupplierSourceQuery}
+                onSearch={() => void searchSupplierSource()}
+                onApply={(candidate) => void applySupplierSource(candidate)}
+              />
+            )}
             <section className="drawer-form-section">
               <div className="drawer-section-title">
                 <span>01</span>
@@ -1781,117 +1915,43 @@ export function ProductEditor({
                 )}
               </div>
               {!keywordWorkspaceOpen ? (
-                <div className="drawer-search-optimization-summary">
-                  <div className="drawer-product-title-heading">
-                    <label htmlFor="product-selling-title">판매용 상품명</label>
-                    <button
-                      type="button"
-                      onClick={() => setKeywordWorkspaceOpen(true)}
-                    >
-                      키워드 편집
-                    </button>
-                  </div>
-                  <input
-                    id="product-selling-title"
-                    value={form.title}
-                    maxLength={registrationContext ? 50 : 200}
-                    onChange={(event) => {
-                      setForm({ ...form, title: event.target.value });
-                      setTitleRecommendation(null);
-                      setTitleRecommendationStatus("");
-                      setTitleAnalysisStatus(
-                        "상품명이 변경되었습니다. 분석 기준을 확인하거나 다시 감지해 주세요.",
-                      );
-                    }}
-                    onBlur={() => {
-                      if (!form.naverCategoryId)
-                        void recommendNaverCategory(form.title);
-                    }}
-                  />
-                  <div className="drawer-search-optimization-meta">
-                    <span>{form.title.length}/{registrationContext ? 50 : 200}자</span>
-                    <span>상품명 키워드 {compactTitleKeywords.length}개</span>
-                    <span>검색 태그 {form.searchTags.filter((tag) => tag.trim()).length}/10</span>
-                    {sourcingTitleCandidateGroups.confirmationRequired.length >
-                      0 && (
-                      <span className="needs-review">
-                        연결 확인 {sourcingTitleCandidateGroups.confirmationRequired.length}개
-                      </span>
-                    )}
-                  </div>
-                  {compactTitleKeywords.length > 0 && (
-                    <div
-                      className="drawer-search-optimization-chips"
-                      aria-label="추천에 사용할 상품명 키워드 요약"
-                    >
-                      {compactTitleKeywords.slice(0, 6).map((keyword) => (
-                        <span key={keyword}>{keyword}</span>
-                      ))}
-                      {compactTitleKeywords.length > 6 && (
-                        <small>+{compactTitleKeywords.length - 6}</small>
-                      )}
-                    </div>
-                  )}
-                  {form.searchTags.some((tag) => tag.trim()) && (
-                    <div
-                      className="drawer-search-tag-chips"
-                      aria-label="검색 태그 요약"
-                    >
-                      {form.searchTags
-                        .map((tag) => tag.trim())
-                        .filter(Boolean)
-                        .slice(0, 6)
-                        .map((tag) => <span key={tag}>{tag}</span>)}
-                    </div>
-                  )}
-                  {registrationContext && form.title.length > 40 && (
-                    <small className="registration-title-length-warning">
-                      40자를 넘었습니다. 핵심 상품과 수식어가 바로 이해되는지
-                      검토해 주세요.
-                    </small>
-                  )}
-                  {errors.title && (
-                    <small className="field-error">{errors.title}</small>
-                  )}
-                  <span className="drawer-original-title">
-                    <small>원본 상품명</small>
-                    <strong>{activeSupplier.originalName ?? "-"}</strong>
-                  </span>
-                </div>
+                <ProductSearchOptimizationSummary
+                  title={form.title}
+                  maximumLength={registrationContext ? 50 : 200}
+                  titleKeywords={compactTitleKeywords}
+                  searchTags={form.searchTags}
+                  confirmationRequiredCount={
+                    sourcingTitleCandidateGroups.confirmationRequired.length
+                  }
+                  originalName={activeSupplier.originalName}
+                  error={errors.title}
+                  onOpen={() => setKeywordWorkspaceOpen(true)}
+                  onTitleBlur={() => {
+                    if (!form.naverCategoryId)
+                      void recommendNaverCategory(form.title);
+                  }}
+                  onTitleChange={(title) => {
+                    setForm({ ...form, title });
+                    setTitleRecommendation(null);
+                    setTitleRecommendationStatus("");
+                    setTitleAnalysisStatus(
+                      "상품명이 변경되었습니다. 분석 기준을 확인하거나 다시 감지해 주세요.",
+                    );
+                  }}
+                />
               ) : (
-                <div
-                  className="keyword-workspace-backdrop"
-                  role="dialog"
-                  aria-modal="true"
-                  aria-labelledby="keyword-workspace-title"
-                  onMouseDown={(event) => {
-                    if (event.target === event.currentTarget)
-                      setKeywordWorkspaceOpen(false);
-                  }}
-                  onKeyDown={(event) => {
-                    if (event.key === "Escape") setKeywordWorkspaceOpen(false);
-                  }}
+                <ProductKeywordWorkspaceShell
+                  sourcing={Boolean(registrationContext)}
+                  onClose={() => setKeywordWorkspaceOpen(false)}
                 >
-                  <section className="keyword-workspace-panel">
-                    <header className="keyword-workspace-header">
-                      <div>
-                        <small>{registrationContext ? "소싱 키워드 재사용" : "위탁상품 빠른 등록"}</small>
-                        <h3 id="keyword-workspace-title">검색 최적화</h3>
-                        <p>
-                          상품명 추천 재료와 검색 태그를 한곳에서 정리합니다.
-                          저장 전까지 스마트스토어에는 반영되지 않습니다.
-                        </p>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setKeywordWorkspaceOpen(false)}
-                        aria-label="검색 최적화 닫기"
-                      >
-                        완료
-                      </button>
-                    </header>
-                    <div className="keyword-workspace-body">
               <div className="drawer-product-title-field">
+                {!sourcingRegistrationDraft && (
+                  <ProductKeywordImport
+                    value={form.keywordDrafts}
+                    onChange={updateProductKeywordDrafts}
+                    onGenerateTitle={recommendTitleFromProductKeywordDrafts}
+                  />
+                )}
                 {sourcingRegistrationDraft && (
                   <div className="registration-title-keywords">
                     <div className="registration-title-keywords-head">
@@ -2212,6 +2272,8 @@ export function ProductEditor({
                         <small>
                           {titleRecommendation.source === "sourcing_rules"
                             ? "소싱 분류 + 검색 품질 규칙"
+                            : titleRecommendation.source === "itemscout_rules"
+                              ? "아이템스카우트 분류 + 검색 품질 규칙"
                             : titleRecommendation.source ===
                                 "rules_naver_search_ad"
                               ? "규칙 분석 + 네이버 검색광고 실제 데이터"
@@ -2226,7 +2288,8 @@ export function ProductEditor({
                             ...current,
                             title: titleRecommendation.title,
                             sourceTitleKeywords:
-                              titleRecommendation.source === "sourcing_rules"
+                              titleRecommendation.source === "sourcing_rules" ||
+                              titleRecommendation.source === "itemscout_rules"
                                 ? titleRecommendation.keywordEvidence.map(
                                     (item) => item.keyword,
                                   )
@@ -2247,7 +2310,8 @@ export function ProductEditor({
                         이 상품명 적용
                       </button>
                     </div>
-                    {titleRecommendation.source === "sourcing_rules" ? (
+                    {titleRecommendation.source === "sourcing_rules" ||
+                    titleRecommendation.source === "itemscout_rules" ? (
                       <dl>
                         <div>
                           <dt>기본 상품 유형</dt>
@@ -2256,8 +2320,15 @@ export function ProductEditor({
                         <div>
                           <dt>선택한 추천 키워드</dt>
                           <dd>
-                            {selectedSourcingTitleKeywords.join(", ") ||
-                              "선택 없음"}
+                            {(titleRecommendation.source === "sourcing_rules"
+                              ? selectedSourcingTitleKeywords
+                              : form.keywordDrafts
+                                  .filter(
+                                    (item) =>
+                                      item.placement === "product_name",
+                                  )
+                                  .map((item) => item.keyword)
+                            ).join(", ") || "선택 없음"}
                           </dd>
                         </div>
                       </dl>
@@ -2295,7 +2366,8 @@ export function ProductEditor({
                     {titleRecommendation.keywordEvidence.length > 0 && (
                       <div className="drawer-title-keyword-evidence">
                         <small>
-                          {titleRecommendation.source === "sourcing_rules"
+                          {titleRecommendation.source === "sourcing_rules" ||
+                          titleRecommendation.source === "itemscout_rules"
                             ? `추천에 사용한 상품명 키워드 (${titleRecommendation.keywordEvidence.length}개)`
                             : "네이버 키워드 근거"}
                         </small>
@@ -2312,6 +2384,7 @@ export function ProductEditor({
                       </div>
                     )}
                     {titleRecommendation.source !== "sourcing_rules" &&
+                      titleRecommendation.source !== "itemscout_rules" &&
                       titleRecommendation.relatedKeywords.length > 0 && (
                         <div className="drawer-related-keywords">
                           <div className="drawer-related-keywords-heading">
@@ -2405,8 +2478,9 @@ export function ProductEditor({
                       <p key={notice}>{notice}</p>
                     ))}
                     <small className="drawer-title-recommendation-disclaimer">
-                      {titleRecommendation.source === "sourcing_rules"
-                        ? "검색수는 아이템스카우트에서 가져오거나 사용자가 입력한 값입니다. 추천 상품명은 검색 노출이나 매출을 보장하지 않습니다."
+                      {titleRecommendation.source === "sourcing_rules" ||
+                      titleRecommendation.source === "itemscout_rules"
+                        ? "검색수는 아이템스카우트에서 가져온 값입니다. 추천 상품명은 검색 노출이나 매출을 보장하지 않습니다."
                         : "검색량은 네이버 검색광고 API 값이며 추천 상품명이 검색 노출이나 매출을 보장하지 않습니다."}
                     </small>
                   </div>
@@ -2516,9 +2590,7 @@ export function ProductEditor({
                   )}
                 </label>
               )}
-                    </div>
-                  </section>
-                </div>
+                </ProductKeywordWorkspaceShell>
               )}
               <div className="drawer-price-grid">
                 <label>
@@ -2601,108 +2673,6 @@ export function ProductEditor({
 
         {activeTab === "content" && (
           <div className="drawer-section-stack">
-            {registrationContext && (
-              <section className="drawer-form-section sourcing-supplier-source">
-                <div className="drawer-section-title">
-                  <span>직감</span>
-                  <div>
-                    <h3>타겟 직감 상품 데이터 가져오기</h3>
-                    <p>
-                      직감에 수집된 상품의 이미지·상세페이지·옵션·공급가를 이
-                      소싱 등록 초안에 연결합니다. 상품명·검색태그·판매가·카테고리는
-                      유지합니다.
-                    </p>
-                  </div>
-                </div>
-                <div className="sourcing-supplier-source-search">
-                  <input
-                    type="search"
-                    value={supplierSourceQuery}
-                    onChange={(event) =>
-                      setSupplierSourceQuery(event.target.value)
-                    }
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter") {
-                        event.preventDefault();
-                        void searchSupplierSource();
-                      }
-                    }}
-                    placeholder="직감 상품명, 상품번호 또는 상세페이지 URL"
-                    aria-label="가져올 직감 상품 검색"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => void searchSupplierSource()}
-                    disabled={searchingSupplierSource}
-                  >
-                    {searchingSupplierSource ? "검색 중…" : "직감 상품 찾기"}
-                  </button>
-                </div>
-                {supplierSourceStatus && (
-                  <p className="sourcing-supplier-source-status" role="status">
-                    {supplierSourceStatus}
-                  </p>
-                )}
-                {supplierSourceCandidates.length > 0 && (
-                  <div
-                    className="sourcing-supplier-source-results"
-                    aria-label="직감 상품 검색 결과"
-                  >
-                    {supplierSourceCandidates.map((candidate) => (
-                      <article key={candidate.supplierProductId}>
-                        <div className="sourcing-supplier-source-thumbnail">
-                          {candidate.thumbnailUrl ? (
-                            <img
-                              src={candidate.thumbnailUrl}
-                              alt=""
-                              loading="lazy"
-                            />
-                          ) : (
-                            <span>이미지 없음</span>
-                          )}
-                        </div>
-                        <div>
-                          <strong>{candidate.originalName}</strong>
-                          <span>
-                            직감 {candidate.externalProductId} · 공급가{" "}
-                            {candidate.supplierPrice == null
-                              ? "미입력"
-                              : `${candidate.supplierPrice.toLocaleString("ko-KR")}원`}
-                          </span>
-                          <small>
-                            이미지 {candidate.imageCount}개 · 상세페이지{" "}
-                            {candidate.hasDescription ? "있음" : "없음"} · 옵션{" "}
-                            {candidate.optionCount}개
-                          </small>
-                          {candidate.url && (
-                            <a
-                              href={candidate.url}
-                              target="_blank"
-                              rel="noreferrer"
-                            >
-                              직감 상품 확인
-                            </a>
-                          )}
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => void applySupplierSource(candidate)}
-                          disabled={
-                            applyingSupplierSourceId !== null ||
-                            searchingSupplierSource
-                          }
-                        >
-                          {applyingSupplierSourceId ===
-                          candidate.supplierProductId
-                            ? "가져오는 중…"
-                            : "이 상품 데이터 사용"}
-                        </button>
-                      </article>
-                    ))}
-                  </div>
-                )}
-              </section>
-            )}
             <section className="drawer-form-section">
               <div className="drawer-section-title with-action">
                 <span>02</span>
@@ -3471,6 +3441,7 @@ function fromInitial(initial: ProductEditorInitial) {
     draftVersion: product.draftVersion,
     title: product.title,
     sourceTitleKeywords: product.sourceTitleKeywords ?? [],
+    keywordDrafts: product.keywordDrafts ?? [],
     searchTags: product.searchTags,
     sellingPrice: product.sellingPrice,
     currency: "KRW" as const,
@@ -3481,6 +3452,20 @@ function fromInitial(initial: ProductEditorInitial) {
     editedOptions: product.editedOptions,
     naverAttributes: product.naverAttributes ?? [],
   };
+}
+
+function normalizeCompactKeyword(value: string) {
+  return value.normalize("NFKC").replace(/\s+/g, "").toLocaleLowerCase("ko-KR");
+}
+
+function uniqueKeywordValues(values: string[]) {
+  const seen = new Set<string>();
+  return values.filter((value) => {
+    const normalized = normalizeCompactKeyword(value);
+    if (!normalized || seen.has(normalized)) return false;
+    seen.add(normalized);
+    return true;
+  });
 }
 
 function splitKeywordList(value: string) {
