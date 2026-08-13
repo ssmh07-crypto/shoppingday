@@ -23,6 +23,8 @@ describe("소싱 상품 등록 전용 편집", () => {
       />,
     );
 
+    await screen.findByDisplayValue("물빠짐 미끄럼방지 욕실화");
+    fireEvent.click(screen.getByRole("button", { name: "키워드 편집" }));
     const unconnectedKeyword = await screen.findByRole("checkbox", {
       name: "두부탈수기 추천 상품명 키워드 선택",
     });
@@ -87,6 +89,8 @@ describe("소싱 상품 등록 전용 편집", () => {
       />,
     );
 
+    await screen.findByDisplayValue("물빠짐 미끄럼방지 욕실화");
+    fireEvent.click(screen.getByRole("button", { name: "키워드 편집" }));
     const duplicateHighVolumeTag = await screen.findByRole("checkbox", {
       name: /욕실화.*월 검색수 20,000.*상품명과 중복.*직접 선택 가능/,
     });

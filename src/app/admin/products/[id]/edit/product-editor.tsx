@@ -203,6 +203,7 @@ export function ProductEditor({
     useState<TitleRecommendation | null>(null);
   const [titleRecommendationStatus, setTitleRecommendationStatus] =
     useState("");
+  const [keywordWorkspaceOpen, setKeywordWorkspaceOpen] = useState(false);
   const [titleAnalysisCriteria, setTitleAnalysisCriteria] =
     useState<ProductTitleAnalysisDraft>(() =>
       toProductTitleAnalysisDraft(
@@ -291,6 +292,24 @@ export function ProductEditor({
         : null,
     [form.sellingPrice, activeSupplier.supplierPrice],
   );
+  const compactTitleKeywords = useMemo(() => {
+    if (registrationContext) return selectedSourcingTitleKeywords;
+    if (form.sourceTitleKeywords.length) return form.sourceTitleKeywords;
+    const criteria = fromProductTitleAnalysisDraft(titleAnalysisCriteria);
+    return Array.from(
+      new Set([
+        criteria.productType,
+        ...criteria.materials,
+        ...criteria.uses,
+        ...criteria.modifiers,
+      ].filter(Boolean)),
+    );
+  }, [
+    form.sourceTitleKeywords,
+    registrationContext,
+    selectedSourcingTitleKeywords,
+    titleAnalysisCriteria,
+  ]);
 
   async function selectStoreTarget(storeConnectionId: string) {
     setSelectedStoreId(storeConnectionId);
@@ -1761,6 +1780,117 @@ export function ProductEditor({
                   </small>
                 )}
               </div>
+              {!keywordWorkspaceOpen ? (
+                <div className="drawer-search-optimization-summary">
+                  <div className="drawer-product-title-heading">
+                    <label htmlFor="product-selling-title">판매용 상품명</label>
+                    <button
+                      type="button"
+                      onClick={() => setKeywordWorkspaceOpen(true)}
+                    >
+                      키워드 편집
+                    </button>
+                  </div>
+                  <input
+                    id="product-selling-title"
+                    value={form.title}
+                    maxLength={registrationContext ? 50 : 200}
+                    onChange={(event) => {
+                      setForm({ ...form, title: event.target.value });
+                      setTitleRecommendation(null);
+                      setTitleRecommendationStatus("");
+                      setTitleAnalysisStatus(
+                        "상품명이 변경되었습니다. 분석 기준을 확인하거나 다시 감지해 주세요.",
+                      );
+                    }}
+                    onBlur={() => {
+                      if (!form.naverCategoryId)
+                        void recommendNaverCategory(form.title);
+                    }}
+                  />
+                  <div className="drawer-search-optimization-meta">
+                    <span>{form.title.length}/{registrationContext ? 50 : 200}자</span>
+                    <span>상품명 키워드 {compactTitleKeywords.length}개</span>
+                    <span>검색 태그 {form.searchTags.filter((tag) => tag.trim()).length}/10</span>
+                    {sourcingTitleCandidateGroups.confirmationRequired.length >
+                      0 && (
+                      <span className="needs-review">
+                        연결 확인 {sourcingTitleCandidateGroups.confirmationRequired.length}개
+                      </span>
+                    )}
+                  </div>
+                  {compactTitleKeywords.length > 0 && (
+                    <div
+                      className="drawer-search-optimization-chips"
+                      aria-label="추천에 사용할 상품명 키워드 요약"
+                    >
+                      {compactTitleKeywords.slice(0, 6).map((keyword) => (
+                        <span key={keyword}>{keyword}</span>
+                      ))}
+                      {compactTitleKeywords.length > 6 && (
+                        <small>+{compactTitleKeywords.length - 6}</small>
+                      )}
+                    </div>
+                  )}
+                  {form.searchTags.some((tag) => tag.trim()) && (
+                    <div
+                      className="drawer-search-tag-chips"
+                      aria-label="검색 태그 요약"
+                    >
+                      {form.searchTags
+                        .map((tag) => tag.trim())
+                        .filter(Boolean)
+                        .slice(0, 6)
+                        .map((tag) => <span key={tag}>{tag}</span>)}
+                    </div>
+                  )}
+                  {registrationContext && form.title.length > 40 && (
+                    <small className="registration-title-length-warning">
+                      40자를 넘었습니다. 핵심 상품과 수식어가 바로 이해되는지
+                      검토해 주세요.
+                    </small>
+                  )}
+                  {errors.title && (
+                    <small className="field-error">{errors.title}</small>
+                  )}
+                  <span className="drawer-original-title">
+                    <small>원본 상품명</small>
+                    <strong>{activeSupplier.originalName ?? "-"}</strong>
+                  </span>
+                </div>
+              ) : (
+                <div
+                  className="keyword-workspace-backdrop"
+                  role="dialog"
+                  aria-modal="true"
+                  aria-labelledby="keyword-workspace-title"
+                  onMouseDown={(event) => {
+                    if (event.target === event.currentTarget)
+                      setKeywordWorkspaceOpen(false);
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === "Escape") setKeywordWorkspaceOpen(false);
+                  }}
+                >
+                  <section className="keyword-workspace-panel">
+                    <header className="keyword-workspace-header">
+                      <div>
+                        <small>{registrationContext ? "소싱 키워드 재사용" : "위탁상품 빠른 등록"}</small>
+                        <h3 id="keyword-workspace-title">검색 최적화</h3>
+                        <p>
+                          상품명 추천 재료와 검색 태그를 한곳에서 정리합니다.
+                          저장 전까지 스마트스토어에는 반영되지 않습니다.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setKeywordWorkspaceOpen(false)}
+                        aria-label="검색 최적화 닫기"
+                      >
+                        완료
+                      </button>
+                    </header>
+                    <div className="keyword-workspace-body">
               <div className="drawer-product-title-field">
                 {sourcingRegistrationDraft && (
                   <div className="registration-title-keywords">
@@ -1957,10 +2087,10 @@ export function ProductEditor({
                   <section className="drawer-title-analysis-criteria">
                     <div className="drawer-title-analysis-heading">
                       <div>
-                        <strong>상품 분석 기준</strong>
+                        <strong>추천에 사용할 상품명 키워드</strong>
                         <p>
-                          자동 감지값을 실제 상품에 맞게 수정하면 상품명과 검색
-                          키워드 추천에 함께 반영됩니다.
+                          자동 감지한 상품 유형·소재·용도·특징 중 실제 상품에
+                          맞는 표현만 남기면 상품명과 검색 키워드 추천에 반영됩니다.
                         </p>
                       </div>
                       <button
@@ -2100,7 +2230,14 @@ export function ProductEditor({
                                 ? titleRecommendation.keywordEvidence.map(
                                     (item) => item.keyword,
                                   )
-                                : current.sourceTitleKeywords,
+                                : Array.from(
+                                    new Set([
+                                      titleRecommendation.analysis.productType,
+                                      ...titleRecommendation.analysis.materials,
+                                      ...titleRecommendation.analysis.uses,
+                                      ...titleRecommendation.analysis.modifiers,
+                                    ].filter(Boolean)),
+                                  ),
                           }));
                           setTitleRecommendationStatus(
                             "추천 상품명을 적용했습니다. 저장 전까지 네이버에는 반영되지 않습니다.",
@@ -2378,6 +2515,10 @@ export function ProductEditor({
                     )),
                   )}
                 </label>
+              )}
+                    </div>
+                  </section>
+                </div>
               )}
               <div className="drawer-price-grid">
                 <label>

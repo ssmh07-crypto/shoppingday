@@ -233,6 +233,7 @@ describe("상품 편집 서랍", () => {
     );
 
     await screen.findByDisplayValue("철제 바느질 골무 바느질부자재");
+    fireEvent.click(screen.getByRole("button", { name: "키워드 편집" }));
     expect(screen.getByDisplayValue("골무")).toBeVisible();
     expect(screen.getByDisplayValue("철제")).toBeVisible();
     expect(screen.getByDisplayValue("바느질")).toBeVisible();
@@ -256,6 +257,16 @@ describe("상품 편집 서랍", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "이 상품명 적용" }));
     expect(screen.getByDisplayValue("철제 바느질 골무")).toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole("button", { name: "검색 최적화 닫기" }),
+    );
+    expect(screen.queryByRole("dialog", { name: "검색 최적화" })).not.toBeInTheDocument();
+    expect(
+      screen.getByLabelText("추천에 사용할 상품명 키워드 요약"),
+    ).toHaveTextContent("골무");
+    expect(
+      screen.getByLabelText("추천에 사용할 상품명 키워드 요약"),
+    ).toHaveTextContent("철제");
     expect(fetchMock).toHaveBeenLastCalledWith(
       "/api/products/title-recommendation-product/title-recommendation",
       expect.objectContaining({ method: "POST" }),
@@ -395,6 +406,7 @@ describe("상품 편집 서랍", () => {
     render(<ProductEditorDrawer initialProductId="related-keyword-product" />);
 
     await screen.findByDisplayValue("스테인리스 공구함");
+    fireEvent.click(screen.getByRole("button", { name: "키워드 편집" }));
     fireEvent.click(
       screen.getByRole("button", {
         name: "이 기준으로 상품명·키워드 추천",
