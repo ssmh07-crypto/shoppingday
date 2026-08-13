@@ -244,6 +244,112 @@ describe("소싱 상품 등록 전용 편집", () => {
     );
     expect(requirementsAttempts).toBe(3);
   });
+
+  it("타겟 직감 상품을 찾아 이미지·상세페이지·옵션을 소싱 초안에 가져온다", async () => {
+    const fetchMock = vi.fn().mockImplementation((
+      input: RequestInfo | URL,
+      init?: RequestInit,
+    ) => {
+      const url = String(input);
+      if (url === "/api/products/00000000-0000-4000-8000-000000000010") {
+        return Promise.resolve(editorResponse());
+      }
+      if (url.includes("/supplier-source?q=")) {
+        return Promise.resolve(
+          Response.json({
+            success: true,
+            items: [
+              {
+                supplierProductId: "33333333-3333-4333-8333-333333333333",
+                productId: "44444444-4444-4444-8444-444444444444",
+                externalProductId: "15938",
+                originalName: "대용량 두부 탈수기",
+                supplierPrice: 8900,
+                thumbnailUrl: "https://example.com/thumb.jpg",
+                imageCount: 4,
+                optionCount: 2,
+                hasDescription: true,
+                url: "https://zicgam.com/product/detail.html?product_no=15938",
+              },
+            ],
+          }),
+        );
+      }
+      if (url.endsWith("/supplier-source") && init?.method === "POST") {
+        return Promise.resolve(
+          Response.json({
+            success: true,
+            data: {
+              product: {
+                draftVersion: 2,
+                status: "editing",
+                description: "<p>두부 탈수기 상세페이지</p>",
+                selectedImages: [
+                  {
+                    sourceUrl: "https://example.com/thumb.jpg",
+                    storedUrl: null,
+                    enabled: true,
+                    sortOrder: 0,
+                  },
+                ],
+                editedOptions: { groups: [], combinations: [] },
+              },
+              source: {
+                externalProductId: "15938",
+                originalName: "대용량 두부 탈수기",
+                supplierPrice: 8900,
+                currency: "KRW",
+                availability: "active",
+                imageCount: 1,
+                optionCount: 2,
+                hasDescription: true,
+              },
+            },
+          }),
+        );
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("confirm", vi.fn(() => true));
+
+    const { container } = render(
+      <RegistrationProductEditor
+        productId="00000000-0000-4000-8000-000000000010"
+        registrationContext={registrationContext()}
+      />,
+    );
+
+    await screen.findByDisplayValue("물빠짐 미끄럼방지 욕실화");
+    const contentTab = container.querySelectorAll<HTMLButtonElement>(
+      ".drawer-tabs button",
+    )[1];
+    fireEvent.click(contentTab);
+
+    const search = await screen.findByLabelText("가져올 직감 상품 검색");
+    fireEvent.change(search, { target: { value: "15938" } });
+    fireEvent.click(screen.getByRole("button", { name: "직감 상품 찾기" }));
+
+    expect(await screen.findByText("대용량 두부 탈수기")).toBeVisible();
+    expect(screen.getByText(/이미지 4개/)).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "이 상품 데이터 사용" }));
+
+    expect(
+      await screen.findByText(/이미지 1개, 상세페이지 있음, 옵션 2개를 가져왔습니다/),
+    ).toBeVisible();
+    expect(confirm).toHaveBeenCalledWith(
+      expect.stringContaining("상품명·검색태그·판매가·카테고리는 유지합니다"),
+    );
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/products/00000000-0000-4000-8000-000000000010/supplier-source",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          supplierProductId: "33333333-3333-4333-8333-333333333333",
+        }),
+      }),
+    );
+  });
 });
 
 function registrationContext(): SourcingRegistrationContext {

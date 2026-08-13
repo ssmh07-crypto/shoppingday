@@ -2347,6 +2347,88 @@
 .drawer-form-section {
   gap: 24px;
 }
+.sourcing-supplier-source {
+  border-color: #c9d7f3;
+  background: linear-gradient(145deg, #fff 0%, #f7f9ff 100%);
+}
+.sourcing-supplier-source-search {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+}
+.sourcing-supplier-source-search input {
+  min-width: 0;
+  height: 44px;
+  padding: 0 13px;
+  border: 1px solid #cbd5e1;
+  border-radius: 9px;
+  background: #fff;
+  color: var(--drawer-ink);
+}
+.sourcing-supplier-source-search button,
+.sourcing-supplier-source-results article > button {
+  min-height: 44px;
+  padding: 0 16px;
+  border: 1px solid var(--drawer-action);
+  background: var(--drawer-action);
+  color: #fff;
+}
+.sourcing-supplier-source-status {
+  margin: -12px 0 0;
+  color: var(--drawer-muted);
+  font-size: 13px;
+}
+.sourcing-supplier-source-results {
+  display: grid;
+  gap: 10px;
+}
+.sourcing-supplier-source-results article {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid #dce3ed;
+  border-radius: 11px;
+  background: #fff;
+}
+.sourcing-supplier-source-thumbnail {
+  display: grid;
+  width: 72px;
+  height: 72px;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 9px;
+  background: #eef2f7;
+  color: var(--drawer-muted);
+  font-size: 11px;
+}
+.sourcing-supplier-source-thumbnail img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.sourcing-supplier-source-results article > div:nth-child(2) {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.sourcing-supplier-source-results strong {
+  overflow: hidden;
+  color: var(--drawer-ink);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sourcing-supplier-source-results span,
+.sourcing-supplier-source-results small {
+  color: var(--drawer-muted);
+}
+.sourcing-supplier-source-results a {
+  width: fit-content;
+  color: var(--drawer-action);
+  font-size: 12px;
+  font-weight: 700;
+}
 .drawer-section-title {
   gap: 13px;
   padding-bottom: 17px;
@@ -2683,6 +2765,13 @@
   }
   .drawer-form-section {
     gap: 19px;
+  }
+  .sourcing-supplier-source-search,
+  .sourcing-supplier-source-results article {
+    grid-template-columns: 1fr;
+  }
+  .sourcing-supplier-source-results article > button {
+    width: 100%;
   }
   .drawer-product-title-heading,
   .drawer-naver-category-heading,

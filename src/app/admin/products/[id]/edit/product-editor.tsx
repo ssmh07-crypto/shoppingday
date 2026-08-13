@@ -141,6 +141,19 @@ type ProductTitleAnalysisDraft = {
   removedTerms: string;
 };
 
+type SupplierSourceCandidate = {
+  supplierProductId: string;
+  productId: string;
+  externalProductId: string;
+  originalName: string;
+  supplierPrice: number | null;
+  thumbnailUrl: string | null;
+  imageCount: number;
+  optionCount: number;
+  hasDescription: boolean;
+  url: string | null;
+};
+
 export function ProductEditor({
   initial,
   onMutated,
@@ -156,6 +169,7 @@ export function ProductEditor({
   const [baseline, setBaseline] = useState(() =>
     JSON.stringify(fromInitial(initial)),
   );
+  const [activeSupplier, setActiveSupplier] = useState(initial.supplier);
   const [activeTab, setActiveTab] = useState<EditorTab>("basic");
   const [status, setStatus] = useState(initial.product.status);
   const [saving, setSaving] = useState(false);
@@ -194,7 +208,7 @@ export function ProductEditor({
       toProductTitleAnalysisDraft(
         detectProductTitleAnalysis({
           title: initial.product.title,
-          originalTitle: initial.supplier.originalName ?? "",
+          originalTitle: activeSupplier.originalName ?? "",
           categoryPath: initial.naverCategory?.wholeCategoryName ?? "",
         }),
       ),
@@ -220,6 +234,16 @@ export function ProductEditor({
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [thumbnailUrl, setThumbnailUrl] = useState("");
   const [detailImageUrls, setDetailImageUrls] = useState("");
+  const [supplierSourceQuery, setSupplierSourceQuery] = useState("");
+  const [supplierSourceCandidates, setSupplierSourceCandidates] = useState<
+    SupplierSourceCandidate[]
+  >([]);
+  const [searchingSupplierSource, setSearchingSupplierSource] =
+    useState(false);
+  const [applyingSupplierSourceId, setApplyingSupplierSourceId] = useState<
+    string | null
+  >(null);
+  const [supplierSourceStatus, setSupplierSourceStatus] = useState("");
   const [draggedImageId, setDraggedImageId] = useState<string | null>(null);
   const [imageDropTargetId, setImageDropTargetId] = useState<string | null>(
     null,
@@ -262,10 +286,10 @@ export function ProductEditor({
   const dirty = JSON.stringify(form) !== baseline;
   const margin = useMemo(
     () =>
-      form.sellingPrice && initial.supplier.supplierPrice
-        ? form.sellingPrice - Number(initial.supplier.supplierPrice)
+      form.sellingPrice && activeSupplier.supplierPrice
+        ? form.sellingPrice - Number(activeSupplier.supplierPrice)
         : null,
-    [form.sellingPrice, initial.supplier.supplierPrice],
+    [form.sellingPrice, activeSupplier.supplierPrice],
   );
 
   async function selectStoreTarget(storeConnectionId: string) {
@@ -690,6 +714,111 @@ export function ProductEditor({
     setActiveTab(nextTab);
   }
 
+  async function searchSupplierSource() {
+    const query = supplierSourceQuery.trim();
+    if (!query) {
+      setSupplierSourceStatus("직감 상품명, 상품번호 또는 상세페이지 URL을 입력해 주세요.");
+      return;
+    }
+    setSearchingSupplierSource(true);
+    setSupplierSourceStatus("직감 상품을 찾는 중…");
+    try {
+      const response = await fetch(
+        `/api/products/${initial.product.id}/supplier-source?q=${encodeURIComponent(query)}`,
+        { cache: "no-store" },
+      );
+      const body = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(
+          body?.error?.message ?? "직감 상품을 검색하지 못했습니다.",
+        );
+      }
+      const candidates = (body.items ?? []) as SupplierSourceCandidate[];
+      setSupplierSourceCandidates(candidates);
+      setSupplierSourceStatus(
+        candidates.length
+          ? `직감 상품 ${candidates.length}개를 찾았습니다.`
+          : "수집된 직감 상품에서 일치하는 항목을 찾지 못했습니다. 직감 상품을 먼저 가져온 뒤 다시 검색해 주세요.",
+      );
+    } catch (error) {
+      setSupplierSourceCandidates([]);
+      setSupplierSourceStatus(
+        error instanceof Error
+          ? error.message
+          : "직감 상품을 검색하지 못했습니다.",
+      );
+    } finally {
+      setSearchingSupplierSource(false);
+    }
+  }
+
+  async function applySupplierSource(candidate: SupplierSourceCandidate) {
+    if (
+      !confirm(
+        `'${candidate.originalName}'의 이미지, 상세페이지와 옵션을 가져올까요?\n\n현재 이미지·상세설명·옵션 편집 내용은 덮어쓰지만 상품명·검색태그·판매가·카테고리는 유지합니다.`,
+      )
+    ) {
+      return;
+    }
+    if (dirty && !(await submit("draft"))) return;
+    setApplyingSupplierSourceId(candidate.supplierProductId);
+    setSupplierSourceStatus("직감 상품 데이터를 가져오는 중…");
+    try {
+      const response = await fetch(
+        `/api/products/${initial.product.id}/supplier-source`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            supplierProductId: candidate.supplierProductId,
+          }),
+        },
+      );
+      const body = await response.json().catch(() => null);
+      if (!response.ok || !body?.data?.product) {
+        throw new Error(
+          body?.error?.message ?? "직감 상품 데이터를 가져오지 못했습니다.",
+        );
+      }
+      const imported = body.data.product;
+      const next = {
+        ...form,
+        draftVersion: imported.draftVersion,
+        description: imported.description,
+        selectedImages: imported.selectedImages,
+        editedOptions: imported.editedOptions,
+      };
+      setForm(next);
+      setBaseline(JSON.stringify(next));
+      setStatus(imported.status);
+      setActiveSupplier((current) => ({
+        ...current,
+        externalProductId: body.data.source.externalProductId,
+        originalName: body.data.source.originalName,
+        supplierPrice:
+          body.data.source.supplierPrice == null
+            ? null
+            : String(body.data.source.supplierPrice),
+        currency: body.data.source.currency,
+        availability: body.data.source.availability,
+      }));
+      setOptionEditorOpen(imported.editedOptions.groups.length > 0);
+      setSupplierSourceStatus(
+        `${candidate.originalName}에서 이미지 ${body.data.source.imageCount}개, 상세페이지${body.data.source.hasDescription ? " 있음" : " 없음"}, 옵션 ${body.data.source.optionCount}개를 가져왔습니다.`,
+      );
+      setMessage("직감 상품 데이터를 등록 초안에 저장했습니다.");
+      onMutated?.();
+    } catch (error) {
+      setSupplierSourceStatus(
+        error instanceof Error
+          ? error.message
+          : "직감 상품 데이터를 가져오지 못했습니다.",
+      );
+    } finally {
+      setApplyingSupplierSourceId(null);
+    }
+  }
+
   async function resetImages() {
     if (
       !confirm(
@@ -738,7 +867,7 @@ export function ProductEditor({
   function redetectTitleAnalysis() {
     const detected = detectProductTitleAnalysis({
       title: form.title,
-      originalTitle: initial.supplier.originalName ?? "",
+      originalTitle: activeSupplier.originalName ?? "",
       categoryPath: currentTitleCategoryPath(),
     });
     setTitleAnalysisCriteria(toProductTitleAnalysisDraft(detected));
@@ -856,7 +985,7 @@ export function ProductEditor({
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
             title,
-            originalTitle: initial.supplier.originalName ?? "",
+            originalTitle: activeSupplier.originalName ?? "",
             categoryPath,
             searchTags: form.searchTags
               .map((tag) => tag.trim())
@@ -1425,18 +1554,18 @@ export function ProductEditor({
         <div>
           <span>상품번호</span>
           <strong>
-            {initial.supplier.productNumberPrefix ?? ""}
-            {initial.supplier.externalProductId}
+            {activeSupplier.productNumberPrefix ?? ""}
+            {activeSupplier.externalProductId}
           </strong>
         </div>
         <div>
           <span>공급가</span>
-          <strong>{formatWon(initial.supplier.supplierPrice)}</strong>
+          <strong>{formatWon(activeSupplier.supplierPrice)}</strong>
         </div>
         <div>
           <span>공급 상태</span>
           <strong>
-            {initial.supplier.availability === "sold_out"
+            {activeSupplier.availability === "sold_out"
               ? "품절"
               : "판매 가능"}
           </strong>
@@ -1822,7 +1951,7 @@ export function ProductEditor({
                 )}
                 <span className="drawer-original-title">
                   <small>원본 상품명</small>
-                  <strong>{initial.supplier.originalName ?? "-"}</strong>
+                  <strong>{activeSupplier.originalName ?? "-"}</strong>
                 </span>
                 {!sourcingRegistrationDraft && (
                   <section className="drawer-title-analysis-criteria">
@@ -2254,7 +2383,7 @@ export function ProductEditor({
                 <label>
                   공급가
                   <input
-                    value={formatWon(initial.supplier.supplierPrice)}
+                    value={formatWon(activeSupplier.supplierPrice)}
                     disabled
                   />
                 </label>
@@ -2283,7 +2412,7 @@ export function ProductEditor({
                 </p>
               )}
               <MarginCalculator
-                supplierCost={Number(initial.supplier.supplierPrice ?? 0)}
+                supplierCost={Number(activeSupplier.supplierPrice ?? 0)}
                 onApply={(sellingPrice) =>
                   setForm((current) => ({ ...current, sellingPrice }))
                 }
@@ -2331,6 +2460,108 @@ export function ProductEditor({
 
         {activeTab === "content" && (
           <div className="drawer-section-stack">
+            {registrationContext && (
+              <section className="drawer-form-section sourcing-supplier-source">
+                <div className="drawer-section-title">
+                  <span>직감</span>
+                  <div>
+                    <h3>타겟 직감 상품 데이터 가져오기</h3>
+                    <p>
+                      직감에 수집된 상품의 이미지·상세페이지·옵션·공급가를 이
+                      소싱 등록 초안에 연결합니다. 상품명·검색태그·판매가·카테고리는
+                      유지합니다.
+                    </p>
+                  </div>
+                </div>
+                <div className="sourcing-supplier-source-search">
+                  <input
+                    type="search"
+                    value={supplierSourceQuery}
+                    onChange={(event) =>
+                      setSupplierSourceQuery(event.target.value)
+                    }
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        void searchSupplierSource();
+                      }
+                    }}
+                    placeholder="직감 상품명, 상품번호 또는 상세페이지 URL"
+                    aria-label="가져올 직감 상품 검색"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => void searchSupplierSource()}
+                    disabled={searchingSupplierSource}
+                  >
+                    {searchingSupplierSource ? "검색 중…" : "직감 상품 찾기"}
+                  </button>
+                </div>
+                {supplierSourceStatus && (
+                  <p className="sourcing-supplier-source-status" role="status">
+                    {supplierSourceStatus}
+                  </p>
+                )}
+                {supplierSourceCandidates.length > 0 && (
+                  <div
+                    className="sourcing-supplier-source-results"
+                    aria-label="직감 상품 검색 결과"
+                  >
+                    {supplierSourceCandidates.map((candidate) => (
+                      <article key={candidate.supplierProductId}>
+                        <div className="sourcing-supplier-source-thumbnail">
+                          {candidate.thumbnailUrl ? (
+                            <img
+                              src={candidate.thumbnailUrl}
+                              alt=""
+                              loading="lazy"
+                            />
+                          ) : (
+                            <span>이미지 없음</span>
+                          )}
+                        </div>
+                        <div>
+                          <strong>{candidate.originalName}</strong>
+                          <span>
+                            직감 {candidate.externalProductId} · 공급가{" "}
+                            {candidate.supplierPrice == null
+                              ? "미입력"
+                              : `${candidate.supplierPrice.toLocaleString("ko-KR")}원`}
+                          </span>
+                          <small>
+                            이미지 {candidate.imageCount}개 · 상세페이지{" "}
+                            {candidate.hasDescription ? "있음" : "없음"} · 옵션{" "}
+                            {candidate.optionCount}개
+                          </small>
+                          {candidate.url && (
+                            <a
+                              href={candidate.url}
+                              target="_blank"
+                              rel="noreferrer"
+                            >
+                              직감 상품 확인
+                            </a>
+                          )}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => void applySupplierSource(candidate)}
+                          disabled={
+                            applyingSupplierSourceId !== null ||
+                            searchingSupplierSource
+                          }
+                        >
+                          {applyingSupplierSourceId ===
+                          candidate.supplierProductId
+                            ? "가져오는 중…"
+                            : "이 상품 데이터 사용"}
+                        </button>
+                      </article>
+                    ))}
+                  </div>
+                )}
+              </section>
+            )}
             <section className="drawer-form-section">
               <div className="drawer-section-title with-action">
                 <span>02</span>
