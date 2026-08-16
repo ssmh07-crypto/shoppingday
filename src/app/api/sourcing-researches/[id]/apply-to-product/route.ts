@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createProductEditService } from "@/modules/products/product-edit-factory";
 import { categoryKeywordsInTitle } from "@/modules/sourcing/registration-draft";
 import { applySourcingRegistrationDraftSchema } from "@/modules/sourcing/schemas";
+import { mergeOfficialKeywordAttributes } from "@/modules/sourcing/official-keyword-metadata";
 import { createSourcingResearchService } from "@/modules/sourcing/sourcing-factory";
 import { withAdminSourcingRoute } from "../../route-utils";
 
@@ -43,7 +44,11 @@ export async function POST(
       naverCategoryId: current.product.naverCategoryId,
       selectedImages: current.product.selectedImages,
       editedOptions: current.product.editedOptions,
-      naverAttributes: current.product.naverAttributes,
+      naverAttributes: mergeOfficialKeywordAttributes(
+        current.product.naverAttributes,
+        sourcing.relatedKeywords,
+        current.product.naverCategoryId,
+      ),
     });
 
     return NextResponse.json({

@@ -52,13 +52,25 @@ export const sourcingRelatedKeywordSchema = z.object({
   ]),
   source: z.enum(["itemscout-xlsx", "manual"]),
   importedAt: z.iso.datetime(),
+  officialTag: z.object({
+    code: z.number().int().positive(),
+    text: z.string().trim().min(1).max(200),
+  }).nullable().optional(),
+  officialAttribute: z.object({
+    categoryId: z.string().regex(/^\d+$/).max(20),
+    categoryName: z.string().trim().min(1).max(500),
+    attributeSeq: z.number().int().positive(),
+    attributeName: z.string().trim().min(1).max(200),
+    attributeValueSeq: z.number().int().positive(),
+    attributeValueName: z.string().trim().min(1).max(200),
+  }).nullable().optional(),
 });
 
 export const sourcingReviewInputSchema = z.object({
   id: z.uuid(),
   content: z.string().trim().max(10_000),
   rating: z.number().int().min(1).max(5).nullable(),
-  source: z.enum(["manual", "file", "bulk"]),
+  source: z.enum(["manual", "file", "bulk", "smartstore"]),
 });
 
 export const sourcingResearchInputSchema = z.object({
@@ -73,6 +85,11 @@ export const sourcingResearchInputSchema = z.object({
   monthlySearchVolume: nullableIntegerAmount,
   sixMonthRevenue: nullableRevenue,
   marketNotes: z.string().trim().max(5_000),
+  naverCategory: z.object({
+    id: z.string().regex(/^\d+$/).max(20),
+    name: z.string().trim().min(1).max(200),
+    wholeCategoryName: z.string().trim().min(1).max(500),
+  }).nullable().default(null),
   coupangAveragePrice: nullableIntegerAmount,
   naverAveragePrice: nullableIntegerAmount,
   expectedSellingPrice: nullableIntegerAmount,

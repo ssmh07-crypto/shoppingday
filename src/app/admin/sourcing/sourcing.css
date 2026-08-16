@@ -397,6 +397,133 @@
   height: 1px;
   opacity: 0;
 }
+.sourcing-category-step {
+  position: relative;
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+  padding: 14px;
+  border: 1px solid #9dbbf0;
+  border-radius: 10px;
+  background: #f5f8ff;
+}
+.sourcing-category-step-head,
+.sourcing-category-selected {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+.sourcing-category-step-head > div,
+.sourcing-category-selected > div {
+  display: grid;
+  gap: 3px;
+}
+.sourcing-category-step strong {
+  color: #183b70;
+  font-size: 13px;
+}
+.sourcing-category-step span,
+.sourcing-category-step small {
+  color: var(--sourcing-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.sourcing-category-step button {
+  min-height: 36px;
+  padding: 7px 11px;
+  border: 1px solid #8fb4ef;
+  border-radius: 8px;
+  background: #fff;
+  color: #1d4ed8;
+  font-size: 12px;
+  font-weight: 800;
+}
+.sourcing-category-step button:disabled {
+  border-color: #d0d5dd;
+  color: #98a2b3;
+}
+.sourcing-category-selected {
+  padding: 10px 12px;
+  border: 1px solid #b7d4c5;
+  border-radius: 8px;
+  background: #f3fbf6;
+}
+.sourcing-category-selected strong {
+  color: #087443;
+}
+.sourcing-category-required {
+  padding: 9px 11px;
+  border-radius: 8px;
+  background: #fff4ed;
+  color: #b54708;
+  font-size: 12px;
+  font-weight: 800;
+}
+.sourcing-category-search {
+  display: grid;
+  gap: 5px;
+}
+.sourcing-category-results {
+  display: grid;
+  max-height: 260px;
+  overflow-y: auto;
+  border: 1px solid #d0d5dd;
+  border-radius: 8px;
+  background: #fff;
+}
+.sourcing-category-results button {
+  display: grid;
+  gap: 2px;
+  border: 0;
+  border-bottom: 1px solid #eaecf0;
+  border-radius: 0;
+  text-align: left;
+}
+.sourcing-category-results button:last-child {
+  border-bottom: 0;
+}
+.sourcing-keyword-flow {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 16px;
+  padding: 14px;
+  border: 1px solid #d0d5dd;
+  border-radius: 10px;
+  background: #f9fafb;
+}
+.sourcing-keyword-flow > div:not(.sourcing-keyword-flow-status) {
+  display: grid;
+  gap: 4px;
+}
+.sourcing-keyword-flow strong {
+  color: #1d2939;
+  font-size: 13px;
+}
+.sourcing-keyword-flow span {
+  color: var(--sourcing-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.sourcing-keyword-flow-status {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  padding-top: 10px;
+  border-top: 1px solid #e4e7ec;
+}
+.sourcing-keyword-flow-status span {
+  padding: 6px 9px;
+  border-radius: 999px;
+  background: #fff;
+  color: #475467;
+}
+.sourcing-keyword-flow-status strong {
+  margin-left: 3px;
+  color: #1d4ed8;
+}
 .sourcing-keyword-summary {
   display: flex;
   flex-wrap: wrap;
@@ -582,6 +709,21 @@
   color: #2457d6;
   font-weight: 800;
 }
+.sourcing-keyword-volume-filters button.review {
+  border-color: #f0a29a;
+  color: #b42318;
+  font-weight: 800;
+}
+.sourcing-keyword-volume-filters button.review.active {
+  border-color: #d92d20;
+  background: #fff1f0;
+  color: #b42318;
+}
+.sourcing-keyword-volume-filters button:disabled {
+  border-color: #e4e7ec;
+  color: #98a2b3;
+  cursor: not-allowed;
+}
 .sourcing-keyword-table-wrap {
   max-height: 520px;
   margin-top: 10px;
@@ -591,6 +733,8 @@
 }
 .sourcing-keyword-table {
   width: 100%;
+  min-width: 980px;
+  table-layout: fixed;
   border-collapse: collapse;
   background: #fff;
 }
@@ -610,48 +754,199 @@
   color: #172033;
   font-size: 13px;
 }
+.sourcing-keyword-table th:nth-child(1),
+.sourcing-keyword-table td:nth-child(1) {
+  width: 180px;
+  overflow-wrap: anywhere;
+}
 .sourcing-keyword-table th:nth-child(2),
 .sourcing-keyword-table td:nth-child(2) {
-  width: 120px;
+  width: 105px;
   text-align: right;
 }
 .sourcing-keyword-table th:nth-child(3),
 .sourcing-keyword-table td:nth-child(3) {
-  width: 330px;
+  width: auto;
 }
 .sourcing-keyword-table th:nth-child(4),
 .sourcing-keyword-table td:nth-child(4) {
-  width: 390px;
+  width: 245px;
 }
 .sourcing-keyword-table th:nth-child(5),
 .sourcing-keyword-table td:nth-child(5) {
-  width: 58px;
+  width: 70px;
   text-align: center;
 }
 .keyword-exposure-result {
   display: grid;
-  gap: 6px;
-  min-width: 280px;
+  gap: 10px;
+  min-width: 0;
 }
-.keyword-exposure-result > span,
-.keyword-exposure-result > small {
+.sourcing-keyword-table tr.category-review td {
+  background: #fff9f7;
+}
+.keyword-signal-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+}
+.keyword-signal {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 3px 8px;
+  min-height: 70px;
+  padding: 9px 10px;
+  border: 1px solid #d0d5dd;
+  border-radius: 9px;
+  background: #f9fafb;
+}
+.keyword-signal b {
   color: #475467;
-  font-size: 11px;
-  line-height: 1.45;
+  font-size: 12px;
 }
-.keyword-exposure-result > div {
+.keyword-signal strong {
+  color: #344054;
+  font-size: 16px;
+  line-height: 1.1;
+}
+.keyword-signal em {
+  grid-column: 1 / -1;
+  overflow: hidden;
+  color: #667085;
+  font-size: 11px;
+  font-style: normal;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.keyword-signal.good,
+.keyword-signal.tag-registered {
+  border-color: #8dd0ae;
+  background: #ecfdf3;
+}
+.keyword-signal.good strong,
+.keyword-signal.tag-registered strong {
+  color: #087443;
+}
+.keyword-signal.mixed,
+.keyword-signal.tag-unregistered {
+  border-color: #fedf89;
+  background: #fffaeb;
+}
+.keyword-signal.mixed strong,
+.keyword-signal.tag-unregistered strong {
+  color: #b54708;
+}
+.keyword-signal.poor {
+  border-color: #f0a29a;
+  background: #fff1f0;
+}
+.keyword-signal.poor strong {
+  color: #b42318;
+}
+.keyword-signal.title-strong {
+  border-color: #9dbbf0;
+  background: #eff6ff;
+}
+.keyword-signal.title-strong strong {
+  color: #1d4ed8;
+}
+.keyword-signal.attribute-matched {
+  border-color: #c7b9ef;
+  background: #f4f3ff;
+}
+.keyword-signal.attribute-matched strong {
+  color: #6941c6;
+}
+.keyword-signal.unavailable {
+  border-style: dashed;
+  background: #fff;
+}
+.keyword-analysis-decision {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: 12px;
+  padding: 10px 11px;
+  border-left: 4px solid #9dbbf0;
+  border-radius: 7px;
+  background: #f5f8ff;
 }
-.keyword-exposure-result > div strong {
-  color: #1d4ed8;
+.keyword-category-dominant {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid #fedf89;
+  border-radius: 8px;
+  background: #fffaeb;
+  color: #7a2e0e;
   font-size: 12px;
+}
+.keyword-category-dominant strong {
+  overflow: hidden;
+  color: #93370d;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.keyword-category-dominant span {
+  font-weight: 800;
+  white-space: nowrap;
+}
+.keyword-analysis-decision > div {
+  display: grid;
+  gap: 3px;
+}
+.keyword-analysis-decision strong {
+  color: #1d4ed8;
+  font-size: 14px;
+}
+.keyword-analysis-decision span {
+  color: #475467;
+  font-size: 12px;
+  line-height: 1.4;
+}
+.keyword-analysis-decision.poor {
+  border-left-color: #d92d20;
+  background: #fff1f0;
+}
+.keyword-analysis-decision.poor strong {
+  color: #b42318;
+}
+.keyword-analysis-decision.attribute {
+  border-left-color: #6941c6;
+  background: #f4f3ff;
+}
+.keyword-analysis-decision.attribute strong {
+  color: #6941c6;
+}
+.keyword-analysis-decision.tag {
+  border-left-color: #087443;
+  background: #ecfdf3;
+}
+.keyword-analysis-decision.tag strong {
+  color: #087443;
+}
+.keyword-analysis-decision.title-tag {
+  border-left-color: #087443;
+  background: linear-gradient(90deg, #ecfdf3 0%, #f5f8ff 72%);
+}
+.keyword-analysis-decision.title-tag strong {
+  color: #067647;
+}
+.keyword-analysis-decision button.danger {
+  border-color: #d92d20;
+  color: #b42318;
+}
+.keyword-analysis-reason {
+  color: #475467;
+  font-size: 12px;
+  line-height: 1.5;
 }
 .keyword-exposure-result details {
   color: #475467;
-  font-size: 11px;
+  font-size: 12px;
 }
 .keyword-exposure-result summary {
   cursor: pointer;
@@ -662,6 +957,10 @@
   gap: 4px;
   margin: 6px 0 0;
   padding-left: 16px;
+}
+.keyword-analysis-raw p {
+  margin: 6px 0 0;
+  line-height: 1.45;
 }
 .sourcing-keyword-delete {
   border: 0;
@@ -763,6 +1062,43 @@
   border: 1px solid #cbd8ea;
   border-radius: 10px;
   background: #f8fbff;
+}
+.sourcing-smartstore-review-import {
+  display: grid;
+  gap: 9px;
+  padding: 14px;
+  border: 1px solid #86d4a3;
+  border-radius: 9px;
+  background: #effcf4;
+}
+.sourcing-smartstore-review-import > div:first-child {
+  display: grid;
+  gap: 3px;
+}
+.sourcing-smartstore-review-import strong {
+  color: #08653a;
+  font-size: 15px;
+}
+.sourcing-smartstore-review-import span,
+.sourcing-smartstore-review-import small {
+  color: #436354;
+  font-size: 12px;
+  line-height: 1.45;
+}
+.sourcing-smartstore-review-import > div:nth-child(2) {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+.sourcing-smartstore-review-import input {
+  width: 100%;
+  min-width: 0;
+}
+.sourcing-smartstore-review-import button {
+  min-width: 96px;
+  background: #15803d;
+  color: #fff;
+  font-weight: 900;
 }
 .sourcing-review-analyzer-head {
   display: flex;
@@ -1294,6 +1630,84 @@
   .sourcing-grid.four {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+  .sourcing-keyword-table-wrap {
+    max-height: none;
+    overflow: visible;
+    border: 0;
+    border-radius: 0;
+  }
+  .sourcing-keyword-table {
+    display: block;
+    min-width: 0;
+    table-layout: auto;
+    background: transparent;
+  }
+  .sourcing-keyword-table thead {
+    display: none;
+  }
+  .sourcing-keyword-table tbody {
+    display: grid;
+    gap: 12px;
+  }
+  .sourcing-keyword-table tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    overflow: hidden;
+    border: 1px solid #dfe4ec;
+    border-radius: 11px;
+    background: #fff;
+    box-shadow: 0 2px 8px #1720330a;
+  }
+  .sourcing-keyword-table td,
+  .sourcing-keyword-table td:nth-child(1),
+  .sourcing-keyword-table td:nth-child(2),
+  .sourcing-keyword-table td:nth-child(3),
+  .sourcing-keyword-table td:nth-child(4),
+  .sourcing-keyword-table td:nth-child(5) {
+    width: auto;
+    border-top: 0;
+  }
+  .sourcing-keyword-table td:nth-child(1) {
+    grid-column: 1;
+    padding: 13px 14px 5px;
+    font-size: 15px;
+    font-weight: 900;
+  }
+  .sourcing-keyword-table td:nth-child(2) {
+    grid-column: 2;
+    padding: 13px 14px 5px;
+    color: #475467;
+    font-size: 12px;
+  }
+  .sourcing-keyword-table td:nth-child(3) {
+    grid-column: 1 / -1;
+    padding: 10px 14px 12px;
+  }
+  .sourcing-keyword-table td:nth-child(4) {
+    grid-column: 1;
+    padding: 11px 6px 13px 14px;
+    border-top: 1px solid #edf0f5;
+  }
+  .sourcing-keyword-table td:nth-child(5) {
+    grid-column: 2;
+    padding: 11px 14px 13px 6px;
+    border-top: 1px solid #edf0f5;
+  }
+  .sourcing-keyword-table tr.category-review {
+    border-color: #f0a29a;
+  }
+  .sourcing-keyword-table tr.category-review td {
+    background: transparent;
+  }
+  .sourcing-keyword-delete {
+    min-height: 32px;
+    padding: 6px 10px;
+    border: 1px solid #f0a29a;
+    border-radius: 7px;
+    background: #fff;
+    color: #b42318;
+    font-size: 12px;
+  }
 }
 @media (max-width: 1500px) {
   .sourcing-heading {
@@ -1390,6 +1804,9 @@
   .sourcing-grid.three {
     grid-template-columns: 1fr;
   }
+  .sourcing-keyword-flow {
+    grid-template-columns: 1fr;
+  }
 }
 @media (max-width: 700px) {
   .sourcing-grid.two,
@@ -1443,6 +1860,27 @@
   .sourcing-keyword-table th:nth-child(3),
   .sourcing-keyword-table td:nth-child(3) {
     min-width: 290px;
+  }
+  .sourcing-smartstore-review-import > div:nth-child(2) {
+    grid-template-columns: 1fr;
+  }
+  .keyword-signal-grid {
+    grid-template-columns: 1fr;
+  }
+  .keyword-analysis-decision {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .keyword-analysis-decision button {
+    width: 100%;
+  }
+  .keyword-placement-buttons {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .sourcing-category-step-head,
+  .sourcing-category-selected {
+    align-items: stretch;
+    flex-direction: column;
   }
   .sourcing-keyword-exposure-tools {
     grid-template-columns: 1fr;

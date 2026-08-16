@@ -20,6 +20,7 @@ type RegistrationProductInput = {
   sellingPrice: number | null;
   originalName: string;
   supplierPrice: number | null;
+  naverCategoryId: string | null;
 };
 
 export class SourcingResearchRepository {
@@ -172,6 +173,7 @@ export class SourcingResearchRepository {
           sourceTitleKeywords: products.sourceTitleKeywords,
           searchTags: products.searchTags,
           sellingPrice: products.sellingPrice,
+          naverCategoryId: products.naverCategoryId,
           status: products.status,
         })
         .from(products)
@@ -186,7 +188,13 @@ export class SourcingResearchRepository {
       if (!current) return row;
 
       const changedFields = (
-        ["title", "sourceTitleKeywords", "searchTags", "sellingPrice"] as const
+        [
+          "title",
+          "sourceTitleKeywords",
+          "searchTags",
+          "sellingPrice",
+          "naverCategoryId",
+        ] as const
       ).filter(
         (field) =>
           JSON.stringify(current[field]) !==
@@ -202,6 +210,10 @@ export class SourcingResearchRepository {
             sourceTitleKeywords: registrationInput.sourceTitleKeywords,
             searchTags: registrationInput.searchTags,
             sellingPrice: registrationInput.sellingPrice,
+            naverCategoryId: registrationInput.naverCategoryId,
+            ...(current.naverCategoryId !== registrationInput.naverCategoryId
+              ? { naverAttributes: [] }
+              : {}),
             draftVersion: sql`${products.draftVersion} + 1`,
             updatedAt: new Date(),
           })
@@ -211,6 +223,7 @@ export class SourcingResearchRepository {
             sourceTitleKeywords: products.sourceTitleKeywords,
             searchTags: products.searchTags,
             sellingPrice: products.sellingPrice,
+            naverCategoryId: products.naverCategoryId,
           });
         await tx.insert(productAuditLogs).values({
           actorId: ownerId,
@@ -349,6 +362,7 @@ export class SourcingResearchRepository {
           searchTags: input.searchTags,
           sellingPrice: input.sellingPrice,
           description: "",
+          naverCategoryId: input.naverCategoryId,
         })
         .returning({ id: products.id });
       await tx.insert(productSupplierLinks).values({

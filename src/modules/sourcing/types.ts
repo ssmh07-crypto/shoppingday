@@ -32,7 +32,7 @@ export interface SourcingReviewInput {
   id: string;
   content: string;
   rating: number | null;
-  source: "manual" | "file" | "bulk";
+  source: "manual" | "file" | "bulk" | "smartstore";
 }
 
 export type SourcingKeywordPlacement =
@@ -50,6 +50,24 @@ export interface SourcingRelatedKeyword {
   placement: SourcingKeywordPlacement;
   source: "itemscout-xlsx" | "manual";
   importedAt: string;
+  officialTag?: {
+    code: number;
+    text: string;
+  } | null;
+  officialAttribute?: {
+    categoryId: string;
+    categoryName: string;
+    attributeSeq: number;
+    attributeName: string;
+    attributeValueSeq: number;
+    attributeValueName: string;
+  } | null;
+}
+
+export interface SourcingNaverCategory {
+  id: string;
+  name: string;
+  wholeCategoryName: string;
 }
 
 export interface SourcingResearchInput {
@@ -58,6 +76,7 @@ export interface SourcingResearchInput {
   monthlySearchVolume: number | null;
   sixMonthRevenue: number | null;
   marketNotes: string;
+  naverCategory: SourcingNaverCategory | null;
   coupangAveragePrice: number | null;
   naverAveragePrice: number | null;
   expectedSellingPrice: number | null;

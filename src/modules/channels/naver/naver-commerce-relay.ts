@@ -16,6 +16,7 @@ import {
   parseNaverCommerceSellerAddresses,
   parseNaverCommerceDeliveryBundleGroups,
   parseNaverCommerceReturnDeliveryCompanies,
+  parseNaverCommerceRecommendedSellerTags,
   parseNaverCommerceChangedProductOrders,
   parseNaverCommerceProductOrders,
   type NaverCommerceCategory,
@@ -31,6 +32,7 @@ import {
   type NaverCommerceSellerAddress,
   type NaverCommerceDeliveryBundleGroup,
   type NaverCommerceReturnDeliveryCompany,
+  type NaverCommerceSellerTag,
   type NaverCommerceChangedProductOrders,
   type NaverCommerceProductOrder,
   type NaverImageUploadFile,
@@ -92,6 +94,7 @@ export interface NaverCategoriesClient {
   fetchSellerAddresses(): Promise<NaverCommerceSellerAddress[]>;
   fetchDeliveryBundleGroups(): Promise<NaverCommerceDeliveryBundleGroup[]>;
   fetchReturnDeliveryCompanies(): Promise<NaverCommerceReturnDeliveryCompany[]>;
+  fetchRecommendTags?(keyword: string): Promise<NaverCommerceSellerTag[]>;
   fetchLastChangedProductOrders?(input: {
     lastChangedFrom: string;
     lastChangedTo: string;
@@ -333,6 +336,14 @@ export class NaverCommerceRelayClient implements NaverCategoriesClient {
     return parseNaverCommerceProductOrders(response);
   }
 
+  async fetchRecommendTags(keyword: string) {
+    const url = this.relayUrl("v2/tags/recommend-tags");
+    url.searchParams.set("keyword", keyword.trim());
+    return parseNaverCommerceRecommendedSellerTags(
+      await this.requestWithRetry(url),
+    );
+  }
+
   async observeShoppingRanks(input: NaverShoppingRankRequest) {
     const body = new TextEncoder().encode(JSON.stringify(input));
     const response = await this.request(
@@ -510,6 +521,9 @@ const relayProductModelQuerySchema = z.object({
 const relayCategoryMetadataQuerySchema = z.object({
   categoryId: z.string().regex(/^\d+$/).max(20),
 });
+const relayRecommendTagQuerySchema = z.object({
+  keyword: z.string().trim().min(1).max(100),
+});
 const providedNoticeTypeSchema = z.string().regex(/^[A-Z_]{2,40}$/);
 const naverImageUrlSchema = z.url().refine((value) => {
   const url = new URL(value);
@@ -564,6 +578,7 @@ const RELAY_PATHS = [
   "/v1/seller/addressbooks-for-page",
   "/v1/product-delivery-info/bundle-groups",
   "/v2/product-delivery-info/return-delivery-companies",
+  "/v2/tags/recommend-tags",
 ] as const;
 const IMAGE_UPLOAD_PATH = "/v1/product-images/upload";
 const PRODUCT_CREATE_PATH = "/v2/products";
@@ -989,6 +1004,18 @@ async function handleRelayRequest(
       return relayJson(400, "invalid_request", "반품 택배사 조회 조건이 올바르지 않습니다.");
     }
     return client.fetchReturnDeliveryCompanies();
+  }
+  if (url.pathname === "/v2/tags/recommend-tags") {
+    const parsed = relayRecommendTagQuerySchema.safeParse(
+      Object.fromEntries(url.searchParams),
+    );
+    if (!parsed.success) {
+      return relayJson(400, "invalid_request", "추천 태그 검색어를 확인해 주세요.");
+    }
+    if (!client.fetchRecommendTags) {
+      return relayJson(503, "not_configured", "추천 태그 조회 기능이 설정되지 않았습니다.");
+    }
+    return client.fetchRecommendTags(parsed.data.keyword);
   }
   if (url.pathname === "/v1/product-models")
     return handleProductModels(url, client);

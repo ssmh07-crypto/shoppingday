@@ -1,0 +1,1 @@
+ALTER TABLE "sourcing_researches" ADD COLUMN "naver_category" jsonb DEFAULT 'null'::jsonb;

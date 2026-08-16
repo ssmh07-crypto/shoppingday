@@ -646,6 +646,36 @@ describe("네이버 커머스API 중계 클라이언트", () => {
     );
   });
 
+  it("추천 태그 검색어를 서명된 릴레이 요청으로 전달한다", async () => {
+    const recommendedTags = [{ code: 1094599, text: "나물짜기" }];
+    const upstream = {
+      fetchCategories: vi.fn(),
+      fetchProductModels: vi.fn(),
+      fetchRecommendTags: vi.fn().mockResolvedValue(recommendedTags),
+      ...metadataClientMocks(),
+    };
+    const handler = createNaverCommerceRelayHandler({
+      sharedSecret,
+      client: upstream,
+      now: () => now,
+    });
+    const client = new NaverCommerceRelayClient(
+      {
+        relayUrl: "https://relay.example.test",
+        sharedSecret,
+        timeoutMs: 1000,
+      },
+      async (input, init) => handler(new Request(input, init)),
+      () => now,
+      () => nonce,
+    );
+
+    await expect(client.fetchRecommendTags("나물짜기")).resolves.toEqual(
+      recommendedTags,
+    );
+    expect(upstream.fetchRecommendTags).toHaveBeenCalledWith("나물짜기");
+  });
+
   it("일시적인 503 응답은 새 서명으로 한 번 재시도한다", async () => {
     const fetcher = vi
       .fn<typeof fetch>()

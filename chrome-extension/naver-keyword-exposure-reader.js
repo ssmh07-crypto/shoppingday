@@ -30,6 +30,9 @@ async function runKeywordExposure() {
         type: "shoppingday.keyword-exposure.result",
         result: exposureResult(
           request.keyword,
+          request.contextKeyword,
+          request.contextCategoryId,
+          request.contextCategoryName,
           "failed",
           [],
           error instanceof Error
@@ -56,6 +59,9 @@ async function observeKeywordExposure(request) {
     if (marker) {
       return exposureResult(
         request.keyword,
+        request.contextKeyword,
+        request.contextCategoryId,
+        request.contextCategoryName,
         "blocked",
         Array.from(seen.values()),
         `네이버 접근 제한 화면이 감지되었습니다: ${marker}`,
@@ -66,6 +72,8 @@ async function observeKeywordExposure(request) {
       ShoppingdayRankParser.collectShoppingKeywordExposure(
         document,
         request.keyword,
+        request.contextKeyword,
+        request.contextCategoryName,
       );
     for (const candidate of candidates) {
       const existing = seen.get(candidate.identity);
@@ -89,12 +97,23 @@ async function observeKeywordExposure(request) {
   if (!products.length) {
     return exposureResult(
       request.keyword,
+      request.contextKeyword,
+      request.contextCategoryId,
+      request.contextCategoryName,
       "failed",
       [],
       "네이버 검색 결과에서 가격비교 상품 카드를 식별하지 못했습니다. 화면 구조를 확인해 주세요.",
     );
   }
-  return exposureResult(request.keyword, "completed", products, null);
+  return exposureResult(
+    request.keyword,
+    request.contextKeyword,
+    request.contextCategoryId,
+    request.contextCategoryName,
+    "completed",
+    products,
+    null,
+  );
 }
 
 function mergeExposureCandidate(existing, current) {
@@ -112,12 +131,31 @@ function mergeExposureCandidate(existing, current) {
         : existing.titleMatchSegments,
     attributeMatched: current.attributeMatched || existing.attributeMatched,
     categoryMatched: current.categoryMatched || existing.categoryMatched,
+    contextMatched: current.contextMatched || existing.contextMatched,
+    contextCategoryMatched:
+      current.contextCategoryMatched || existing.contextCategoryMatched,
+    category: current.category || existing.category,
     matchedIn: Array.from(new Set([...existing.matchedIn, ...current.matchedIn])),
     evidence: current.evidence || existing.evidence,
   };
 }
 
-function exposureResult(keyword, status, products, message) {
+function exposureResult(
+  keyword,
+  contextKeyword,
+  contextCategoryId,
+  contextCategoryName,
+  status,
+  products,
+  message,
+) {
+  const categoryDistribution =
+    ShoppingdayRankParser.summarizeShoppingCategories(products);
+  const matchedProducts = products.filter((item) => item.matchedIn.length > 0);
+  const sampledProducts = [
+    ...matchedProducts,
+    ...products.filter((item) => !matchedProducts.includes(item)),
+  ].slice(0, 5);
   return {
     keyword,
     device: "pc",
@@ -126,14 +164,22 @@ function exposureResult(keyword, status, products, message) {
     titleMatchCount: products.filter((item) => item.titleMatched).length,
     attributeMatchCount: products.filter((item) => item.attributeMatched).length,
     categoryMatchCount: products.filter((item) => item.categoryMatched).length,
+    contextKeyword: contextKeyword ?? "",
+    contextMatchCount: products.filter((item) => item.contextMatched).length,
+    contextCategoryId: contextCategoryId ?? "",
+    contextCategoryName: contextCategoryName ?? "",
+    contextCategoryMatchCount: products.filter(
+      (item) => item.contextCategoryMatched,
+    ).length,
+    categoryDistribution,
     observedAt: new Date().toISOString(),
-    samples: products
-      .filter((item) => item.matchedIn.length > 0)
-      .slice(0, 5)
-      .map((item) => ({
+    samples: sampledProducts.map((item) => ({
         title: item.title,
         matchedIn: item.matchedIn,
         evidence: item.evidence,
+        category: item.category,
+        contextMatched: item.contextMatched,
+        contextCategoryMatched: item.contextCategoryMatched,
       })),
     message,
   };

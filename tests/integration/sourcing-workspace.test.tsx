@@ -183,7 +183,66 @@ describe("소싱 조사 화면", () => {
     expect(within(keywordTable).getByText("낮은 욕실화")).toBeInTheDocument();
   });
 
+  it("스마트스토어 상품을 열고 확장 프로그램에서 받은 리뷰를 중복 없이 누적한다", async () => {
+    render(<SourcingWorkspace initialItems={[]} initialDetail={null} />);
+    window.dispatchEvent(new CustomEvent("shoppingday:rank-extension-status", {
+      detail: { available: true, version: "0.5.15" },
+    }));
+    fireEvent.click(sectionButton("04 상품 리뷰 조사"));
+
+    let request: { requestId?: string; url?: string } | undefined;
+    window.addEventListener("shoppingday:smartstore-review-request", ((event: CustomEvent) => {
+      request = event.detail;
+    }) as EventListener, { once: true });
+    fireEvent.change(screen.getByLabelText("리뷰를 가져올 스마트스토어 상품 링크"), {
+      target: { value: "https://smartstore.naver.com/sample/products/1234567890" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "상품 열기" }));
+
+    expect(request?.url).toBe("https://smartstore.naver.com/sample/products/1234567890");
+    window.dispatchEvent(new CustomEvent("shoppingday:smartstore-review-result", {
+      detail: {
+        requestId: request?.requestId,
+        result: {
+          status: "completed",
+          sourceUrl: request?.url,
+          productName: "경쟁 야채탈수기",
+          reviews: [
+            { content: "세척하기 편해요", rating: 5 },
+            { content: "물이 잘 빠지지 않아요", rating: 2 },
+            { content: "세척하기 편해요", rating: 5 },
+          ],
+          observedAt: new Date().toISOString(),
+        },
+      },
+    }));
+
+    expect(await screen.findByDisplayValue("세척하기 편해요")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("물이 잘 빠지지 않아요")).toBeInTheDocument();
+    expect(screen.getAllByDisplayValue("세척하기 편해요")).toHaveLength(1);
+    expect(screen.getByText(/현재 화면 리뷰 3개를 받았습니다/)).toBeInTheDocument();
+    expect(screen.getByText("저장 대상 리뷰 2개")).toBeInTheDocument();
+  });
+
+  it("키워드 자동 분류 전에 네이버 카테고리 선택을 요구한다", () => {
+    const initial = researchWithKeywords();
+    initial.naverCategory = null;
+    render(<SourcingWorkspace initialItems={[]} initialDetail={initial} />);
+
+    fireEvent.click(sectionButton("02 연관 키워드 분류"));
+
+    expect(
+      screen.getByText("카테고리를 선택해야 자동 분류를 시작할 수 있습니다."),
+    ).toBeInTheDocument();
+    const row = within(screen.getByRole("table")).getByText("욕실화").closest("tr")!;
+    expect(within(row).getByRole("button", { name: "노출 분석" })).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: "전체 키워드 다시 자동 분류" }),
+    ).toBeDisabled();
+  });
+
   it("Chrome 1페이지 분석 근거를 확인하고 추천 분류를 초안에 적용한다", async () => {
+    stubTagDictionary(false);
     const handleRequest = (event: Event) => {
       const detail = (event as CustomEvent<{ requestId: string; keyword: string }>).detail;
       window.dispatchEvent(
@@ -195,9 +254,15 @@ describe("소싱 조사 화면", () => {
               device: "pc",
               status: "completed",
               productCount: 40,
-              titleMatchCount: 16,
+              titleMatchCount: 20,
               attributeMatchCount: 2,
               categoryMatchCount: 0,
+              contextKeyword: "욕실화",
+              contextMatchCount: 40,
+              contextCategoryId: "50000001",
+              contextCategoryName: "욕실화",
+              contextCategoryMatchCount: 40,
+              categoryDistribution: [{ category: "생활/건강 > 욕실용품 > 욕실화", count: 40 }],
               observedAt: "2026-08-16T00:00:00.000Z",
               samples: [
                 {
@@ -217,14 +282,19 @@ describe("소싱 조사 화면", () => {
     render(<SourcingWorkspace initialItems={[]} initialDetail={researchWithKeywords()} />);
     window.dispatchEvent(
       new CustomEvent("shoppingday:rank-extension-status", {
-        detail: { available: true, version: "0.5.8" },
+        detail: { available: true, version: "0.5.14" },
       }),
     );
     fireEvent.click(sectionButton("02 연관 키워드 분류"));
+    expect(screen.getByLabelText("상품명 노출 추천 기준")).toHaveValue(50);
     const row = within(screen.getByRole("table")).getByText("욕실화").closest("tr")!;
     fireEvent.click(within(row).getByRole("button", { name: "노출 분석" }));
 
-    expect(await within(row).findByText("상품명 16/40 · 부가정보 2 · 카테고리 0")).toBeInTheDocument();
+    const titleSignal = (await within(row).findByText("상품명 노출")).parentElement!;
+    expect(titleSignal).toHaveTextContent("20/40");
+    expect(titleSignal).toHaveTextContent("다수 기준 충족");
+    expect(within(row).getByText("카테고리 적합").parentElement).toHaveTextContent("40/40");
+    expect(within(row).getByText("네이버 태그").parentElement).toHaveTextContent("미등록");
     expect(within(row).getByText("추천 상품명 키워드")).toBeInTheDocument();
     expect(within(row).getByText("미끄럼방지 욕실화")).toBeInTheDocument();
     fireEvent.click(within(row).getByRole("button", { name: "추천 적용" }));
@@ -238,7 +308,8 @@ describe("소싱 조사 화면", () => {
     window.removeEventListener("shoppingday:keyword-exposure-request", handleRequest);
   });
 
-  it("전체 다시 분류는 기존 분류도 재분석해 추천 위치를 초안에 반영한다", async () => {
+  it("전체 자동 분류는 카드 부가정보만 있는 키워드를 기본 상품명 후보로 반영한다", async () => {
+    stubTagDictionary(false);
     const initial = researchWithKeywords();
     initial.relatedKeywords = [
       { ...initial.relatedKeywords[0]!, placement: "product_name" },
@@ -258,6 +329,12 @@ describe("소싱 조사 화면", () => {
               titleMatchCount: 2,
               attributeMatchCount: 9,
               categoryMatchCount: 0,
+              contextKeyword: "욕실화",
+              contextMatchCount: 40,
+              contextCategoryId: "50000001",
+              contextCategoryName: "욕실화",
+              contextCategoryMatchCount: 40,
+              categoryDistribution: [{ category: "생활/건강 > 욕실용품 > 욕실화", count: 40 }],
               observedAt: "2026-08-16T00:00:00.000Z",
               samples: [],
               message: null,
@@ -271,20 +348,294 @@ describe("소싱 조사 화면", () => {
     render(<SourcingWorkspace initialItems={[]} initialDetail={initial} />);
     window.dispatchEvent(
       new CustomEvent("shoppingday:rank-extension-status", {
-        detail: { available: true, version: "0.5.8" },
+        detail: { available: true, version: "0.5.14" },
       }),
     );
     fireEvent.click(sectionButton("02 연관 키워드 분류"));
-    fireEvent.click(screen.getByRole("button", { name: "전체 다시 분류" }));
+    fireEvent.click(screen.getByRole("button", { name: "전체 키워드 다시 자동 분류" }));
 
     expect(
       await screen.findByText(/1개 키워드를 다시 분석하고 추천 분류를 초안에 반영했습니다/),
     ).toBeInTheDocument();
     const row = within(screen.getByRole("table")).getByText("욕실화").closest("tr")!;
-    expect(within(row).getByRole("button", { name: "속성" })).toHaveAttribute(
+    expect(within(row).getByRole("button", { name: "상품명" })).toHaveAttribute(
       "aria-pressed",
       "true",
     );
+    window.removeEventListener("shoppingday:keyword-exposure-request", handleRequest);
+  });
+
+  it("전체 자동 분류는 상품명 후보를 유지하면서 공식 태그 풀을 별도로 집계한다", async () => {
+    stubTagDictionary(true);
+    const initial = researchWithKeywords();
+    initial.relatedKeywords = [
+      {
+        ...initial.relatedKeywords[0]!,
+        id: "00000000-0000-4000-8000-000000000011",
+        keyword: "핵심욕실화1",
+        normalizedKeyword: "핵심욕실화1",
+        monthlySearchVolume: 5_000,
+      },
+      {
+        ...initial.relatedKeywords[0]!,
+        id: "00000000-0000-4000-8000-000000000012",
+        keyword: "핵심욕실화2",
+        normalizedKeyword: "핵심욕실화2",
+        monthlySearchVolume: 4_000,
+      },
+      {
+        ...initial.relatedKeywords[0]!,
+        id: "00000000-0000-4000-8000-000000000013",
+        keyword: "핵심욕실화3",
+        normalizedKeyword: "핵심욕실화3",
+        monthlySearchVolume: 3_000,
+      },
+      {
+        ...initial.relatedKeywords[0]!,
+        id: "00000000-0000-4000-8000-000000000014",
+        keyword: "보조욕실화",
+        normalizedKeyword: "보조욕실화",
+        monthlySearchVolume: 2_000,
+      },
+    ];
+    vi.stubGlobal("confirm", vi.fn(() => true));
+    const handleRequest = (event: Event) => {
+      const detail = (event as CustomEvent<{ requestId: string; keyword: string }>).detail;
+      window.dispatchEvent(new CustomEvent("shoppingday:keyword-exposure-result", {
+        detail: {
+          requestId: detail.requestId,
+          result: {
+            keyword: detail.keyword,
+            device: "pc",
+            status: "completed",
+            productCount: 40,
+            titleMatchCount: 40,
+            attributeMatchCount: 0,
+            categoryMatchCount: 0,
+            contextKeyword: "욕실화",
+            contextMatchCount: 40,
+            contextCategoryId: "50000001",
+            contextCategoryName: "욕실화",
+            contextCategoryMatchCount: 40,
+            categoryDistribution: [{ category: "생활/건강 > 욕실용품 > 욕실화", count: 40 }],
+            observedAt: "2026-08-16T00:00:00.000Z",
+            samples: [],
+            message: null,
+          },
+        },
+      }));
+    };
+    window.addEventListener("shoppingday:keyword-exposure-request", handleRequest);
+
+    render(<SourcingWorkspace initialItems={[]} initialDetail={initial} />);
+    window.dispatchEvent(new CustomEvent("shoppingday:rank-extension-status", {
+      detail: { available: true, version: "0.5.14" },
+    }));
+    fireEvent.click(sectionButton("02 연관 키워드 분류"));
+    fireEvent.click(screen.getByRole("button", { name: "전체 키워드 다시 자동 분류" }));
+
+    expect(await screen.findByText(
+      /상품명 후보 4개 중 3개를 상품명 조합 대상으로 검토합니다. 공식 태그 풀은 4개/,
+      {},
+      { timeout: 7_000 },
+    )).toBeInTheDocument();
+    const table = screen.getByRole("table");
+    const titleRow = within(table).getByText("핵심욕실화1").closest("tr")!;
+    const tagRow = within(table).getByText("보조욕실화").closest("tr")!;
+    expect(within(titleRow).getByRole("button", { name: "상품명" })).toHaveAttribute("aria-pressed", "true");
+    expect(within(tagRow).getByRole("button", { name: "상품명" })).toHaveAttribute("aria-pressed", "true");
+    expect(within(tagRow).getByText("추천 상품명 후보 · 태그 키워드 후보")).toBeInTheDocument();
+    expect(within(tagRow).getByText(/실제 상품명 조합에 선택되지 않으면 공식 태그 후보/)).toBeInTheDocument();
+    window.removeEventListener("shoppingday:keyword-exposure-request", handleRequest);
+  });
+
+  it("속성 키워드를 예상 카테고리의 공식 속성명과 값에 연결한다", async () => {
+    const initial = researchWithKeywords();
+    initial.sourcingKeyword = "야채짤순이";
+    initial.naverCategory = {
+      id: "50000001",
+      name: "야채탈수기",
+      wholeCategoryName: "생활/건강 > 주방용품 > 야채탈수기",
+    };
+    initial.relatedKeywords = [{
+      ...initial.relatedKeywords[0]!,
+      keyword: "스피너",
+      normalizedKeyword: "스피너",
+    }];
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.startsWith("/api/integrations/naver/recommend-tags")) {
+        return {
+          ok: true,
+          json: async () => ({
+            success: true,
+            data: {
+              keyword: "스피너",
+              registered: false,
+              exactTag: null,
+              candidates: [],
+            },
+          }),
+        };
+      }
+      if (url.startsWith("/api/integrations/naver/categories/recommend")) {
+        return {
+          ok: true,
+          json: async () => ({
+            success: true,
+            recommendation: {
+              category: {
+                id: "50000001",
+                name: "야채탈수기",
+                wholeCategoryName: "생활/건강 > 주방용품 > 야채탈수기",
+              },
+            },
+          }),
+        };
+      }
+      if (url.startsWith("/api/integrations/naver/category-requirements")) {
+        return {
+          ok: true,
+          json: async () => ({
+            success: true,
+            requirements: {
+              attributes: [{ attributeSeq: 10, attributeName: "타입" }],
+              attributeValues: [{
+                attributeSeq: 10,
+                attributeValueSeq: 101,
+                attributeValueName: "스피너",
+              }],
+            },
+          }),
+        };
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    }));
+    const handleRequest = (event: Event) => {
+      const detail = (event as CustomEvent<{ requestId: string }>).detail;
+      window.dispatchEvent(new CustomEvent("shoppingday:keyword-exposure-result", {
+        detail: {
+          requestId: detail.requestId,
+          result: {
+            keyword: "스피너",
+            device: "pc",
+            status: "completed",
+            productCount: 40,
+            titleMatchCount: 2,
+            attributeMatchCount: 10,
+            categoryMatchCount: 0,
+            contextKeyword: "야채짤순이",
+            contextMatchCount: 40,
+            contextCategoryId: "50000001",
+            contextCategoryName: "야채탈수기",
+            contextCategoryMatchCount: 2,
+            categoryDistribution: [
+              { category: "생활/건강 > 완구 > 피젯토이", count: 35 },
+              { category: "생활/건강 > 주방용품 > 야채탈수기", count: 2 },
+            ],
+            observedAt: "2026-08-16T00:00:00.000Z",
+            samples: [],
+            message: null,
+          },
+        },
+      }));
+    };
+    window.addEventListener("shoppingday:keyword-exposure-request", handleRequest);
+
+    render(<SourcingWorkspace initialItems={[]} initialDetail={initial} />);
+    window.dispatchEvent(new CustomEvent("shoppingday:rank-extension-status", {
+      detail: { available: true, version: "0.5.14" },
+    }));
+    fireEvent.click(sectionButton("02 연관 키워드 분류"));
+    const row = within(screen.getByRole("table")).getByText("스피너").closest("tr")!;
+    fireEvent.click(within(row).getByRole("button", { name: "노출 분석" }));
+
+    const attributeSignal = (await within(row).findByText("공식 속성")).parentElement!;
+    expect(attributeSignal).toHaveTextContent("연결");
+    expect(attributeSignal).toHaveTextContent("타입 > 스피너");
+    expect(within(row).getByText("추천 속성 키워드")).toBeInTheDocument();
+    expect(within(row).getByText("카테고리 적합").parentElement).toHaveTextContent("단독 검색 다른 상품군");
+    expect(within(row).getByText("생활/건강 > 완구 > 피젯토이")).toBeInTheDocument();
+    expect(within(row).getByText("35/40건")).toBeInTheDocument();
+    expect(within(row).queryByRole("button", { name: "키워드 삭제" })).not.toBeInTheDocument();
+    window.removeEventListener("shoppingday:keyword-exposure-request", handleRequest);
+  });
+
+  it("기준 상품과 다른 검색 결과가 많으면 자동 추천 대신 확인 필요를 표시한다", async () => {
+    stubTagDictionary(false);
+    const initial = researchWithKeywords();
+    initial.sourcingKeyword = "야채짤순이";
+    initial.relatedKeywords = [
+      {
+        ...initial.relatedKeywords[0]!,
+        keyword: "스피너",
+        normalizedKeyword: "스피너",
+      },
+    ];
+    const handleRequest = (event: Event) => {
+      const detail = (
+        event as CustomEvent<{
+          requestId: string;
+          keyword: string;
+          contextKeyword: string;
+        }>
+      ).detail;
+      expect(detail.contextKeyword).toBe("야채짤순이");
+      window.dispatchEvent(
+        new CustomEvent("shoppingday:keyword-exposure-result", {
+          detail: {
+            requestId: detail.requestId,
+            result: {
+              keyword: detail.keyword,
+              device: "pc",
+              status: "completed",
+              productCount: 40,
+              titleMatchCount: 30,
+              attributeMatchCount: 0,
+              categoryMatchCount: 0,
+              contextKeyword: detail.contextKeyword,
+              contextMatchCount: 2,
+              contextCategoryId: "50000001",
+              contextCategoryName: "욕실화",
+              contextCategoryMatchCount: 2,
+              categoryDistribution: [
+                { category: "완구 > 피젯토이", count: 35 },
+                { category: "생활/건강 > 욕실용품 > 욕실화", count: 2 },
+              ],
+              observedAt: "2026-08-16T00:00:00.000Z",
+              samples: [
+                {
+                  title: "LED 어린이 장난감 스피너",
+                  matchedIn: ["product_name"],
+                  evidence: "LED 어린이 장난감 스피너",
+                  category: "완구 > 피젯토이",
+                  contextMatched: false,
+                },
+              ],
+              message: null,
+            },
+          },
+        }),
+      );
+    };
+    window.addEventListener("shoppingday:keyword-exposure-request", handleRequest);
+
+    render(<SourcingWorkspace initialItems={[]} initialDetail={initial} />);
+    window.dispatchEvent(
+      new CustomEvent("shoppingday:rank-extension-status", {
+        detail: { available: true, version: "0.5.14" },
+      }),
+    );
+    fireEvent.click(sectionButton("02 연관 키워드 분류"));
+    const row = within(screen.getByRole("table")).getByText("스피너").closest("tr")!;
+    fireEvent.click(within(row).getByRole("button", { name: "노출 분석" }));
+
+    expect(await within(row).findByText("카테고리 불일치 · 삭제 검토")).toBeInTheDocument();
+    expect(within(row).getByText("카테고리 적합").parentElement).toHaveTextContent("2/40");
+    expect(within(row).getByRole("button", { name: "키워드 삭제" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "카테고리 삭제 검토 1" })).toBeEnabled();
+    expect(within(row).queryByText(/추천 상품명 키워드/)).not.toBeInTheDocument();
+    expect(within(row).getAllByText(/완구 > 피젯토이/).length).toBeGreaterThanOrEqual(1);
     window.removeEventListener("shoppingday:keyword-exposure-request", handleRequest);
   });
 
@@ -460,6 +811,39 @@ function sectionButton(name: string) {
   return screen.getByRole("button", { name: new RegExp(name) });
 }
 
+function stubTagDictionary(registered: boolean) {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.startsWith("/api/integrations/naver/category-requirements")) {
+        return {
+          ok: true,
+          json: async () => ({
+            success: true,
+            requirements: { attributes: [], attributeValues: [] },
+          }),
+        };
+      }
+      if (!url.startsWith("/api/integrations/naver/recommend-tags")) {
+        throw new Error(`Unexpected request: ${url}`);
+      }
+      return {
+        ok: true,
+        json: async () => ({
+          success: true,
+          data: {
+            keyword: "테스트키워드",
+            registered,
+            exactTag: registered ? { code: 123, text: "테스트키워드" } : null,
+            candidates: [],
+          },
+        }),
+      };
+    }),
+  );
+}
+
 function researchWithKeywords(): SourcingResearchRecord {
   return {
     id: "00000000-0000-4000-8000-000000000001",
@@ -468,6 +852,11 @@ function researchWithKeywords(): SourcingResearchRecord {
     monthlySearchVolume: 12820,
     sixMonthRevenue: null,
     marketNotes: "",
+    naverCategory: {
+      id: "50000001",
+      name: "욕실화",
+      wholeCategoryName: "생활/건강 > 욕실용품 > 욕실화",
+    },
     coupangAveragePrice: null,
     naverAveragePrice: null,
     expectedSellingPrice: null,

@@ -118,6 +118,49 @@ async function handleMessage(message, sender) {
     return { ok: true };
   }
 
+  if (message?.type === "shoppingday.smartstore-review.request") {
+    assertShoppingdaySender(sender);
+    const request = validateSmartstoreReviewRequest(message.payload);
+    const sourceTabId = sender.tab?.id;
+    if (!sourceTabId) throw new Error("Shoppingday 탭을 확인하지 못했습니다.");
+    const tab = await chrome.tabs.create({ url: "about:blank", active: true });
+    if (!tab.id) throw new Error("스마트스토어 상품 탭을 열지 못했습니다.");
+    await chrome.storage.session.set({
+      [pendingKey(tab.id)]: {
+        kind: "smartstore_review",
+        sourceTabId,
+        requestId: request.requestId,
+        payload: request,
+        createdAt: Date.now(),
+      },
+    });
+    await chrome.tabs.update(tab.id, { url: request.url, active: true });
+    return { ok: true };
+  }
+
+  if (message?.type === "shoppingday.smartstore-review.ready") {
+    assertSmartstoreSender(sender);
+    const pending = await getPending(sender.tab?.id);
+    return pending?.kind === "smartstore_review"
+      ? { ok: true, payload: { ...pending.payload, requestId: pending.requestId } }
+      : { ok: false, message: "대기 중인 스마트스토어 리뷰 가져오기가 없습니다." };
+  }
+
+  if (message?.type === "shoppingday.smartstore-review.result") {
+    assertSmartstoreSender(sender);
+    const pending = await getPending(sender.tab?.id);
+    if (!pending || pending.kind !== "smartstore_review") {
+      return { ok: false, message: "스마트스토어 리뷰 가져오기 요청이 만료되었습니다." };
+    }
+    const result = validateSmartstoreReviewResult(message.result);
+    await chrome.tabs.sendMessage(pending.sourceTabId, {
+      type: "shoppingday.smartstore-review.result",
+      requestId: pending.requestId,
+      result,
+    });
+    return { ok: true };
+  }
+
   if (message?.type === "shoppingday.rank.result") {
     assertNaverSender(sender);
     const naverTabId = sender.tab?.id;
@@ -349,13 +392,84 @@ function validateKeywordExposureRequest(value) {
   const requestId =
     typeof value?.requestId === "string" ? value.requestId.trim() : "";
   const keyword = typeof value?.keyword === "string" ? value.keyword.trim() : "";
+  const contextKeyword =
+    typeof value?.contextKeyword === "string" ? value.contextKeyword.trim() : "";
+  const contextCategoryId =
+    typeof value?.contextCategoryId === "string" ? value.contextCategoryId.trim() : "";
+  const contextCategoryName =
+    typeof value?.contextCategoryName === "string" ? value.contextCategoryName.trim() : "";
   if (!requestId || requestId.length > 100) {
     throw new Error("키워드 노출 분석 요청 ID가 올바르지 않습니다.");
   }
   if (!keyword || keyword.length > 100) {
     throw new Error("분석할 키워드를 입력해 주세요.");
   }
-  return { requestId, keyword, maximumProducts: 40 };
+  if (!contextKeyword || contextKeyword.length > 100) {
+    throw new Error("검색 의도를 비교할 기준 상품어를 입력해 주세요.");
+  }
+  if (!/^\d{1,20}$/.test(contextCategoryId) || !contextCategoryName || contextCategoryName.length > 200) {
+    throw new Error("분류 기준 네이버 카테고리를 선택해 주세요.");
+  }
+  return {
+    requestId,
+    keyword,
+    contextKeyword,
+    contextCategoryId,
+    contextCategoryName,
+    maximumProducts: 40,
+  };
+}
+
+function validateSmartstoreReviewRequest(value) {
+  const requestId =
+    typeof value?.requestId === "string" ? value.requestId.trim() : "";
+  const rawUrl = typeof value?.url === "string" ? value.url.trim() : "";
+  if (!requestId || requestId.length > 100) {
+    throw new Error("리뷰 가져오기 요청 ID가 올바르지 않습니다.");
+  }
+  const url = new URL(rawUrl);
+  if (
+    url.protocol !== "https:" ||
+    !["smartstore.naver.com", "m.smartstore.naver.com", "brand.naver.com"].includes(url.hostname) ||
+    !/^\/[^/]+\/products\/\d+/.test(url.pathname)
+  ) {
+    throw new Error("스마트스토어 또는 브랜드스토어 상품 주소를 입력해 주세요.");
+  }
+  return { requestId, url: url.toString() };
+}
+
+function validateSmartstoreReviewResult(value) {
+  const reviews = Array.isArray(value?.reviews) ? value.reviews : [];
+  const validated = reviews.slice(0, 100).flatMap((review) => {
+    const content =
+      typeof review?.content === "string" ? review.content.trim() : "";
+    const rating = Number(review?.rating);
+    if (!content || content.length > 10_000) return [];
+    return [{
+      content,
+      rating:
+        Number.isInteger(rating) && rating >= 1 && rating <= 5
+          ? rating
+          : null,
+    }];
+  });
+  if (!validated.length) {
+    throw new Error("현재 화면에서 가져올 리뷰를 찾지 못했습니다.");
+  }
+  return {
+    status: "completed",
+    sourceUrl:
+      typeof value?.sourceUrl === "string" ? value.sourceUrl.slice(0, 2_000) : "",
+    productName:
+      typeof value?.productName === "string"
+        ? value.productName.trim().slice(0, 500)
+        : "",
+    reviews: validated,
+    observedAt:
+      typeof value?.observedAt === "string"
+        ? value.observedAt
+        : new Date().toISOString(),
+  };
 }
 
 function validateSupplierRequest(value) {
@@ -416,6 +530,16 @@ function assertNaverSender(sender) {
   }
 }
 
+function assertSmartstoreSender(sender) {
+  if (!sender.url) {
+    throw new Error("허용되지 않은 스마트스토어 페이지입니다.");
+  }
+  const hostname = new URL(sender.url).hostname;
+  if (!["smartstore.naver.com", "m.smartstore.naver.com", "brand.naver.com"].includes(hostname)) {
+    throw new Error("허용되지 않은 스마트스토어 페이지입니다.");
+  }
+}
+
 function assertZicgamSender(sender) {
   if (!sender.url || new URL(sender.url).hostname !== "zicgam.com") {
     throw new Error("허용되지 않은 직감 페이지입니다.");
@@ -428,8 +552,11 @@ async function getPending(tabId) {
   const stored = await chrome.storage.session.get(key);
   const pending = stored[key];
   if (!pending) return null;
-  const maximumAge =
-    pending.kind === "zicgam_catalog" ? 24 * 60 * 60 * 1000 : 2 * 60 * 1000;
+  const maximumAge = pending.kind === "zicgam_catalog"
+    ? 24 * 60 * 60 * 1000
+    : pending.kind === "smartstore_review"
+      ? 30 * 60 * 1000
+      : 2 * 60 * 1000;
   if (Date.now() - pending.createdAt > maximumAge) {
     await chrome.storage.session.remove(key);
     return null;

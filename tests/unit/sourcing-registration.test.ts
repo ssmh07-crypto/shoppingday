@@ -90,6 +90,11 @@ function research(): SourcingResearchRecord {
     monthlySearchVolume: 12_000,
     sixMonthRevenue: 200_000_000,
     marketNotes: "",
+    naverCategory: {
+      id: "50000001",
+      name: "욕실화",
+      wholeCategoryName: "생활/건강 > 욕실용품 > 욕실화",
+    },
     coupangAveragePrice: 18_000,
     naverAveragePrice: 20_000,
     expectedSellingPrice: 19_900,

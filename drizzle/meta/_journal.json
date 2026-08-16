@@ -211,6 +211,13 @@
       "when": 1786632338001,
       "tag": "0029_nosy_black_bird",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1786876084209,
+      "tag": "0030_broad_zuras",
+      "breakpoints": true
     }
   ]
 }

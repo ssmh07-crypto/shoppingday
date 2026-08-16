@@ -3,6 +3,8 @@ import { assessSearchTag } from "@/modules/keywords/search-tag-quality";
 
 const TITLE_LIMIT = 50;
 const TITLE_REVIEW_LENGTH = 40;
+const TITLE_PRIMARY_KEYWORD_COUNT = 3;
+const TITLE_ADDITIONAL_KEYWORD_COUNT = 7;
 const TAG_LIMIT = 10;
 const TAG_LENGTH_LIMIT = 30;
 const PROMOTIONAL_TERMS = [
@@ -51,7 +53,7 @@ export function buildSourcingRegistrationDraft(
     selectedTitleKeywords?: string[];
   } = {},
 ): SourcingRegistrationDraft {
-  const eligibleTitleCandidates = eligibleLowVolumeKeywords(
+  const eligibleTitleCandidates = eligibleTitleKeywords(
     relatedKeywords,
     "product_name",
   );
@@ -74,18 +76,22 @@ export function buildSourcingRegistrationDraft(
         selectedNormalized.has(normalizeKeyword(candidate.keyword)),
       )
     : eligibleTitleCandidates;
+  const titleCombinationCandidates = selectTitleCombinationCandidates(
+    selectedTitleCandidates,
+    options.preferredTitleKeyword,
+  );
   const sourceNormalized = normalizeKeyword(sourcingKeyword);
   const supplementalTitleCandidates = selectedNormalized
-    ? selectedTitleCandidates.filter(
+    ? titleCombinationCandidates.filter(
         (candidate) =>
           !normalizeKeyword(candidate.keyword).includes(sourceNormalized),
       )
     : [];
   const automaticallyComposableCandidates = selectedNormalized
-    ? selectedTitleCandidates.filter((candidate) =>
+    ? titleCombinationCandidates.filter((candidate) =>
         normalizeKeyword(candidate.keyword).includes(sourceNormalized),
       )
-    : selectedTitleCandidates;
+    : titleCombinationCandidates;
   const diverseTitleKeywords = selectDiverseTitleKeywords(
     sourcingKeyword,
     automaticallyComposableCandidates,
@@ -98,6 +104,12 @@ export function buildSourcingRegistrationDraft(
   const attributeKeywords = sortedKeywords(relatedKeywords, "attribute");
   const categoryKeywords = sortedKeywords(relatedKeywords, "category");
   const warnings: string[] = [];
+  const excludedLowVolumeTitleKeywords = relatedKeywords.filter(
+    (keyword) =>
+      keyword.placement === "product_name" &&
+      keyword.monthlySearchVolume !== null &&
+      keyword.monthlySearchVolume < 100,
+  );
 
   const composedTitle = composeTitle(
     sourcingKeyword,
@@ -139,12 +151,6 @@ export function buildSourcingRegistrationDraft(
     TITLE_LIMIT,
   );
   const title = titleWithSupplements.title;
-  const lengthEligibleTagKeywords = tagCandidates.filter(
-    (keyword) => keyword.length <= TAG_LENGTH_LIMIT,
-  );
-  const selectableTagKeywords = lengthEligibleTagKeywords.filter(
-    (keyword) => assessSearchTag(keyword, { title }).length === 0,
-  );
   const usedTitleKeywords = uniqueKeywords(
     [
       ...titleWithSupplements.usedKeywords,
@@ -156,10 +162,29 @@ export function buildSourcingRegistrationDraft(
         .map((source) => source.keyword),
     ].filter((keyword): keyword is string => keyword !== null),
   );
+  const usedTitleKeywordSet = new Set(usedTitleKeywords.map(normalizeKeyword));
+  const lengthEligibleTagKeywords = tagCandidates.filter(
+    (keyword) => keyword.length <= TAG_LENGTH_LIMIT,
+  );
+  const selectableTagKeywords = lengthEligibleTagKeywords.filter(
+    (keyword) =>
+      !usedTitleKeywordSet.has(normalizeKeyword(keyword)) &&
+      assessSearchTag(keyword, { title }).length === 0,
+  );
   const searchTags = selectableTagKeywords.slice(0, TAG_LIMIT);
 
   if (!titleKeywords.length) {
-    warnings.push("검색수 1,000 이하로 분류된 상품명 키워드가 없습니다.");
+    warnings.push("월 검색수 100 이상으로 분류된 상품명 키워드가 없습니다.");
+  }
+  if (excludedLowVolumeTitleKeywords.length) {
+    warnings.push(
+      `월간 검색수 100 미만 상품명 키워드는 상품명에서 제외했습니다: ${excludedLowVolumeTitleKeywords.map((item) => item.keyword).join(", ")}`,
+    );
+  }
+  if (selectedTitleCandidates.length > titleCombinationCandidates.length) {
+    warnings.push(
+      `상품명 조합은 월간 검색수 상위 ${TITLE_PRIMARY_KEYWORD_COUNT}개와 나머지 후보 최대 ${TITLE_ADDITIONAL_KEYWORD_COUNT}개만 검토했습니다.`,
+    );
   }
   if (composedTitle.removedPromotionalTerms.length) {
     warnings.push(
@@ -209,7 +234,9 @@ export function buildSourcingRegistrationDraft(
     warnings.push("30자를 넘는 태그 후보는 표시하지만 상품 등록 태그로 선택할 수 없습니다.");
   }
   const excludedTagKeywords = lengthEligibleTagKeywords.filter(
-    (keyword) => assessSearchTag(keyword, { title }).length > 0,
+    (keyword) =>
+      usedTitleKeywordSet.has(normalizeKeyword(keyword)) ||
+      assessSearchTag(keyword, { title }).length > 0,
   );
   if (excludedTagKeywords.length) {
     warnings.push(
@@ -425,30 +452,74 @@ export function categoryKeywordsInTitle(title: string, categoryKeywords: string[
   });
 }
 
-function eligibleLowVolumeKeywords(
+function eligibleTitleKeywords(
   keywords: SourcingRelatedKeyword[],
   placement: "product_name",
 ) {
-  return keywords
+  const ordered = keywords
     .filter(
       (keyword) =>
         keyword.placement === placement &&
         keyword.monthlySearchVolume !== null &&
-        keyword.monthlySearchVolume <= 1_000,
+        keyword.monthlySearchVolume >= 100,
     )
-    .sort(compareByVolumeThenKeyword)
+    .sort(compareByVolumeThenKeyword);
+  const primary = ordered.slice(0, TITLE_PRIMARY_KEYWORD_COUNT);
+  const primaryIds = new Set(primary.map((keyword) => keyword.id));
+  const additional = ordered.filter(
+    (keyword) =>
+      !primaryIds.has(keyword.id) &&
+      keyword.monthlySearchVolume! <= 1_000,
+  );
+  return [...primary, ...additional]
     .map((keyword) => ({
       keyword: keyword.keyword,
       monthlySearchVolume: keyword.monthlySearchVolume!,
     }));
 }
 
+function selectTitleCombinationCandidates(
+  candidates: Array<{ keyword: string; monthlySearchVolume: number }>,
+  preferredKeyword: string | undefined,
+) {
+  const seen = new Set<string>();
+  const uniqueCandidates = candidates.filter((candidate) => {
+    const normalized = normalizeKeyword(candidate.keyword);
+    if (!normalized || seen.has(normalized)) return false;
+    seen.add(normalized);
+    return true;
+  });
+  const primary = uniqueCandidates.slice(0, TITLE_PRIMARY_KEYWORD_COUNT);
+  const preferredNormalized = normalizeKeyword(preferredKeyword ?? "");
+  const additional = uniqueCandidates
+    .slice(TITLE_PRIMARY_KEYWORD_COUNT)
+    .sort((left, right) => {
+      const leftPreferred =
+        Boolean(preferredNormalized) &&
+        normalizeKeyword(left.keyword) === preferredNormalized;
+      const rightPreferred =
+        Boolean(preferredNormalized) &&
+        normalizeKeyword(right.keyword) === preferredNormalized;
+      if (leftPreferred !== rightPreferred) return leftPreferred ? -1 : 1;
+      return (
+        right.monthlySearchVolume - left.monthlySearchVolume ||
+        left.keyword.localeCompare(right.keyword, "ko")
+      );
+    })
+    .slice(0, TITLE_ADDITIONAL_KEYWORD_COUNT);
+
+  return [...primary, ...additional];
+}
+
 function sortedTagKeywords(keywords: SourcingRelatedKeyword[]) {
   return uniqueKeywords(
     keywords
-      .filter((keyword) => keyword.placement === "tag")
+      .filter((keyword) =>
+        keyword.placement === "tag" ||
+        (keyword.placement === "product_name" && Boolean(keyword.officialTag))
+      )
       .sort(compareByVolumeThenKeyword)
-      .map((keyword) => keyword.keyword),
+      .map((keyword) => keyword.officialTag?.text ?? keyword.keyword),
   );
 }
 

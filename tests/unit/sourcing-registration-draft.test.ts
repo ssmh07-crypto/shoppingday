@@ -6,7 +6,7 @@ import {
 import type { SourcingRelatedKeyword } from "@/modules/sourcing/types";
 
 describe("소싱 상품 등록 초안", () => {
-  it("상품명은 검색수 1,000 이하만 쓰고 태그는 검색수와 관계없이 추출한다", () => {
+  it("상품명은 검색수 상위 3개와 100~1,000 후보를 쓰고 태그는 검색수와 관계없이 추출한다", () => {
     const draft = buildSourcingRegistrationDraft("욕실화", [
       keyword("미끄럼방지욕실화", 980, "product_name"),
       keyword("물빠짐욕실화", 420, "product_name"),
@@ -15,10 +15,23 @@ describe("소싱 상품 등록 초안", () => {
       keyword("대형욕실화", 1_001, "product_name"),
     ]);
 
-    expect(draft.title).toBe("미끄럼방지 물빠짐 욕실화");
-    expect(draft.title).not.toContain("대형");
+    expect(draft.title).toBe("미끄럼방지 물빠짐 대형 욕실화");
     expect(draft.tagCandidates).toEqual(["화장실슬리퍼", "욕실슬리퍼"]);
     expect(draft.searchTags).toEqual(["화장실슬리퍼", "욕실슬리퍼"]);
+  });
+
+  it("상품명으로 분류했어도 검색수 100 미만 키워드는 제목 재료에서 제외한다", () => {
+    const draft = buildSourcingRegistrationDraft("욕실화", [
+      keyword("예쁜욕실화", 100, "product_name"),
+      keyword("초저검색욕실화", 99, "product_name"),
+    ]);
+
+    expect(draft.title).toBe("예쁜 욕실화");
+    expect(draft.titleCandidates).toEqual(["예쁜욕실화"]);
+    expect(draft.usedTitleKeywords).not.toContain("초저검색욕실화");
+    expect(draft.warnings.join(" ")).toContain(
+      "월간 검색수 100 미만 상품명 키워드는 상품명에서 제외했습니다: 초저검색욕실화",
+    );
   });
 
   it("태그 후보 전체는 유지하되 기본 선택은 검색수 순으로 10개까지만 만든다", () => {
@@ -33,6 +46,25 @@ describe("소싱 상품 등록 초안", () => {
     expect(draft.searchTags).toHaveLength(10);
     expect(draft.searchTags).not.toContain("태그11");
     expect(draft.warnings.join(" ")).toContain("최대 10개");
+  });
+
+  it("상품명 후보의 공식 태그 중 실제 상품명에 쓰이지 않은 키워드를 태그로 사용한다", () => {
+    const candidates = [
+      keyword("미끄럼방지욕실화", 5_000, "product_name"),
+      keyword("물빠짐욕실화", 4_000, "product_name"),
+      keyword("앞막힌욕실화", 3_000, "product_name"),
+      keyword("보조태그", 2_000, "product_name"),
+    ].map((item, index) => ({
+      ...item,
+      officialTag: { code: index + 1, text: item.keyword },
+    }));
+
+    const draft = buildSourcingRegistrationDraft("욕실화", candidates);
+
+    expect(draft.usedTitleKeywords).not.toContain("보조태그");
+    expect(draft.tagCandidates).toContain("보조태그");
+    expect(draft.searchTags).toContain("보조태그");
+    expect(draft.searchTags).not.toContain("미끄럼방지욕실화");
   });
 
   it("상품명 중복 및 홍보성 태그는 후보에 남기고 기본 선택에서 제외한다", () => {
@@ -118,6 +150,52 @@ describe("소싱 상품 등록 초안", () => {
     expect(draft.warnings.join(" ")).toContain("50자");
   });
 
+  it("태그사전 정확 일치 표현을 등록 태그로 사용한다", () => {
+    const official = keyword("나물 짜기", 500, "tag");
+    official.officialTag = { code: 568318, text: "나물짜기" };
+    const draft = buildSourcingRegistrationDraft("짤순이", [official]);
+
+    expect(draft.tagCandidates).toEqual(["나물짜기"]);
+    expect(draft.searchTags).toEqual(["나물짜기"]);
+  });
+
+  it("검색수 상위 3개와 나머지 최대 7개로 8~10개를 상품명 조합 대상으로 사용한다", () => {
+    const draft = buildSourcingRegistrationDraft("컵", [
+      keyword("가컵", 1_000, "product_name"),
+      keyword("나컵", 900, "product_name"),
+      keyword("다컵", 800, "product_name"),
+      keyword("라컵", 700, "product_name"),
+      keyword("마컵", 600, "product_name"),
+      keyword("바컵", 500, "product_name"),
+      keyword("사컵", 400, "product_name"),
+      keyword("아컵", 300, "product_name"),
+      keyword("자컵", 200, "product_name"),
+      keyword("차컵", 150, "product_name"),
+      keyword("카컵", 100, "product_name"),
+    ]);
+
+    expect(draft.titleCandidates).toHaveLength(11);
+    expect(draft.usedTitleKeywords).toHaveLength(10);
+    expect(draft.usedTitleKeywords).toEqual(
+      expect.arrayContaining([
+        "가컵",
+        "나컵",
+        "다컵",
+        "라컵",
+        "마컵",
+        "바컵",
+        "사컵",
+        "아컵",
+        "자컵",
+        "차컵",
+      ]),
+    );
+    expect(draft.usedTitleKeywords).not.toContain("카컵");
+    expect(draft.warnings.join(" ")).toContain(
+      "월간 검색수 상위 3개와 나머지 후보 최대 7개",
+    );
+  });
+
   it("같은 의미군에서는 검색량이 높은 관련 후보를 우선한다", () => {
     const draft = buildSourcingRegistrationDraft("욕실화", [
       keyword("낮은욕실화", 950, "product_name"),
@@ -176,15 +254,15 @@ describe("소싱 상품 등록 초안", () => {
 
     expect(draft.title).toContain("채소탈수기");
     expect(draft.title).toContain("채소물기제거기");
-    expect(draft.title).toContain("가정용 야채짤순이");
+    expect(draft.title).not.toContain("가정용 야채짤순이");
     expect(draft.title).not.toContain("두부탈수기");
     expect(draft.usedTitleKeywords).toEqual(
       expect.arrayContaining([
         "채소탈수기",
         "채소물기제거기",
-        "가정용 야채짤순이",
       ]),
     );
+    expect(draft.warnings.join(" ")).toContain("가정용 야채짤순이");
     expect(draft.title.length).toBeLessThanOrEqual(50);
   });
 
@@ -225,7 +303,7 @@ describe("소싱 상품 등록 초안", () => {
     expect(draft.title.length).toBeLessThanOrEqual(50);
   });
 
-  it("후보가 많아도 두 명사 기준점 사이의 서로 다른 특징을 누락하지 않는다", () => {
+  it("후보가 많아도 검색수 100 이상인 서로 다른 특징만 사용한다", () => {
     const draft = buildSourcingRegistrationDraft("욕실화", [
       keyword("낮은 욕실화", 790, "product_name"),
       keyword("앞막힌 욕실화", 340, "product_name"),
@@ -240,17 +318,18 @@ describe("소싱 상품 등록 초안", () => {
       keyword("물때안끼는욕실화", 30, "product_name"),
     ]);
 
-    expect(draft.title).toBe(
-      "낮은 욕실화 안 미끄러운 푹신한 280 욕실화 앞막힌 EVA 물때 안 끼는 국산 욕실슬리퍼",
-    );
-    expect(draft.title).toMatch(/^낮은 욕실화 /);
-    expect(draft.title).toMatch(/국산 욕실슬리퍼$/);
+    expect(draft.title).toBe("낮은 안 미끄러운 앞막힌 예쁜 욕실화");
+    expect(draft.title).toMatch(/^낮은 /);
     expect(draft.title).toContain("앞막힌");
     expect(draft.title).toContain("안 미끄러운");
-    expect(draft.title.length).toBeGreaterThanOrEqual(40);
     expect(draft.title.length).toBeLessThanOrEqual(50);
-    expect(draft.title.match(/욕실화/g)).toHaveLength(2);
-    expect(draft.usedTitleKeywords.length).toBeGreaterThan(2);
+    expect(draft.title).not.toMatch(/국산|280|EVA|푹신한|물때/);
+    expect(draft.usedTitleKeywords).toEqual([
+      "낮은 욕실화",
+      "안미끄러운욕실화",
+      "앞막힌 욕실화",
+      "예쁜 욕실화",
+    ]);
   });
 });
 

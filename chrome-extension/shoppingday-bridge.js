@@ -11,17 +11,20 @@ const CATALOG_STOP_EVENT = "shoppingday:zicgam-catalog-stop";
 const CATALOG_PROGRESS_EVENT = "shoppingday:zicgam-catalog-progress";
 const KEYWORD_EXPOSURE_REQUEST_EVENT = "shoppingday:keyword-exposure-request";
 const KEYWORD_EXPOSURE_RESULT_EVENT = "shoppingday:keyword-exposure-result";
+const SMARTSTORE_REVIEW_REQUEST_EVENT = "shoppingday:smartstore-review-request";
+const SMARTSTORE_REVIEW_RESULT_EVENT = "shoppingday:smartstore-review-result";
+const EXTENSION_CONTEXT_MESSAGE =
+  "Chrome 확장 프로그램이 업데이트되었습니다. 확장 프로그램을 다시 불러온 뒤 Shoppingday 페이지를 새로고침해 주세요.";
 
 window.addEventListener(PING_EVENT, () => {
   void reportStatus();
 });
 
 window.addEventListener(REQUEST_EVENT, (event) => {
-  void chrome.runtime
-    .sendMessage({
-      type: "shoppingday.rank.request",
-      payload: event.detail,
-    })
+  void sendRuntimeMessage({
+    type: "shoppingday.rank.request",
+    payload: event.detail,
+  })
     .then((response) => {
       if (response?.ok) return;
       dispatchResult(event.detail?.requestId, {
@@ -50,11 +53,10 @@ window.addEventListener(REQUEST_EVENT, (event) => {
 });
 
 window.addEventListener(KEYWORD_EXPOSURE_REQUEST_EVENT, (event) => {
-  void chrome.runtime
-    .sendMessage({
-      type: "shoppingday.keyword-exposure.request",
-      payload: event.detail,
-    })
+  void sendRuntimeMessage({
+    type: "shoppingday.keyword-exposure.request",
+    payload: event.detail,
+  })
     .then((response) => {
       if (response?.ok) return;
       dispatchKeywordExposureResult(event.detail?.requestId, {
@@ -65,6 +67,12 @@ window.addEventListener(KEYWORD_EXPOSURE_REQUEST_EVENT, (event) => {
         titleMatchCount: 0,
         attributeMatchCount: 0,
         categoryMatchCount: 0,
+        contextKeyword: event.detail?.contextKeyword ?? "",
+        contextMatchCount: 0,
+        contextCategoryId: event.detail?.contextCategoryId ?? "",
+        contextCategoryName: event.detail?.contextCategoryName ?? "",
+        contextCategoryMatchCount: 0,
+        categoryDistribution: [],
         observedAt: new Date().toISOString(),
         samples: [],
         message: response?.message ?? "키워드 노출 분석 요청에 실패했습니다.",
@@ -79,6 +87,12 @@ window.addEventListener(KEYWORD_EXPOSURE_REQUEST_EVENT, (event) => {
         titleMatchCount: 0,
         attributeMatchCount: 0,
         categoryMatchCount: 0,
+        contextKeyword: event.detail?.contextKeyword ?? "",
+        contextMatchCount: 0,
+        contextCategoryId: event.detail?.contextCategoryId ?? "",
+        contextCategoryName: event.detail?.contextCategoryName ?? "",
+        contextCategoryMatchCount: 0,
+        categoryDistribution: [],
         observedAt: new Date().toISOString(),
         samples: [],
         message:
@@ -89,12 +103,39 @@ window.addEventListener(KEYWORD_EXPOSURE_REQUEST_EVENT, (event) => {
     });
 });
 
-window.addEventListener(SUPPLIER_REQUEST_EVENT, (event) => {
-  void chrome.runtime
-    .sendMessage({
-      type: "shoppingday.supplier.request",
-      payload: event.detail,
+window.addEventListener(SMARTSTORE_REVIEW_REQUEST_EVENT, (event) => {
+  void sendRuntimeMessage({
+    type: "shoppingday.smartstore-review.request",
+    payload: event.detail,
+  })
+    .then((response) => {
+      if (response?.ok) return;
+      dispatchSmartstoreReviewResult(event.detail?.requestId, {
+        status: "failed",
+        sourceUrl: event.detail?.url ?? "",
+        productName: "",
+        reviews: [],
+        observedAt: new Date().toISOString(),
+        message: response?.message ?? "스마트스토어 리뷰 가져오기를 시작하지 못했습니다.",
+      });
     })
+    .catch((error) => {
+      dispatchSmartstoreReviewResult(event.detail?.requestId, {
+        status: "failed",
+        sourceUrl: event.detail?.url ?? "",
+        productName: "",
+        reviews: [],
+        observedAt: new Date().toISOString(),
+        message: error instanceof Error ? error.message : "확장 프로그램과 통신하지 못했습니다.",
+      });
+    });
+});
+
+window.addEventListener(SUPPLIER_REQUEST_EVENT, (event) => {
+  void sendRuntimeMessage({
+    type: "shoppingday.supplier.request",
+    payload: event.detail,
+  })
     .then((response) => {
       if (response?.ok) return;
       dispatchSupplierResult(event.detail?.requestId, failedSupplierResult(
@@ -116,11 +157,10 @@ window.addEventListener(SUPPLIER_REQUEST_EVENT, (event) => {
 });
 
 window.addEventListener(CATALOG_START_EVENT, (event) => {
-  void chrome.runtime
-    .sendMessage({
-      type: "shoppingday.zicgam.catalog.start",
-      payload: event.detail,
-    })
+  void sendRuntimeMessage({
+    type: "shoppingday.zicgam.catalog.start",
+    payload: event.detail,
+  })
     .then((response) => {
       if (response?.ok) return;
       dispatchCatalogProgress(event.detail?.requestId, {
@@ -137,9 +177,14 @@ window.addEventListener(CATALOG_START_EVENT, (event) => {
 });
 
 window.addEventListener(CATALOG_STOP_EVENT, (event) => {
-  void chrome.runtime
-    .sendMessage({ type: "shoppingday.zicgam.catalog.stop" })
-    .then(() => dispatchCatalogProgress(event.detail?.requestId, { phase: "stopped" }));
+  void sendRuntimeMessage({ type: "shoppingday.zicgam.catalog.stop" })
+    .then(() => dispatchCatalogProgress(event.detail?.requestId, { phase: "stopped" }))
+    .catch((error) => {
+      dispatchCatalogProgress(event.detail?.requestId, {
+        phase: "failed",
+        message: error instanceof Error ? error.message : EXTENSION_CONTEXT_MESSAGE,
+      });
+    });
 });
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
@@ -148,6 +193,9 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
   if (message?.type === "shoppingday.keyword-exposure.result") {
     dispatchKeywordExposureResult(message.requestId, message.result);
+  }
+  if (message?.type === "shoppingday.smartstore-review.result") {
+    dispatchSmartstoreReviewResult(message.requestId, message.result);
   }
   if (message?.type === "shoppingday.supplier.result") {
     dispatchSupplierResult(message.requestId, message.result);
@@ -197,7 +245,7 @@ void reportStatus();
 
 async function reportStatus() {
   try {
-    const response = await chrome.runtime.sendMessage({
+    const response = await sendRuntimeMessage({
       type: "shoppingday.rank.ping",
     });
     window.dispatchEvent(
@@ -247,6 +295,36 @@ function dispatchKeywordExposureResult(requestId, result) {
       detail: { requestId, result },
     }),
   );
+}
+
+function dispatchSmartstoreReviewResult(requestId, result) {
+  window.dispatchEvent(
+    new CustomEvent(SMARTSTORE_REVIEW_RESULT_EVENT, {
+      detail: { requestId, result },
+    }),
+  );
+}
+
+function sendRuntimeMessage(message) {
+  try {
+    if (!chrome.runtime?.id) {
+      return Promise.reject(new Error(EXTENSION_CONTEXT_MESSAGE));
+    }
+    return chrome.runtime.sendMessage(message).catch((error) => {
+      throw normalizeRuntimeError(error);
+    });
+  } catch (error) {
+    return Promise.reject(normalizeRuntimeError(error));
+  }
+}
+
+function normalizeRuntimeError(error) {
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  return /extension context invalidated/i.test(message) || !chrome.runtime?.id
+    ? new Error(EXTENSION_CONTEXT_MESSAGE)
+    : error instanceof Error
+      ? error
+      : new Error(message || "Chrome 확장 프로그램과 통신하지 못했습니다.");
 }
 
 function failedSupplierResult(url, message) {

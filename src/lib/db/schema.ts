@@ -1162,7 +1162,12 @@ export interface SourcingReviewInputData {
   id: string;
   content: string;
   rating: number | null;
-  source: "manual" | "file" | "bulk";
+  source: "manual" | "file" | "bulk" | "smartstore";
+}
+export interface SourcingNaverCategoryData {
+  id: string;
+  name: string;
+  wholeCategoryName: string;
 }
 export type SourcingResearchStatus =
   "researching" | "candidate" | "sample_ordered" | "selected" | "rejected";
@@ -1182,6 +1187,9 @@ export const sourcingResearches = pgTable(
     monthlySearchVolume: integer("monthly_search_volume"),
     sixMonthRevenue: bigint("six_month_revenue", { mode: "number" }),
     marketNotes: text("market_notes").notNull().default(""),
+    naverCategory: jsonb("naver_category")
+      .$type<SourcingNaverCategoryData | null>()
+      .default(null),
     coupangAveragePrice: integer("coupang_average_price"),
     naverAveragePrice: integer("naver_average_price"),
     expectedSellingPrice: integer("expected_selling_price"),

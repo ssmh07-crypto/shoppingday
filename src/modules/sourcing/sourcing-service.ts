@@ -35,6 +35,7 @@ export class SourcingResearchService {
       monthlySearchVolume: row.monthlySearchVolume,
       sixMonthRevenue: row.sixMonthRevenue,
       marketNotes: row.marketNotes,
+      naverCategory: row.naverCategory,
       coupangAveragePrice: row.coupangAveragePrice,
       naverAveragePrice: row.naverAveragePrice,
       expectedSellingPrice: row.expectedSellingPrice,
@@ -134,7 +135,11 @@ export class SourcingResearchService {
 function buildSourcingRegistrationInput(
   research: Pick<
     import("./types").SourcingResearchInput,
-    "sourcingKeyword" | "relatedKeywords" | "expectedSellingPrice" | "samples"
+    | "sourcingKeyword"
+    | "relatedKeywords"
+    | "expectedSellingPrice"
+    | "samples"
+    | "naverCategory"
   >,
 ) {
   const draft = buildSourcingRegistrationDraft(
@@ -151,6 +156,7 @@ function buildSourcingRegistrationInput(
     sellingPrice: research.expectedSellingPrice,
     originalName: research.sourcingKeyword,
     supplierPrice: supplierPrices.length ? Math.min(...supplierPrices) : null,
+    naverCategoryId: research.naverCategory?.id ?? null,
   };
 }
 

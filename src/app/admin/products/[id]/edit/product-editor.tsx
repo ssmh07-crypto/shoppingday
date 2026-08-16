@@ -9,6 +9,7 @@ import type {
   SelectedImage,
 } from "@/lib/db/schema";
 import { buildSourcingRegistrationDraft } from "@/modules/sourcing/registration-draft";
+import { mergeOfficialKeywordAttributes } from "@/modules/sourcing/official-keyword-metadata";
 import {
   assessSearchTag,
   isBlockingSearchTagIssue,
@@ -84,6 +85,7 @@ type CategoryRequirements = {
   attributeValues: Array<{
     attributeSeq: number;
     attributeValueSeq: number;
+    attributeValueName?: string;
     minAttributeValue?: string;
     minAttributeValueUnitCode?: string;
     maxAttributeValue?: string;
@@ -463,8 +465,35 @@ export function ProductEditor({
             body?.error?.message ?? "카테고리 필수정보를 조회하지 못했습니다.",
           );
         }
-        setCategoryRequirements(body.requirements);
-        setCategoryRequirementsStatus("");
+        const requirements = body.requirements as CategoryRequirements;
+        setCategoryRequirements(requirements);
+        const suggestedAttributes = registrationContext
+          ? mergeOfficialKeywordAttributes(
+              [],
+              registrationContext.relatedKeywords,
+              categoryId,
+              requirements.attributeValues,
+            )
+          : [];
+        if (suggestedAttributes.length) {
+          setForm((current) => ({
+            ...current,
+            naverAttributes:
+              current.naverCategoryId === categoryId
+                ? mergeOfficialKeywordAttributes(
+                    current.naverAttributes,
+                    registrationContext?.relatedKeywords ?? [],
+                    categoryId,
+                    requirements.attributeValues,
+                  )
+                : current.naverAttributes,
+          }));
+          setCategoryRequirementsStatus(
+            `소싱 키워드에서 공식 속성 ${suggestedAttributes.length}개를 자동 연결했습니다.`,
+          );
+        } else {
+          setCategoryRequirementsStatus("");
+        }
       } catch (error) {
         if (controller.signal.aborted) return;
         setCategoryRequirementsFailed(true);
@@ -482,6 +511,7 @@ export function ProductEditor({
     categoryRequirements?.categoryId,
     form.naverCategoryId,
     categoryRequirementsRefreshKey,
+    registrationContext,
   ]);
 
   useEffect(() => {

@@ -1,6 +1,17 @@
 (() => {
   const PRODUCT_LINK_PATTERN =
     /\/(?:products|catalog)\/\d+|[?&](?:nvMid|productId|productNo)=\d+/i;
+  const PRODUCT_CARD_SELECTOR = [
+    "li",
+    "article",
+    "[data-shp-contents-id]",
+    "[class*='product_item']",
+    "[class*='productCard']",
+    "[class*='product_card']",
+    "[class*='basicList_item']",
+    "[class*='productList_item']",
+    "[class*='listProduct_item']",
+  ].join(", ");
 
   function collectShoppingCandidates(root, target) {
     const targetUrl = new URL(target.smartstoreUrl);
@@ -22,8 +33,15 @@
     });
   }
 
-  function collectShoppingKeywordExposure(root, keyword) {
+  function collectShoppingKeywordExposure(
+    root,
+    keyword,
+    contextKeyword = "",
+    contextCategoryName = "",
+  ) {
     const normalizedKeyword = normalizeText(keyword);
+    const normalizedContextKeyword = normalizeText(contextKeyword);
+    const normalizedContextCategoryName = normalizeText(contextCategoryName);
     if (!normalizedKeyword) return [];
 
     return collectProductCards(root).map(({ card, identity }) => {
@@ -38,6 +56,12 @@
       );
       const cardText = visibleText(card);
       const titleMatch = matchTitleKeyword(title, normalizedKeyword);
+      const contextMatched = normalizedContextKeyword
+        ? matchTitleKeyword(title, normalizedContextKeyword).matched
+        : true;
+      const contextCategoryMatched = normalizedContextCategoryName
+        ? includesKeyword(categoryText, normalizedContextCategoryName)
+        : true;
       const titleMatched = titleMatch.matched;
       const categoryMatched = includesKeyword(categoryText, normalizedKeyword);
       const explicitAttributeMatched = includesKeyword(
@@ -61,8 +85,11 @@
         titleMatched,
         titleMatchType: titleMatch.type,
         titleMatchSegments: titleMatch.segments,
+        contextMatched,
+        contextCategoryMatched,
         attributeMatched,
         categoryMatched,
+        category: categoryText.slice(0, 200),
         matchedIn,
         evidence: matchingEvidence(
           normalizedKeyword,
@@ -83,10 +110,7 @@
       const rawHref = anchor.getAttribute("href") ?? "";
       const href = decodeHref(anchor.href || rawHref);
       if (!PRODUCT_LINK_PATTERN.test(href)) continue;
-      const card =
-        anchor.closest(
-          "li, article, [data-shp-contents-id], [class*='product_item'], [class*='productCard'], [class*='product_card']",
-        ) ?? anchor;
+      const card = findProductCard(anchor);
       if (seenCards.has(card) || isAdvertisement(card)) continue;
       seenCards.add(card);
       const links = Array.from(card.querySelectorAll("a[href]"))
@@ -104,10 +128,23 @@
     return cards;
   }
 
+  function findProductCard(anchor) {
+    const explicitCard = anchor.closest(PRODUCT_CARD_SELECTOR);
+    if (explicitCard && explicitCard !== anchor) return explicitCard;
+
+    let ancestor = anchor.parentElement;
+    for (let depth = 0; ancestor && depth < 8; depth += 1) {
+      if (ancestor === anchor.ownerDocument?.body) break;
+      if (findProductTitle(ancestor)) return ancestor;
+      ancestor = ancestor.parentElement;
+    }
+    return explicitCard ?? anchor;
+  }
+
   function findProductTitle(card) {
     const candidates = Array.from(
       card.querySelectorAll(
-        "a[href], [class*='title'], [class*='name'], [data-testid*='title'], [data-testid*='name']",
+        "a[href], [class*='title'], [class*='product_name'], [data-testid*='title']",
       ),
     )
       .flatMap((element) => {
@@ -120,8 +157,11 @@
           element instanceof HTMLAnchorElement
             ? decodeHref(element.href || element.getAttribute("href") || "")
             : "";
-        const productHrefHint = PRODUCT_LINK_PATTERN.test(href) ? 300 : 0;
-        const titleHint = /title|name|product[_-]?link/i.test(marker) ? 1000 : 0;
+        const productHrefHint = PRODUCT_LINK_PATTERN.test(href) ? 800 : 0;
+        const titleHint = /title|product[_-]?name|product[_-]?link/i.test(marker)
+          ? 1000
+          : 0;
+        if (!productHrefHint && !titleHint) return [];
         const values = [
           visibleText(element),
           element.getAttribute("title") ?? "",
@@ -260,8 +300,26 @@
     }
   }
 
+  function summarizeShoppingCategories(products, limit = 3) {
+    const counts = new Map();
+    for (const product of products) {
+      const category = String(product.category ?? "")
+        .normalize("NFKC")
+        .replace(/\s+/g, " ")
+        .trim();
+      if (!category) continue;
+      counts.set(category, (counts.get(category) ?? 0) + 1);
+    }
+    return Array.from(counts, ([category, count]) => ({ category, count }))
+      .sort((left, right) =>
+        right.count - left.count || left.category.localeCompare(right.category, "ko-KR"),
+      )
+      .slice(0, Math.max(0, limit));
+  }
+
   globalThis.ShoppingdayRankParser = {
     collectShoppingCandidates,
     collectShoppingKeywordExposure,
+    summarizeShoppingCategories,
   };
 })();

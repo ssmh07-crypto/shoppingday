@@ -16,6 +16,8 @@ import {
 import {
   defaultSourcingSignals,
   type SourcingKeywordPlacement,
+  type SourcingNaverCategory,
+  type SourcingRelatedKeyword,
   type SourcingResearchInput,
   type SourcingResearchRecord,
   type SourcingResearchSignal,
@@ -24,12 +26,26 @@ import {
   type SourcingReviewInput,
 } from "@/modules/sourcing/types";
 import {
+  DEFAULT_TITLE_EXPOSURE_THRESHOLD_PERCENT,
+  allocateAutomaticKeywordPlacements,
+  assessKeywordContext,
+  keywordPlacementReviewReason,
   recommendKeywordPlacement,
+  selectAutomaticTitleKeywordIds,
   type KeywordExposureResult,
+  type NaverTagDictionaryResult,
+  type AutomaticKeywordPlacementAllocation,
+  type AutomaticKeywordPlacementInput,
 } from "@/modules/sourcing/keyword-exposure";
+import {
+  matchOfficialAttributeKeyword,
+  type OfficialAttributeContext,
+} from "@/modules/sourcing/official-keyword-metadata";
 
 const KEYWORD_EXPOSURE_REQUEST_EVENT = "shoppingday:keyword-exposure-request";
 const KEYWORD_EXPOSURE_RESULT_EVENT = "shoppingday:keyword-exposure-result";
+const SMARTSTORE_REVIEW_REQUEST_EVENT = "shoppingday:smartstore-review-request";
+const SMARTSTORE_REVIEW_RESULT_EVENT = "shoppingday:smartstore-review-result";
 const EXTENSION_STATUS_EVENT = "shoppingday:rank-extension-status";
 const EXTENSION_PING_EVENT = "shoppingday:rank-extension-ping";
 
@@ -63,6 +79,16 @@ const keywordPlacementLabels: Record<SourcingKeywordPlacement, string> = {
 };
 
 type KeywordVolumeFilter = "all" | "up_to_1000" | "1001_to_10000" | "over_10000";
+type KeywordQualityFilter = "all" | "category_review";
+
+type SmartstoreReviewImportResult = {
+  status: "completed" | "failed";
+  sourceUrl: string;
+  productName: string;
+  reviews: Array<{ content: string; rating: number | null }>;
+  observedAt: string;
+  message?: string;
+};
 
 const keywordVolumeFilterLabels: Record<KeywordVolumeFilter, string> = {
   all: "검색수 전체",
@@ -108,21 +134,43 @@ export function SourcingWorkspace({
   const [manualKeywordText, setManualKeywordText] = useState("");
   const [keywordQuery, setKeywordQuery] = useState("");
   const [keywordExclusionText, setKeywordExclusionText] = useState("");
+  const [naverCategorySearch, setNaverCategorySearch] = useState("");
+  const [naverCategoryResults, setNaverCategoryResults] = useState<
+    SourcingNaverCategory[]
+  >([]);
+  const [naverCategoryStatus, setNaverCategoryStatus] = useState("");
+  const [naverCategoryBusy, setNaverCategoryBusy] = useState(false);
   const [keywordPlacementFilter, setKeywordPlacementFilter] =
     useState<SourcingKeywordPlacement | "all">("all");
   const [keywordVolumeFilter, setKeywordVolumeFilter] =
     useState<KeywordVolumeFilter>("all");
   const [keywordVolumeSort, setKeywordVolumeSort] = useState<"desc" | "asc">("desc");
+  const [keywordQualityFilter, setKeywordQualityFilter] =
+    useState<KeywordQualityFilter>("all");
   const [keywordExposureResults, setKeywordExposureResults] = useState<
     Record<string, KeywordExposureResult>
   >({});
+  const [keywordTagDictionaryResults, setKeywordTagDictionaryResults] = useState<
+    Record<string, NaverTagDictionaryResult>
+  >({});
+  const [keywordOfficialAttributeStatuses, setKeywordOfficialAttributeStatuses] =
+    useState<Record<string, "matched" | "unmatched" | "unavailable">>({});
+  const keywordTagDictionaryCacheRef = useRef(
+    new Map<string, NaverTagDictionaryResult>(),
+  );
+  const officialAttributeContextCacheRef = useRef(
+    new Map<string, Promise<OfficialAttributeContext | null>>(),
+  );
   const [keywordExposureRunning, setKeywordExposureRunning] = useState(false);
   const [keywordExposureProgress, setKeywordExposureProgress] = useState("");
   const keywordExposureCancelRef = useRef(false);
-  const [titleExposureThreshold, setTitleExposureThreshold] = useState(30);
+  const [titleExposureThreshold, setTitleExposureThreshold] = useState(
+    DEFAULT_TITLE_EXPOSURE_THRESHOLD_PERCENT,
+  );
   const [extensionAvailable, setExtensionAvailable] = useState<boolean | null>(null);
   const [sourcingListOpen, setSourcingListOpen] = useState(false);
   const [reviewRawText, setReviewRawText] = useState("");
+  const [reviewProductUrl, setReviewProductUrl] = useState("");
   const [reviewListExpanded, setReviewListExpanded] = useState(true);
   const [reviewAnalysis, setReviewAnalysis] = useState<SourcingReviewAnalysis | null>(null);
   const [reviewImporting, setReviewImporting] = useState(false);
@@ -141,6 +189,20 @@ export function SourcingWorkspace({
     return counts;
   }, [draft.relatedKeywords]);
 
+  const keywordWorkflowSummary = useMemo(() => ({
+    titleCandidates: selectAutomaticTitleKeywordIds(
+      draft.relatedKeywords.filter((item) => item.placement === "product_name"),
+    ).length,
+    officialTags: draft.relatedKeywords.filter(
+      (item) =>
+        Boolean(item.officialTag) &&
+        (item.placement === "product_name" || item.placement === "tag"),
+    ).length,
+    officialAttributes: draft.relatedKeywords.filter(
+      (item) => item.placement === "attribute" && item.officialAttribute,
+    ).length,
+  }), [draft.relatedKeywords]);
+
   const itemScoutKeywordCount = useMemo(
     () => draft.relatedKeywords.filter((item) => item.source === "itemscout-xlsx").length,
     [draft.relatedKeywords],
@@ -154,6 +216,14 @@ export function SourcingWorkspace({
     ).length;
   }, [draft.relatedKeywords, keywordExclusionText]);
 
+  const categoryReviewKeywordCount = useMemo(
+    () => draft.relatedKeywords.filter((item) => {
+      const exposure = keywordExposureResults[item.id];
+      return shouldReviewKeywordDeletion(item, exposure);
+    }).length,
+    [draft.relatedKeywords, keywordExposureResults],
+  );
+
   const visibleRelatedKeywords = useMemo(() => {
     const normalizedQuery = keywordQuery.trim().replace(/\s+/g, "").toLocaleLowerCase("ko-KR");
     return draft.relatedKeywords.filter(
@@ -165,7 +235,9 @@ export function SourcingWorkspace({
           (keywordVolumeFilter === "1001_to_10000" && volume != null && volume > 1_000 && volume <= 10_000) ||
           (keywordVolumeFilter === "over_10000" && volume != null && volume > 10_000);
         return (
-        (keywordPlacementFilter === "all" || item.placement === keywordPlacementFilter) &&
+          (keywordPlacementFilter === "all" || item.placement === keywordPlacementFilter) &&
+          (keywordQualityFilter === "all" ||
+            shouldReviewKeywordDeletion(item, keywordExposureResults[item.id])) &&
           volumeMatches &&
           (!normalizedQuery || item.normalizedKeyword.includes(normalizedQuery))
         );
@@ -180,7 +252,7 @@ export function SourcingWorkspace({
         ? rightVolume - leftVolume
         : leftVolume - rightVolume;
     });
-  }, [draft.relatedKeywords, keywordPlacementFilter, keywordQuery, keywordVolumeFilter, keywordVolumeSort]);
+  }, [draft.relatedKeywords, keywordExposureResults, keywordPlacementFilter, keywordQualityFilter, keywordQuery, keywordVolumeFilter, keywordVolumeSort]);
 
   useEffect(() => {
     if (!sourcingListOpen) return;
@@ -205,13 +277,85 @@ export function SourcingWorkspace({
     return () => window.removeEventListener(EXTENSION_STATUS_EVENT, handleStatus);
   }, []);
 
+  useEffect(() => {
+    const handleSmartstoreReviews = (event: Event) => {
+      const result = (
+        event as CustomEvent<{ requestId?: string; result?: SmartstoreReviewImportResult }>
+      ).detail?.result;
+      if (!result) return;
+      if (result.status !== "completed") {
+        setError(result.message ?? "스마트스토어 리뷰를 가져오지 못했습니다.");
+        return;
+      }
+      setDraft((current) => ({
+        ...current,
+        reviewEntries: appendReviewEntries(
+          current.reviewEntries,
+          result.reviews.map((review) =>
+            storedReview(review.content, review.rating, "smartstore"),
+          ),
+        ),
+      }));
+      setReviewListExpanded(true);
+      setReviewAnalysis(null);
+      setError(null);
+      setMessage(
+        `${result.productName || "스마트스토어 상품"}에서 현재 화면 리뷰 ${result.reviews.length}개를 받았습니다. 이미 가져온 리뷰는 자동으로 제외됩니다.`,
+      );
+    };
+    window.addEventListener(SMARTSTORE_REVIEW_RESULT_EVENT, handleSmartstoreReviews);
+    return () =>
+      window.removeEventListener(SMARTSTORE_REVIEW_RESULT_EVENT, handleSmartstoreReviews);
+  }, []);
+
+  useEffect(() => {
+    const search = naverCategorySearch.trim();
+    if (!search) return;
+    const controller = new AbortController();
+    const timer = window.setTimeout(async () => {
+      setNaverCategoryStatus("카테고리 검색 중…");
+      try {
+        const response = await fetch(
+          `/api/integrations/naver/categories?search=${encodeURIComponent(search)}&leafOnly=true&limit=20`,
+          { signal: controller.signal, cache: "no-store" },
+        );
+        const body = (await response.json()) as {
+          categories?: SourcingNaverCategory[];
+          error?: { message?: string };
+        };
+        if (!response.ok) {
+          throw new Error(body.error?.message ?? "카테고리를 검색하지 못했습니다.");
+        }
+        const categories = body.categories ?? [];
+        setNaverCategoryResults(categories);
+        setNaverCategoryStatus(categories.length ? "" : "검색 결과가 없습니다.");
+      } catch (caught) {
+        if (controller.signal.aborted) return;
+        setNaverCategoryResults([]);
+        setNaverCategoryStatus(errorMessage(caught));
+      }
+    }, 300);
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [naverCategorySearch]);
+
   async function analyzeKeywordExposure(
     targets: SourcingResearchInput["relatedKeywords"],
     options: { analyzeAll?: boolean; applyRecommendations?: boolean } = {},
   ) {
     if (keywordExposureRunning || targets.length === 0) return;
+    if (!draft.sourcingKeyword.trim()) {
+      setError("검색 의도를 비교할 기준 상품어를 먼저 입력해 주세요.");
+      return;
+    }
+    if (!draft.naverCategory) {
+      setError("연관키워드를 분류하기 전에 판매할 네이버 카테고리를 선택해 주세요.");
+      return;
+    }
     if (extensionAvailable !== true) {
-      setError("Shoppingday Chrome 확장 프로그램 0.5.8 이상을 다시 로드해 주세요.");
+      setError("Shoppingday Chrome 확장 프로그램 0.5.14 이상을 다시 로드해 주세요.");
       return;
     }
     const limitedTargets = options.analyzeAll ? targets : targets.slice(0, 10);
@@ -220,6 +364,10 @@ export function SourcingWorkspace({
     setError(null);
     setMessage(null);
     let completedCount = 0;
+    const automaticAnalyses: AutomaticKeywordPlacementInput[] = [];
+    let automaticAllocation: AutomaticKeywordPlacementAllocation | null = null;
+    const officialAttributeContextPromise =
+      checkNaverOfficialAttributeContext(draft.naverCategory);
     try {
       for (let index = 0; index < limitedTargets.length; index += 1) {
         if (keywordExposureCancelRef.current) break;
@@ -227,10 +375,36 @@ export function SourcingWorkspace({
         setKeywordExposureProgress(
           `${index + 1}/${limitedTargets.length} · ${target.keyword} 분석 중`,
         );
-        const result = await requestKeywordExposure(target.keyword);
+        const [result, tagDictionary, officialAttributeContext] = await Promise.all([
+          requestKeywordExposure(
+            target.keyword,
+            draft.sourcingKeyword,
+            draft.naverCategory,
+          ),
+          checkNaverTagDictionary(target.keyword),
+          officialAttributeContextPromise,
+        ]);
+        const officialAttribute = officialAttributeContext
+          ? matchOfficialAttributeKeyword(
+              target.keyword,
+              officialAttributeContext,
+            )
+          : null;
         setKeywordExposureResults((current) => ({
           ...current,
           [target.id]: result,
+        }));
+        setKeywordTagDictionaryResults((current) => ({
+          ...current,
+          [target.id]: tagDictionary,
+        }));
+        setKeywordOfficialAttributeStatuses((current) => ({
+          ...current,
+          [target.id]: officialAttributeContext
+            ? officialAttribute
+              ? "matched"
+              : "unmatched"
+            : "unavailable",
         }));
         if (result.status !== "completed") {
           throw new Error(
@@ -240,24 +414,65 @@ export function SourcingWorkspace({
         const recommendation = recommendKeywordPlacement(
           result,
           titleExposureThreshold,
+          tagDictionary,
+          officialAttribute,
         );
-        if (options.applyRecommendations && recommendation) {
-          setDraft((current) => ({
-            ...current,
-            relatedKeywords: current.relatedKeywords.map((item) =>
-              item.id === target.id
-                ? { ...item, placement: recommendation.placement }
-                : item,
-            ),
-          }));
+        const contextAssessment = assessKeywordContext(result);
+        const requiresReview = contextAssessment.mismatched;
+        if (options.applyRecommendations && options.analyzeAll) {
+          automaticAnalyses.push({
+            item: target,
+            recommendation,
+            tagDictionary,
+            officialAttribute,
+            requiresReview,
+          });
         }
+        setDraft((current) => ({
+          ...current,
+          relatedKeywords: current.relatedKeywords.map((item) =>
+            item.id === target.id
+              ? {
+                  ...item,
+                  officialTag:
+                    tagDictionary.status === "unavailable"
+                      ? item.officialTag
+                      : tagDictionary.exactTag,
+                  ...(officialAttributeContext
+                    ? { officialAttribute }
+                    : {}),
+                  ...(options.applyRecommendations && !options.analyzeAll &&
+                  (recommendation || requiresReview)
+                    ? {
+                        placement:
+                          recommendation?.placement ?? "unclassified",
+                      }
+                    : {}),
+                }
+              : item,
+          ),
+        }));
         completedCount += 1;
         if (index + 1 < limitedTargets.length) await wait(1_500);
+      }
+      if (options.applyRecommendations && options.analyzeAll) {
+        automaticAllocation = allocateAutomaticKeywordPlacements(
+          automaticAnalyses,
+        );
+        const placements = automaticAllocation.placements;
+        setDraft((current) => ({
+          ...current,
+          relatedKeywords: current.relatedKeywords.map((item) =>
+            placements[item.id]
+              ? { ...item, placement: placements[item.id] }
+              : item,
+          ),
+        }));
       }
       setMessage(keywordExposureCancelRef.current
         ? `${completedCount}개까지 분석한 뒤 전체 다시 분류를 중지했습니다. 완료된 추천은 저장 전 초안에만 반영되어 있습니다.`
         : options.applyRecommendations
-          ? `${completedCount}개 키워드를 다시 분석하고 추천 분류를 초안에 반영했습니다. 결과를 검토한 뒤 저장해 주세요.`
+          ? `${completedCount}개 키워드를 다시 분석하고 추천 분류를 초안에 반영했습니다. 상품명 후보 ${automaticAllocation?.productNameKeywordIds.length ?? 0}개 중 ${automaticAllocation?.titleKeywordIds.length ?? 0}개를 상품명 조합 대상으로 검토합니다. 공식 태그 풀은 ${automaticAllocation?.tagKeywordIds.length ?? 0}개이며 등록 초안에서 상품명에 쓰지 않은 태그를 검색수순 최대 10개 사용합니다.`
           : `${completedCount}개 키워드의 네이버쇼핑 1페이지 노출 분석을 마쳤습니다. 추천을 확인한 뒤 적용해 주세요.`,
       );
     } catch (caught) {
@@ -266,6 +481,103 @@ export function SourcingWorkspace({
       setKeywordExposureRunning(false);
       setKeywordExposureProgress("");
     }
+  }
+
+  async function checkNaverTagDictionary(keyword: string) {
+    const key = normalizeKeywordText(keyword);
+    const cached = keywordTagDictionaryCacheRef.current.get(key);
+    if (cached) return cached;
+    let result: NaverTagDictionaryResult;
+    try {
+      const response = await api<{
+        keyword: string;
+        registered: boolean;
+        exactTag: { code: number; text: string } | null;
+        candidates: Array<{ code: number; text: string }>;
+      }>(
+        `/api/integrations/naver/recommend-tags?keyword=${encodeURIComponent(keyword)}`,
+      );
+      const data = response.data!;
+      result = {
+        keyword: data.keyword,
+        status: data.registered ? "registered" : "unregistered",
+        exactTag: data.exactTag,
+        candidates: data.candidates,
+        message: null,
+      };
+    } catch (caught) {
+      result = {
+        keyword,
+        status: "unavailable",
+        exactTag: null,
+        candidates: [],
+        message: errorMessage(caught),
+      };
+    }
+    keywordTagDictionaryCacheRef.current.set(key, result);
+    return result;
+  }
+
+  function checkNaverOfficialAttributeContext(category: SourcingNaverCategory) {
+    const key = category.id;
+    const cached = officialAttributeContextCacheRef.current.get(key);
+    if (cached) return cached;
+    const pending = loadNaverOfficialAttributeContext(category).catch(
+      () => null,
+    );
+    officialAttributeContextCacheRef.current.set(key, pending);
+    return pending;
+  }
+
+  async function recommendSourcingNaverCategory() {
+    const keyword = draft.sourcingKeyword.trim();
+    if (keyword.length < 2) {
+      setNaverCategoryStatus("기준 상품어를 두 글자 이상 입력해 주세요.");
+      return;
+    }
+    setNaverCategoryBusy(true);
+    setNaverCategoryStatus("기준 상품어로 카테고리를 찾는 중…");
+    try {
+      const response = await fetch(
+        `/api/integrations/naver/categories/recommend?productName=${encodeURIComponent(keyword)}`,
+        { cache: "no-store" },
+      );
+      const body = (await response.json()) as {
+        recommendation?: { category: SourcingNaverCategory } | null;
+        error?: { message?: string };
+      };
+      if (!response.ok) {
+        throw new Error(body.error?.message ?? "카테고리를 추천하지 못했습니다.");
+      }
+      if (!body.recommendation?.category) {
+        setNaverCategoryStatus("자동 추천 결과가 없습니다. 카테고리를 직접 검색해 주세요.");
+        return;
+      }
+      selectSourcingNaverCategory(body.recommendation.category);
+      setNaverCategoryStatus("추천 카테고리를 선택했습니다. 실제 판매 카테고리가 맞는지 확인해 주세요.");
+    } catch (caught) {
+      setNaverCategoryStatus(errorMessage(caught));
+    } finally {
+      setNaverCategoryBusy(false);
+    }
+  }
+
+  function selectSourcingNaverCategory(category: SourcingNaverCategory) {
+    setDraft((current) => ({
+      ...current,
+      naverCategory: category,
+      relatedKeywords: current.relatedKeywords.map((item) =>
+        item.officialAttribute
+          ? { ...item, officialAttribute: null, placement: "unclassified" }
+          : item,
+      ),
+    }));
+    setNaverCategorySearch("");
+    setNaverCategoryResults([]);
+    setKeywordExposureResults({});
+    setKeywordOfficialAttributeStatuses({});
+    setKeywordQualityFilter("all");
+    officialAttributeContextCacheRef.current.clear();
   }
 
   async function selectItem(id: string) {
@@ -528,6 +840,31 @@ export function SourcingWorkspace({
     }
   }
 
+  function openSmartstoreReviewImporter() {
+    setMessage(null);
+    setError(null);
+    if (extensionAvailable !== true) {
+      setError("Chrome 확장 프로그램 0.5.15 이상을 다시 불러온 뒤 Shoppingday 페이지를 새로고침해 주세요.");
+      return;
+    }
+    try {
+      const url = new URL(reviewProductUrl.trim());
+      if (
+        url.protocol !== "https:" ||
+        !["smartstore.naver.com", "m.smartstore.naver.com", "brand.naver.com"].includes(url.hostname) ||
+        !/^\/[^/]+\/products\/\d+/.test(url.pathname)
+      ) {
+        throw new Error("스마트스토어 또는 브랜드스토어 상품 주소를 입력해 주세요.");
+      }
+      window.dispatchEvent(new CustomEvent(SMARTSTORE_REVIEW_REQUEST_EVENT, {
+        detail: { requestId: crypto.randomUUID(), url: url.toString() },
+      }));
+      setMessage("스마트스토어 상품을 열고 있습니다. 리뷰 탭에서 ‘현재 리뷰 가져오기’를 눌러 주세요.");
+    } catch (caught) {
+      setError(errorMessage(caught));
+    }
+  }
+
   async function importReviewFile(event: ChangeEvent<HTMLInputElement>) {
     const input = event.currentTarget;
     const file = input.files?.[0];
@@ -785,8 +1122,112 @@ export function SourcingWorkspace({
                 </button>
               </div>
 
+              <div className="sourcing-category-step">
+                <div className="sourcing-category-step-head">
+                  <div>
+                    <strong>분류 기준 네이버 카테고리</strong>
+                    <span>키워드 자동 분류와 공식 속성 연결, 등록 초안에 공통으로 사용하는 판매 카테고리입니다.</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void recommendSourcingNaverCategory()}
+                    disabled={naverCategoryBusy || draft.sourcingKeyword.trim().length < 2}
+                  >
+                    {naverCategoryBusy ? "추천 확인 중…" : "기준 상품어로 추천"}
+                  </button>
+                </div>
+                {draft.naverCategory ? (
+                  <div className="sourcing-category-selected">
+                    <div>
+                      <strong>{draft.naverCategory.name}</strong>
+                      <span>{draft.naverCategory.wholeCategoryName}</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDraft((current) => ({
+                          ...current,
+                          naverCategory: null,
+                          relatedKeywords: current.relatedKeywords.map((item) =>
+                            item.officialAttribute
+                              ? { ...item, officialAttribute: null, placement: "unclassified" }
+                              : item,
+                          ),
+                        }));
+                        setKeywordExposureResults({});
+                        setKeywordOfficialAttributeStatuses({});
+                        setKeywordQualityFilter("all");
+                        officialAttributeContextCacheRef.current.clear();
+                      }}
+                    >
+                      선택 해제
+                    </button>
+                  </div>
+                ) : (
+                  <div className="sourcing-category-required">카테고리를 선택해야 자동 분류를 시작할 수 있습니다.</div>
+                )}
+                <label className="sourcing-category-search">
+                  <span>카테고리 직접 검색</span>
+                  <input
+                    role="combobox"
+                    aria-expanded={naverCategoryResults.length > 0}
+                    aria-controls="sourcing-category-results"
+                    value={naverCategorySearch}
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      setNaverCategorySearch(value);
+                      if (!value.trim()) {
+                        setNaverCategoryResults([]);
+                        setNaverCategoryStatus("");
+                      }
+                    }}
+                    placeholder="예: 야채탈수기"
+                  />
+                </label>
+                {naverCategoryStatus ? <small>{naverCategoryStatus}</small> : null}
+                {naverCategoryResults.length ? (
+                  <div id="sourcing-category-results" className="sourcing-category-results" role="listbox">
+                    {naverCategoryResults.map((category) => (
+                      <button
+                        type="button"
+                        role="option"
+                        aria-selected={draft.naverCategory?.id === category.id}
+                        key={category.id}
+                        onClick={() => {
+                          selectSourcingNaverCategory(category);
+                          setNaverCategoryStatus("카테고리를 선택했습니다.");
+                        }}
+                      >
+                        <strong>{category.name}</strong>
+                        <span>{category.wholeCategoryName}</span>
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+
               {draft.relatedKeywords.length ? (
                 <>
+                  <div className="sourcing-keyword-flow" aria-label="키워드 운영 흐름">
+                    <div>
+                      <strong>1. 부적합 키워드 삭제</strong>
+                      <span>상품에 없는 소재·기능·용도의 키워드를 먼저 제거합니다.</span>
+                    </div>
+                    <div>
+                      <strong>2. 자동 분류</strong>
+                      <span>상품명 {titleExposureThreshold}% 이상 → 공식 속성 → 공식 태그 → 카테고리 → 나머지 상품명 순입니다.</span>
+                    </div>
+                    <div>
+                      <strong>3. 등록 재료 확인</strong>
+                      <span>상품명 후보 중 8~10개를 조합하고, 상품명에 쓰지 않은 공식 태그를 최대 10개 사용합니다.</span>
+                    </div>
+                    <div className="sourcing-keyword-flow-status">
+                      <span>상품명 조합 후보 <strong>{keywordWorkflowSummary.titleCandidates}/8~10</strong></span>
+                      <span>공식 태그 <strong>{keywordWorkflowSummary.officialTags}/10</strong></span>
+                      <span>공식 속성 <strong>{keywordWorkflowSummary.officialAttributes}</strong></span>
+                      <span>미분류 <strong>{keywordCounts.unclassified}</strong></span>
+                    </div>
+                  </div>
                   <div className="sourcing-keyword-summary" aria-label="키워드 분류 현황">
                     <button type="button" className={keywordPlacementFilter === "all" ? "active" : undefined} onClick={() => setKeywordPlacementFilter("all")}>전체 <strong>{draft.relatedKeywords.length}</strong></button>
                     {(Object.keys(keywordPlacementLabels) as SourcingKeywordPlacement[]).map((placement) => (
@@ -805,11 +1246,33 @@ export function SourcingWorkspace({
                       </button>
                     ) : null}
                   </div>
+                  <div className="sourcing-keyword-exclusion">
+                    <div>
+                      <strong>1단계 · 부적합 포함어 일괄 삭제</strong>
+                      <span>입력한 단어가 포함된 연관키워드를 출처와 분류에 관계없이 모두 삭제합니다.</span>
+                    </div>
+                    <input
+                      value={keywordExclusionText}
+                      onChange={(event) => setKeywordExclusionText(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") removeKeywordsContainingText();
+                      }}
+                      placeholder="예: 메모리폼"
+                      aria-label="삭제할 키워드 포함어"
+                    />
+                    <button
+                      type="button"
+                      onClick={removeKeywordsContainingText}
+                      disabled={!excludedKeywordCount}
+                    >
+                      일치 키워드 삭제 ({excludedKeywordCount})
+                    </button>
+                  </div>
                   <div className="sourcing-keyword-exposure-tools">
                     <div>
-                      <strong>네이버쇼핑 1페이지 노출 분석</strong>
+                      <strong>2단계 · 네이버쇼핑 1페이지 자동 분류</strong>
                       <span>
-                        광고·중복을 제외한 PC 가격비교 상품 최대 40개에서 상품명과 카드 부가정보를 확인합니다.
+                        광고·중복을 제외한 PC 가격비교 상품 최대 40개를 봅니다. 상품명 다수 기준이 공식 속성·태그보다 우선하며, 나머지는 상품명 후보가 됩니다.
                       </span>
                     </div>
                     <label>
@@ -839,6 +1302,7 @@ export function SourcingWorkspace({
                       }
                       disabled={
                         keywordExposureRunning ||
+                        !draft.naverCategory ||
                         !visibleRelatedKeywords.some(
                           (item) => item.placement === "unclassified",
                         )
@@ -846,14 +1310,14 @@ export function SourcingWorkspace({
                     >
                       {keywordExposureRunning
                         ? keywordExposureProgress || "분석 준비 중…"
-                        : "표시 중 미분류 최대 10개 분석"}
+                        : "미분류 최대 10개 자동 분류"}
                     </button>
                     <button
                       type="button"
                       onClick={() => {
                         if (
                           !window.confirm(
-                            `현재 연관키워드 ${draft.relatedKeywords.length}개를 모두 다시 검색하고 추천 분류를 초안에 반영할까요? 키워드 수에 따라 오래 걸릴 수 있으며 언제든 중지할 수 있습니다.`,
+                            `현재 연관키워드 ${draft.relatedKeywords.length}개를 모두 다시 검색하고 상품명 ${titleExposureThreshold}% 이상 → 공식 속성 → 공식 태그 → 카테고리 → 나머지 상품명 순으로 초안에 반영할까요? 키워드 수에 따라 오래 걸릴 수 있으며 언제든 중지할 수 있습니다.`,
                           )
                         ) return;
                         void analyzeKeywordExposure(draft.relatedKeywords, {
@@ -861,9 +1325,13 @@ export function SourcingWorkspace({
                           applyRecommendations: true,
                         });
                       }}
-                      disabled={keywordExposureRunning || draft.relatedKeywords.length === 0}
+                      disabled={
+                        keywordExposureRunning ||
+                        !draft.naverCategory ||
+                        draft.relatedKeywords.length === 0
+                      }
                     >
-                      전체 다시 분류
+                      전체 키워드 다시 자동 분류
                     </button>
                     {keywordExposureRunning ? (
                       <button
@@ -881,31 +1349,9 @@ export function SourcingWorkspace({
                       {extensionAvailable === true
                         ? "Chrome 확장 프로그램 연결됨"
                         : extensionAvailable === false
-                          ? "확장 프로그램 0.5.8 이상을 다시 로드해야 합니다."
+                          ? "확장 프로그램 0.5.14 이상을 다시 로드해야 합니다."
                           : "확장 프로그램 연결 확인 중…"}
                     </small>
-                  </div>
-                  <div className="sourcing-keyword-exclusion">
-                    <div>
-                      <strong>포함어 일괄 삭제</strong>
-                      <span>입력한 단어가 포함된 연관키워드를 출처와 분류에 관계없이 모두 삭제합니다.</span>
-                    </div>
-                    <input
-                      value={keywordExclusionText}
-                      onChange={(event) => setKeywordExclusionText(event.target.value)}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter") removeKeywordsContainingText();
-                      }}
-                      placeholder="예: 스텐"
-                      aria-label="삭제할 키워드 포함어"
-                    />
-                    <button
-                      type="button"
-                      onClick={removeKeywordsContainingText}
-                      disabled={!excludedKeywordCount}
-                    >
-                      일치 키워드 삭제 ({excludedKeywordCount})
-                    </button>
                   </div>
                   <div className="sourcing-keyword-volume-filters" aria-label="검색수 필터">
                     {(Object.entries(keywordVolumeFilterLabels) as Array<[KeywordVolumeFilter, string]>).map(([value, label]) => (
@@ -914,6 +1360,19 @@ export function SourcingWorkspace({
                     <button type="button" className="sort" onClick={() => setKeywordVolumeSort((current) => current === "desc" ? "asc" : "desc")}>
                       검색수 {keywordVolumeSort === "desc" ? "높은순 ↓" : "낮은순 ↑"}
                     </button>
+                    <button
+                      type="button"
+                      className={keywordQualityFilter === "category_review" ? "active review" : "review"}
+                      onClick={() => setKeywordQualityFilter((current) =>
+                        current === "category_review" ? "all" : "category_review"
+                      )}
+                      disabled={
+                        categoryReviewKeywordCount === 0 &&
+                        keywordQualityFilter !== "category_review"
+                      }
+                    >
+                      카테고리 삭제 검토 {categoryReviewKeywordCount}
+                    </button>
                   </div>
                   <div className="sourcing-keyword-table-wrap">
                     <table className="sourcing-keyword-table">
@@ -921,14 +1380,53 @@ export function SourcingWorkspace({
                       <tbody>
                         {visibleRelatedKeywords.map((item) => {
                           const exposure = keywordExposureResults[item.id];
+                          const tagDictionary =
+                            keywordTagDictionaryResults[item.id];
+                          const officialTag =
+                            tagDictionary?.exactTag ?? item.officialTag;
                           const recommendation = exposure
-                            ? recommendKeywordPlacement(
+                              ? recommendKeywordPlacement(
                                 exposure,
                                 titleExposureThreshold,
+                                tagDictionary,
+                                item.officialAttribute,
                               )
                             : null;
+                          const contextAssessment = exposure
+                            ? assessKeywordContext(exposure)
+                            : null;
+                          const categoryFit = categoryFitAssessment(exposure);
+                          const titleThresholdCount = exposure
+                            ? Math.max(
+                                1,
+                                Math.ceil(
+                                  exposure.productCount * titleExposureThreshold / 100,
+                                ),
+                              )
+                            : 0;
+                          const titleIsMajority = Boolean(
+                            exposure && exposure.titleMatchCount >= titleThresholdCount,
+                          );
+                          const officialAttributeStatus =
+                            keywordOfficialAttributeStatuses[item.id];
+                          const hasDualTitleTagEligibility = Boolean(
+                            officialTag && recommendation?.placement === "product_name",
+                          );
+                          const requiresReview = Boolean(
+                            exposure && contextAssessment?.mismatched,
+                          );
+                          const shouldReviewDeletion = shouldReviewKeywordDeletion(
+                            item,
+                            exposure,
+                          );
+                          const leadingOtherCategory = exposure
+                            ? dominantOtherCategory(exposure)
+                            : null;
                           return (
-                          <tr key={item.id}>
+                          <tr
+                            key={item.id}
+                            className={shouldReviewDeletion ? "category-review" : undefined}
+                          >
                             <td>{item.keyword}</td>
                             <td>{formatNumber(item.monthlySearchVolume)}</td>
                             <td>
@@ -936,21 +1434,81 @@ export function SourcingWorkspace({
                                 <div className="keyword-exposure-result">
                                   {exposure.status === "completed" ? (
                                     <>
-                                      <span>
-                                        상품명 {exposure.titleMatchCount}/{exposure.productCount} · 부가정보 {exposure.attributeMatchCount} · 카테고리 {exposure.categoryMatchCount}
-                                      </span>
-                                      {recommendation ? (
+                                      <div className="keyword-signal-grid">
+                                        <span className={`keyword-signal primary ${categoryFit.level}`}>
+                                          <b>카테고리 적합</b>
+                                          <strong>{categoryFit.count}/{exposure.productCount}</strong>
+                                          <em>
+                                            {categoryFit.percent}% · {categoryFit.level === "poor" && !shouldReviewDeletion
+                                              ? "단독 검색 다른 상품군"
+                                              : categoryFit.label}
+                                          </em>
+                                        </span>
+                                        <span className={`keyword-signal ${titleIsMajority ? "title-strong" : "neutral"}`}>
+                                          <b>상품명 노출</b>
+                                          <strong>{exposure.titleMatchCount}/{exposure.productCount}</strong>
+                                          <em>{titleIsMajority ? "다수 기준 충족" : `${titleExposureThreshold}% 기준 미달`}</em>
+                                        </span>
+                                        <span className={`keyword-signal ${officialTag ? "tag-registered" : tagDictionary?.status === "unregistered" ? "tag-unregistered" : "unavailable"}`}>
+                                          <b>네이버 태그</b>
+                                          <strong>{officialTag ? "등록" : tagDictionary?.status === "unregistered" ? "미등록" : "확인 실패"}</strong>
+                                          <em>{officialTag ? `#${officialTag.code} ${officialTag.text}` : "태그로 자동 사용 안 함"}</em>
+                                        </span>
+                                        <span className={`keyword-signal ${officialAttributeStatus === "matched" ? "attribute-matched" : officialAttributeStatus === "unmatched" ? "neutral" : "unavailable"}`}>
+                                          <b>공식 속성</b>
+                                          <strong>{officialAttributeStatus === "matched" ? "연결" : officialAttributeStatus === "unmatched" ? "없음" : "확인 실패"}</strong>
+                                          <em>{item.officialAttribute
+                                            ? `${item.officialAttribute.attributeName} > ${item.officialAttribute.attributeValueName}`
+                                            : officialAttributeStatus === "unmatched"
+                                              ? "선택 카테고리에 일치값 없음"
+                                              : "속성 확인 필요"}</em>
+                                        </span>
+                                      </div>
+                                      {categoryFit.level === "poor" && leadingOtherCategory ? (
+                                        <div className="keyword-category-dominant">
+                                          <b>주로 노출되는 다른 카테고리</b>
+                                          <strong>{leadingOtherCategory.category}</strong>
+                                          <span>{leadingOtherCategory.count}/{exposure.productCount}건</span>
+                                        </div>
+                                      ) : null}
+                                      <div className={`keyword-analysis-decision ${shouldReviewDeletion ? "poor" : hasDualTitleTagEligibility ? "title-tag" : recommendation?.placement ?? categoryFit.level}`}>
                                         <div>
                                           <strong>
-                                            추천 {keywordPlacementLabels[recommendation.placement]}
+                                            {shouldReviewDeletion
+                                              ? "카테고리 불일치 · 삭제 검토"
+                                              : hasDualTitleTagEligibility
+                                                ? "추천 상품명 후보 · 태그 키워드 후보"
+                                                : recommendation
+                                                  ? `추천 ${keywordPlacementLabels[recommendation.placement]}`
+                                                : requiresReview
+                                                  ? "확인 필요"
+                                                  : "분류 근거 확인"}
                                           </strong>
+                                          <span>
+                                            {shouldReviewDeletion
+                                              ? `선택 카테고리 상품이 ${categoryFit.count}/${exposure.productCount}건뿐입니다.`
+                                              : hasDualTitleTagEligibility
+                                                ? `${recommendation?.reason ?? ""} 실제 상품명 조합에 선택되지 않으면 공식 태그 후보로 사용합니다.`
+                                                : recommendation?.reason ?? contextAssessment?.reason}
+                                          </span>
+                                        </div>
+                                        {shouldReviewDeletion ? (
+                                          <button
+                                            type="button"
+                                            className="danger"
+                                            onClick={() => {
+                                              if (!window.confirm(`'${item.keyword}' 키워드를 삭제할까요?`)) return;
+                                              removeRelatedKeyword(item.id);
+                                              setMessage(`${item.keyword} 키워드를 초안에서 삭제했습니다.`);
+                                            }}
+                                          >
+                                            키워드 삭제
+                                          </button>
+                                        ) : recommendation ? (
                                           <button
                                             type="button"
                                             onClick={() => {
-                                              updateKeywordPlacement(
-                                                item.id,
-                                                recommendation.placement,
-                                              );
+                                              updateKeywordPlacement(item.id, recommendation.placement);
                                               setMessage(
                                                 `${item.keyword}을(를) ${keywordPlacementLabels[recommendation.placement]}로 반영했습니다. 저장 전까지는 초안에만 적용됩니다.`,
                                               );
@@ -958,16 +1516,40 @@ export function SourcingWorkspace({
                                           >
                                             추천 적용
                                           </button>
-                                        </div>
-                                      ) : null}
-                                      <small>{recommendation?.reason}</small>
+                                        ) : item.placement !== "unclassified" ? (
+                                          <button
+                                            type="button"
+                                            onClick={() => updateKeywordPlacement(item.id, "unclassified")}
+                                          >
+                                            미분류로 전환
+                                          </button>
+                                        ) : null}
+                                      </div>
+                                      <details className="keyword-analysis-raw">
+                                        <summary>세부 판독 수치</summary>
+                                        <p>
+                                          상품명 {exposure.titleMatchCount}/{exposure.productCount} · 카드 부가정보 {exposure.attributeMatchCount} · 검색어 카테고리 문구 {exposure.categoryMatchCount} · 기준 상품명 관련 {exposure.contextMatchCount}/{exposure.productCount}
+                                        </p>
+                                      </details>
+                                      <small className="keyword-analysis-reason">
+                                        {recommendation?.reason ??
+                                          (exposure
+                                            ? keywordPlacementReviewReason(
+                                                exposure,
+                                                tagDictionary,
+                                              )
+                                            : null)}
+                                      </small>
                                       {exposure.samples.length > 0 ? (
                                         <details>
-                                          <summary>일치 표본 {exposure.samples.length}개</summary>
+                                          <summary>상품명 판독 표본 {exposure.samples.length}개</summary>
                                           <ul>
                                             {exposure.samples.map((sample, index) => (
                                               <li key={`${index}-${sample.title}`}>
                                                 {sample.evidence || sample.title}
+                                                {sample.category ? (
+                                                  <small> · 카테고리 {sample.category}</small>
+                                                ) : null}
                                               </li>
                                             ))}
                                           </ul>
@@ -980,7 +1562,7 @@ export function SourcingWorkspace({
                                   <button
                                     type="button"
                                     onClick={() => void analyzeKeywordExposure([item])}
-                                    disabled={keywordExposureRunning}
+                                    disabled={keywordExposureRunning || !draft.naverCategory}
                                   >
                                     다시 분석
                                   </button>
@@ -990,7 +1572,7 @@ export function SourcingWorkspace({
                                   type="button"
                                   className="keyword-exposure-single"
                                   onClick={() => void analyzeKeywordExposure([item])}
-                                  disabled={keywordExposureRunning}
+                                  disabled={keywordExposureRunning || !draft.naverCategory}
                                 >
                                   노출 분석
                                 </button>
@@ -1049,9 +1631,32 @@ export function SourcingWorkspace({
 
             <ResearchSection number="04" title="상품 리뷰 조사" description="상세페이지보다 낮은 평점과 반복되는 불만을 먼저 읽고 개선 조건을 정리합니다.">
               <div className="sourcing-review-analyzer">
+                <div className="sourcing-smartstore-review-import">
+                  <div>
+                    <strong>스마트스토어 현재 화면 리뷰 가져오기</strong>
+                    <span>상품 링크를 열고 리뷰 탭에서 확장 프로그램 버튼을 누르세요. 페이지를 넘겨 반복하면 중복 없이 누적됩니다.</span>
+                  </div>
+                  <div>
+                    <input
+                      type="url"
+                      value={reviewProductUrl}
+                      onChange={(event) => setReviewProductUrl(event.target.value)}
+                      placeholder="https://smartstore.naver.com/스토어/products/상품번호"
+                      aria-label="리뷰를 가져올 스마트스토어 상품 링크"
+                    />
+                    <button
+                      type="button"
+                      onClick={openSmartstoreReviewImporter}
+                      disabled={!reviewProductUrl.trim()}
+                    >
+                      상품 열기
+                    </button>
+                  </div>
+                  <small>확장 프로그램 0.5.15 이상 · 자동 페이지 넘김이나 차단 우회 없이 현재 공개된 리뷰만 가져옵니다.</small>
+                </div>
                 <div className="sourcing-review-analyzer-head">
                   <div>
-                    <strong>경쟁 상품 리뷰 한 줄씩 입력</strong>
+                    <strong>가져온 리뷰 확인 및 직접 입력</strong>
                     <span>입력한 리뷰 원문은 이 소싱 아이템에 저장되며 분석 근거로 다시 사용할 수 있습니다.</span>
                   </div>
                   <div className="sourcing-review-head-actions">
@@ -1200,16 +1805,27 @@ export function SourcingWorkspace({
   function resetEditorTransientState() {
     setManualKeywordText("");
     setKeywordExclusionText("");
+    setNaverCategorySearch("");
+    setNaverCategoryResults([]);
+    setNaverCategoryStatus("");
     setReviewRawText("");
     setReviewListExpanded(true);
     setReviewAnalysis(null);
     setKeywordExposureResults({});
+    setKeywordTagDictionaryResults({});
+    setKeywordOfficialAttributeStatuses({});
+    officialAttributeContextCacheRef.current.clear();
     setKeywordExposureProgress("");
+    setKeywordQualityFilter("all");
     keywordExposureCancelRef.current = true;
   }
 }
 
-function requestKeywordExposure(keyword: string) {
+function requestKeywordExposure(
+  keyword: string,
+  contextKeyword: string,
+  contextCategory: SourcingNaverCategory,
+) {
   return new Promise<KeywordExposureResult>((resolve, reject) => {
     const requestId = crypto.randomUUID();
     const timeout = window.setTimeout(() => {
@@ -1235,7 +1851,13 @@ function requestKeywordExposure(keyword: string) {
     window.addEventListener(KEYWORD_EXPOSURE_RESULT_EVENT, handleResult);
     window.dispatchEvent(
       new CustomEvent(KEYWORD_EXPOSURE_REQUEST_EVENT, {
-        detail: { requestId, keyword },
+        detail: {
+          requestId,
+          keyword,
+          contextKeyword,
+          contextCategoryId: contextCategory.id,
+          contextCategoryName: contextCategory.name,
+        },
       }),
     );
   });
@@ -1253,8 +1875,19 @@ function isKeywordExposureResult(value: unknown): value is KeywordExposureResult
       result.titleMatchCount,
       result.attributeMatchCount,
       result.categoryMatchCount,
+      result.contextMatchCount,
+      result.contextCategoryMatchCount,
     ].every((count) => Number.isInteger(count) && (count ?? -1) >= 0) &&
     typeof result.observedAt === "string" &&
+    typeof result.contextKeyword === "string" &&
+    typeof result.contextCategoryId === "string" &&
+    typeof result.contextCategoryName === "string" &&
+    Array.isArray(result.categoryDistribution) &&
+    result.categoryDistribution.every((entry) =>
+      typeof entry?.category === "string" &&
+      Number.isInteger(entry.count) &&
+      entry.count >= 0
+    ) &&
     Array.isArray(result.samples) &&
     (result.message === null || typeof result.message === "string")
   );
@@ -1268,7 +1901,7 @@ function isExtensionVersionSupported(version: string | null | undefined) {
   return (
     major > 0 ||
     (major === 0 && minor > 5) ||
-    (major === 0 && minor === 5 && patch >= 8)
+    (major === 0 && minor === 5 && patch >= 14)
   );
 }
 
@@ -1339,7 +1972,7 @@ function SignalQuestion({ label, description, preferred, value, onChange }: { la
 }
 
 function emptyResearch(): SourcingResearchInput {
-  return { status: "researching", sourcingKeyword: "", monthlySearchVolume: null, sixMonthRevenue: null, marketNotes: "", coupangAveragePrice: null, naverAveragePrice: null, expectedSellingPrice: null, signals: { ...defaultSourcingSignals }, finalSellingPoint: "", positiveReviews: "", negativeReviews: "", customerNeeds: "", productSpecs: "", primaryTarget: "", referenceNotes: "", reviewEntries: [storedReview()], relatedKeywords: [], samples: [] };
+  return { status: "researching", sourcingKeyword: "", monthlySearchVolume: null, sixMonthRevenue: null, marketNotes: "", naverCategory: null, coupangAveragePrice: null, naverAveragePrice: null, expectedSellingPrice: null, signals: { ...defaultSourcingSignals }, finalSellingPoint: "", positiveReviews: "", negativeReviews: "", customerNeeds: "", productSpecs: "", primaryTarget: "", referenceNotes: "", reviewEntries: [storedReview()], relatedKeywords: [], samples: [] };
 }
 function recordToInput(record: SourcingResearchRecord): SourcingResearchInput {
   return {
@@ -1348,6 +1981,7 @@ function recordToInput(record: SourcingResearchRecord): SourcingResearchInput {
     monthlySearchVolume: record.monthlySearchVolume,
     sixMonthRevenue: record.sixMonthRevenue,
     marketNotes: record.marketNotes,
+    naverCategory: record.naverCategory,
     coupangAveragePrice: record.coupangAveragePrice,
     naverAveragePrice: record.naverAveragePrice,
     expectedSellingPrice: record.expectedSellingPrice,
@@ -1366,12 +2000,89 @@ function recordToInput(record: SourcingResearchRecord): SourcingResearchInput {
 }
 function formatNumber(value: number | null) { return value == null ? "미입력" : new Intl.NumberFormat("ko-KR").format(value); }
 function formatManwon(value: number | null) { return value == null ? "미입력" : `${(value / 10_000).toLocaleString("ko-KR", { maximumFractionDigits: 1 })}만원`; }
+function categoryFitAssessment(result: KeywordExposureResult | undefined) {
+  if (!result || result.status !== "completed" || result.productCount < 1) {
+    return {
+      level: "unknown" as const,
+      count: 0,
+      percent: 0,
+      label: "미분석",
+    };
+  }
+  const percent = Math.round(
+    result.contextCategoryMatchCount / result.productCount * 100,
+  );
+  if (percent < 20) {
+    return {
+      level: "poor" as const,
+      count: result.contextCategoryMatchCount,
+      percent,
+      label: "삭제 검토",
+    };
+  }
+  if (percent < 50) {
+    return {
+      level: "mixed" as const,
+      count: result.contextCategoryMatchCount,
+      percent,
+      label: "카테고리 혼합",
+    };
+  }
+  return {
+    level: "good" as const,
+    count: result.contextCategoryMatchCount,
+    percent,
+    label: "일치 다수",
+  };
+}
+function shouldReviewKeywordDeletion(
+  item: SourcingRelatedKeyword,
+  result: KeywordExposureResult | undefined,
+) {
+  return categoryFitAssessment(result).level === "poor" &&
+    !item.officialAttribute &&
+    !item.officialTag;
+}
+function dominantOtherCategory(result: KeywordExposureResult) {
+  const selected = normalizeKeywordText(result.contextCategoryName);
+  return result.categoryDistribution.find((entry) => {
+    const category = normalizeKeywordText(entry.category);
+    return category && (!selected || !category.includes(selected));
+  }) ?? null;
+}
 async function api<T, I = never>(url: string, init?: RequestInit): Promise<{ data?: T; items?: I }> {
   const response = await fetch(url, { ...init, cache: "no-store" });
   const body = await response.json() as { data?: T; items?: I; error?: { message?: string } };
   if (!response.ok) throw new Error(body.error?.message || "요청을 처리하지 못했습니다.");
   return body;
 }
+
+async function loadNaverOfficialAttributeContext(
+  category: SourcingNaverCategory,
+): Promise<OfficialAttributeContext | null> {
+  const requirementsResponse = await fetch(
+    `/api/integrations/naver/category-requirements?categoryId=${encodeURIComponent(category.id)}`,
+    { cache: "no-store" },
+  );
+  const requirementsBody = (await requirementsResponse.json().catch(() => null)) as {
+    requirements?: Pick<
+      OfficialAttributeContext,
+      "attributes" | "attributeValues"
+    >;
+    error?: { message?: string };
+  } | null;
+  if (!requirementsResponse.ok || !requirementsBody?.requirements) {
+    throw new Error(
+      requirementsBody?.error?.message ?? "선택 카테고리의 공식 속성을 확인하지 못했습니다.",
+    );
+  }
+  return {
+    category,
+    attributes: requirementsBody.requirements.attributes,
+    attributeValues: requirementsBody.requirements.attributeValues,
+  };
+}
+
 function errorMessage(error: unknown) { return error instanceof Error ? error.message : "요청을 처리하지 못했습니다."; }
 
 const generatedReviewMarker = "[규칙 기반 리뷰 분석]";
