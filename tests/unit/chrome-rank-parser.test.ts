@@ -7,6 +7,18 @@ type RankParser = {
     root: Document,
     target: { channelProductNo: string; smartstoreUrl: string },
   ): Array<{ identity: string; targetMatched: boolean }>;
+  collectShoppingKeywordExposure(
+    root: Document,
+    keyword: string,
+  ): Array<{
+    identity: string;
+    title: string;
+    titleMatched: boolean;
+    attributeMatched: boolean;
+    categoryMatched: boolean;
+    matchedIn: string[];
+    evidence: string;
+  }>;
 };
 
 const parserGlobal = globalThis as typeof globalThis & {
@@ -69,5 +81,129 @@ describe("Chrome rank extension product-card parser", () => {
       });
 
     expect(candidates).toHaveLength(1);
+  });
+
+  it("상품명과 카드 부가정보의 키워드 노출을 분리하고 광고를 제외한다", () => {
+    document.body.innerHTML = `
+      <ul>
+        <li class="product_item">
+          <a href="https://search.shopping.naver.com/catalog/101">이미지</a>
+          <a class="product_title" href="https://search.shopping.naver.com/catalog/101">스테인리스 야채 탈수기</a>
+          <span class="product_spec">용량 3L</span>
+        </li>
+        <li class="product_item">
+          <a class="product_title" href="https://search.shopping.naver.com/catalog/102">야채 물기 제거기</a>
+          <span class="product_attribute">재질 스테인리스</span>
+        </li>
+        <li class="product_item">
+          <a class="product_title" href="https://search.shopping.naver.com/catalog/103">주방 도구</a>
+          <span class="product_category">주방용품 &gt; 스테인리스용품</span>
+        </li>
+        <li class="product_item" data-shp-area-id="ad_product">
+          <span>광고</span>
+          <a class="product_title" href="https://search.shopping.naver.com/catalog/104">스테인리스 광고 상품</a>
+        </li>
+      </ul>
+    `;
+
+    const candidates =
+      parserGlobal.ShoppingdayRankParser.collectShoppingKeywordExposure(
+        document,
+        "스테인리스",
+      );
+
+    expect(candidates).toHaveLength(3);
+    expect(candidates[0]).toMatchObject({
+      title: "스테인리스 야채 탈수기",
+      titleMatched: true,
+      attributeMatched: false,
+      categoryMatched: false,
+    });
+    expect(candidates[1]).toMatchObject({
+      titleMatched: false,
+      attributeMatched: true,
+      categoryMatched: false,
+    });
+    expect(candidates[2]).toMatchObject({
+      titleMatched: false,
+      attributeMatched: false,
+      categoryMatched: true,
+    });
+  });
+
+  it("띄어쓰기가 다른 복합 키워드도 정규화해 찾는다", () => {
+    document.body.innerHTML = `
+      <article class="product_card">
+        <a class="product_name" href="https://search.shopping.naver.com/catalog/201">문에 안 걸리는 낮은 욕실화</a>
+      </article>
+    `;
+
+    const [candidate] =
+      parserGlobal.ShoppingdayRankParser.collectShoppingKeywordExposure(
+        document,
+        "문에안걸리는",
+      );
+    expect(candidate?.titleMatched).toBe(true);
+  });
+
+  it("상품명 링크가 추적 URL이어도 상품명 클래스와 텍스트를 사용한다", () => {
+    document.body.innerHTML = `
+      <article class="product_card">
+        <a href="https://search.shopping.naver.com/catalog/301">상품 이미지</a>
+        <a class="product_link_title" href="https://cr.shopping.naver.com/adcr.nhn?x=tracking">
+          가정용 야채 짤순이 오이지 탈수기
+        </a>
+      </article>
+    `;
+
+    const [candidate] =
+      parserGlobal.ShoppingdayRankParser.collectShoppingKeywordExposure(
+        document,
+        "짤순이",
+      );
+    expect(candidate).toMatchObject({
+      title: "가정용 야채 짤순이 오이지 탈수기",
+      titleMatched: true,
+    });
+  });
+
+  it("복합 키워드가 떨어진 두 단어로 상품명에 있으면 조합 일치로 센다", () => {
+    document.body.innerHTML = `
+      <article class="product_card">
+        <a href="https://search.shopping.naver.com/catalog/401">상품 이미지</a>
+        <a class="product_link_title" href="https://cr.shopping.naver.com/adcr.nhn?x=tracking">
+          접이식방석 사우나매트 목욕 방수 야외 콘서트방석
+        </a>
+      </article>
+    `;
+
+    const [candidate] =
+      parserGlobal.ShoppingdayRankParser.collectShoppingKeywordExposure(
+        document,
+        "사우나방석",
+      );
+    expect(candidate).toMatchObject({
+      titleMatched: true,
+      evidence:
+        "[조합: 사우나 + 방석] 접이식방석 사우나매트 목욕 방수 야외 콘서트방석",
+    });
+  });
+
+  it("복합 키워드 조각 하나만 있는 상품명은 조합 일치로 세지 않는다", () => {
+    document.body.innerHTML = `
+      <article class="product_card">
+        <a href="https://search.shopping.naver.com/catalog/402">상품 이미지</a>
+        <a class="product_link_title" href="https://cr.shopping.naver.com/adcr.nhn?x=tracking">
+          사우나매트 목욕 방수 야외용
+        </a>
+      </article>
+    `;
+
+    const [candidate] =
+      parserGlobal.ShoppingdayRankParser.collectShoppingKeywordExposure(
+        document,
+        "사우나방석",
+      );
+    expect(candidate?.titleMatched).toBe(false);
   });
 });

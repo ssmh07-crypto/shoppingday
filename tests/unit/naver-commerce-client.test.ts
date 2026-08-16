@@ -239,6 +239,116 @@ describe("네이버 커머스API 클라이언트", () => {
     });
   });
 
+  it("동시에 시작한 요청은 진행 중인 토큰 발급 하나를 공유한다", async () => {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        json({
+          access_token: "shared-token",
+          expires_in: 10800,
+          token_type: "Bearer",
+        }),
+      )
+      .mockResolvedValueOnce(json(categories))
+      .mockResolvedValueOnce(json(categories));
+    const client = new NaverCommerceClient(config, fetcher, () => now);
+
+    await expect(
+      Promise.all([client.fetchCategories(), client.fetchCategories()]),
+    ).resolves.toEqual([categories, categories]);
+    expect(fetcher).toHaveBeenCalledTimes(3);
+    expect(
+      fetcher.mock.calls.filter(([url]) =>
+        String(url).endsWith("/v1/oauth2/token"),
+      ),
+    ).toHaveLength(1);
+  });
+
+  it("명시적인 429만 짧은 지수 백오프로 두 번 재시도한다", async () => {
+    const rateLimited = () =>
+      new Response(
+        JSON.stringify({
+          code: "GW.RATE_LIMIT",
+          message: "요청이 많아 서비스를 일시적으로 사용할 수 없습니다.",
+          traceId: "body-trace-id",
+        }),
+        {
+          status: 429,
+          headers: {
+            "content-type": "application/json;charset=UTF-8",
+            "GNCP-GW-Trace-ID": "header-trace-id",
+            "GNCP-GW-RateLimit-Replenish-Rate": "2",
+            "GNCP-GW-RateLimit-Burst-Capacity": "4",
+            "GNCP-GW-RateLimit-Remaining": "0",
+          },
+        },
+      );
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        json({ access_token: "token", expires_in: 10800, token_type: "Bearer" }),
+      )
+      .mockResolvedValueOnce(rateLimited())
+      .mockResolvedValueOnce(rateLimited())
+      .mockResolvedValueOnce(
+        json({
+          originProductNo: 100000001,
+          smartstoreChannelProductNo: 200000001,
+        }),
+      );
+    const wait = vi.fn().mockResolvedValue(undefined);
+    const client = new NaverCommerceClient(config, fetcher, () => now, wait);
+
+    await expect(client.createProduct({} as never)).resolves.toEqual({
+      originProductNo: "100000001",
+      channelProductNo: "200000001",
+    });
+    expect(wait.mock.calls).toEqual([[500], [1000]]);
+    expect(fetcher).toHaveBeenCalledTimes(4);
+  });
+
+  it("최종 429 오류에 gateway code와 요청량 진단값을 보존한다", async () => {
+    const response = () =>
+      new Response(
+        JSON.stringify({ code: "GW.QUOTA_LIMIT", traceId: "body-trace-id" }),
+        {
+          status: 429,
+          headers: {
+            "content-type": "application/json;charset=UTF-8",
+            "GNCP-GW-Quota-Period": "SECONDS",
+            "GNCP-GW-Quota-Limit": "10",
+            "GNCP-GW-Quota-Remaining": "0",
+          },
+        },
+      );
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        json({ access_token: "token", expires_in: 10800, token_type: "Bearer" }),
+      )
+      .mockResolvedValueOnce(response())
+      .mockResolvedValueOnce(response())
+      .mockResolvedValueOnce(response());
+    const client = new NaverCommerceClient(
+      config,
+      fetcher,
+      () => now,
+      vi.fn().mockResolvedValue(undefined),
+    );
+
+    await expect(client.createProduct({} as never)).rejects.toMatchObject({
+      code: "request_failed",
+      responseStatus: 429,
+      diagnostics: {
+        gatewayCode: "GW.QUOTA_LIMIT",
+        traceId: "body-trace-id",
+        quotaPeriod: "SECONDS",
+        quotaLimit: "10",
+        quotaRemaining: "0",
+      },
+    });
+  });
+
   it("401이면 토큰을 폐기하고 한 번만 다시 인증한다", async () => {
     const fetcher = vi
       .fn<typeof fetch>()

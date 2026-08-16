@@ -183,6 +183,111 @@ describe("소싱 조사 화면", () => {
     expect(within(keywordTable).getByText("낮은 욕실화")).toBeInTheDocument();
   });
 
+  it("Chrome 1페이지 분석 근거를 확인하고 추천 분류를 초안에 적용한다", async () => {
+    const handleRequest = (event: Event) => {
+      const detail = (event as CustomEvent<{ requestId: string; keyword: string }>).detail;
+      window.dispatchEvent(
+        new CustomEvent("shoppingday:keyword-exposure-result", {
+          detail: {
+            requestId: detail.requestId,
+            result: {
+              keyword: detail.keyword,
+              device: "pc",
+              status: "completed",
+              productCount: 40,
+              titleMatchCount: 16,
+              attributeMatchCount: 2,
+              categoryMatchCount: 0,
+              observedAt: "2026-08-16T00:00:00.000Z",
+              samples: [
+                {
+                  title: "미끄럼방지 욕실화",
+                  matchedIn: ["product_name"],
+                  evidence: "미끄럼방지 욕실화",
+                },
+              ],
+              message: null,
+            },
+          },
+        }),
+      );
+    };
+    window.addEventListener("shoppingday:keyword-exposure-request", handleRequest);
+
+    render(<SourcingWorkspace initialItems={[]} initialDetail={researchWithKeywords()} />);
+    window.dispatchEvent(
+      new CustomEvent("shoppingday:rank-extension-status", {
+        detail: { available: true, version: "0.5.8" },
+      }),
+    );
+    fireEvent.click(sectionButton("02 연관 키워드 분류"));
+    const row = within(screen.getByRole("table")).getByText("욕실화").closest("tr")!;
+    fireEvent.click(within(row).getByRole("button", { name: "노출 분석" }));
+
+    expect(await within(row).findByText("상품명 16/40 · 부가정보 2 · 카테고리 0")).toBeInTheDocument();
+    expect(within(row).getByText("추천 상품명 키워드")).toBeInTheDocument();
+    expect(within(row).getByText("미끄럼방지 욕실화")).toBeInTheDocument();
+    fireEvent.click(within(row).getByRole("button", { name: "추천 적용" }));
+    expect(within(row).getByRole("button", { name: "상품명" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(
+      screen.getByText(/저장 전까지는 초안에만 적용됩니다/),
+    ).toBeInTheDocument();
+    window.removeEventListener("shoppingday:keyword-exposure-request", handleRequest);
+  });
+
+  it("전체 다시 분류는 기존 분류도 재분석해 추천 위치를 초안에 반영한다", async () => {
+    const initial = researchWithKeywords();
+    initial.relatedKeywords = [
+      { ...initial.relatedKeywords[0]!, placement: "product_name" },
+    ];
+    vi.stubGlobal("confirm", vi.fn(() => true));
+    const handleRequest = (event: Event) => {
+      const detail = (event as CustomEvent<{ requestId: string; keyword: string }>).detail;
+      window.dispatchEvent(
+        new CustomEvent("shoppingday:keyword-exposure-result", {
+          detail: {
+            requestId: detail.requestId,
+            result: {
+              keyword: detail.keyword,
+              device: "pc",
+              status: "completed",
+              productCount: 40,
+              titleMatchCount: 2,
+              attributeMatchCount: 9,
+              categoryMatchCount: 0,
+              observedAt: "2026-08-16T00:00:00.000Z",
+              samples: [],
+              message: null,
+            },
+          },
+        }),
+      );
+    };
+    window.addEventListener("shoppingday:keyword-exposure-request", handleRequest);
+
+    render(<SourcingWorkspace initialItems={[]} initialDetail={initial} />);
+    window.dispatchEvent(
+      new CustomEvent("shoppingday:rank-extension-status", {
+        detail: { available: true, version: "0.5.8" },
+      }),
+    );
+    fireEvent.click(sectionButton("02 연관 키워드 분류"));
+    fireEvent.click(screen.getByRole("button", { name: "전체 다시 분류" }));
+
+    expect(
+      await screen.findByText(/1개 키워드를 다시 분석하고 추천 분류를 초안에 반영했습니다/),
+    ).toBeInTheDocument();
+    const row = within(screen.getByRole("table")).getByText("욕실화").closest("tr")!;
+    expect(within(row).getByRole("button", { name: "속성" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    window.removeEventListener("shoppingday:keyword-exposure-request", handleRequest);
+  });
+
   it("직접 입력한 연관키워드를 기존 목록에 누적한다", () => {
     render(<SourcingWorkspace initialItems={[]} initialDetail={researchWithKeywords()} />);
     fireEvent.click(sectionButton("02 연관 키워드 분류"));

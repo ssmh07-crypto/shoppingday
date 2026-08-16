@@ -9,6 +9,8 @@ const SUPPLIER_RESULT_EVENT = "shoppingday:supplier-check-result";
 const CATALOG_START_EVENT = "shoppingday:zicgam-catalog-start";
 const CATALOG_STOP_EVENT = "shoppingday:zicgam-catalog-stop";
 const CATALOG_PROGRESS_EVENT = "shoppingday:zicgam-catalog-progress";
+const KEYWORD_EXPOSURE_REQUEST_EVENT = "shoppingday:keyword-exposure-request";
+const KEYWORD_EXPOSURE_RESULT_EVENT = "shoppingday:keyword-exposure-result";
 
 window.addEventListener(PING_EVENT, () => {
   void reportStatus();
@@ -39,6 +41,46 @@ window.addEventListener(REQUEST_EVENT, (event) => {
         rank: null,
         checkedRange: 1,
         observedAt: new Date().toISOString(),
+        message:
+          error instanceof Error
+            ? error.message
+            : "Chrome 확장 프로그램과 통신하지 못했습니다.",
+      });
+    });
+});
+
+window.addEventListener(KEYWORD_EXPOSURE_REQUEST_EVENT, (event) => {
+  void chrome.runtime
+    .sendMessage({
+      type: "shoppingday.keyword-exposure.request",
+      payload: event.detail,
+    })
+    .then((response) => {
+      if (response?.ok) return;
+      dispatchKeywordExposureResult(event.detail?.requestId, {
+        keyword: event.detail?.keyword ?? "",
+        device: "pc",
+        status: "failed",
+        productCount: 0,
+        titleMatchCount: 0,
+        attributeMatchCount: 0,
+        categoryMatchCount: 0,
+        observedAt: new Date().toISOString(),
+        samples: [],
+        message: response?.message ?? "키워드 노출 분석 요청에 실패했습니다.",
+      });
+    })
+    .catch((error) => {
+      dispatchKeywordExposureResult(event.detail?.requestId, {
+        keyword: event.detail?.keyword ?? "",
+        device: "pc",
+        status: "failed",
+        productCount: 0,
+        titleMatchCount: 0,
+        attributeMatchCount: 0,
+        categoryMatchCount: 0,
+        observedAt: new Date().toISOString(),
+        samples: [],
         message:
           error instanceof Error
             ? error.message
@@ -103,6 +145,9 @@ window.addEventListener(CATALOG_STOP_EVENT, (event) => {
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type === "shoppingday.rank.result") {
     dispatchResult(message.requestId, message.result);
+  }
+  if (message?.type === "shoppingday.keyword-exposure.result") {
+    dispatchKeywordExposureResult(message.requestId, message.result);
   }
   if (message?.type === "shoppingday.supplier.result") {
     dispatchSupplierResult(message.requestId, message.result);
@@ -191,6 +236,14 @@ function dispatchResult(requestId, result) {
 function dispatchSupplierResult(requestId, result) {
   window.dispatchEvent(
     new CustomEvent(SUPPLIER_RESULT_EVENT, {
+      detail: { requestId, result },
+    }),
+  );
+}
+
+function dispatchKeywordExposureResult(requestId, result) {
+  window.dispatchEvent(
+    new CustomEvent(KEYWORD_EXPOSURE_RESULT_EVENT, {
       detail: { requestId, result },
     }),
   );

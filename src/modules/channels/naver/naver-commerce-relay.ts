@@ -595,6 +595,38 @@ export type NaverRelayHandlerOptions = {
   maxClockSkewMs?: number;
 };
 
+export type NaverRelayClientContext = {
+  tokenType: "SELF" | "SELLER";
+  accountId: string | null;
+};
+
+export function createCachedNaverRelayClientFactory(
+  createClient: (context: NaverRelayClientContext) => NaverCategoriesClient,
+  maxEntries = 20,
+) {
+  if (!Number.isInteger(maxEntries) || maxEntries < 1) {
+    throw new Error("네이버 릴레이 클라이언트 캐시 크기는 1 이상이어야 합니다.");
+  }
+  const clients = new Map<string, NaverCategoriesClient>();
+  return (context: NaverRelayClientContext) => {
+    const key = `${context.tokenType}:${context.accountId ?? ""}`;
+    const cached = clients.get(key);
+    if (cached) {
+      clients.delete(key);
+      clients.set(key, cached);
+      return cached;
+    }
+
+    const client = createClient(context);
+    clients.set(key, client);
+    if (clients.size > maxEntries) {
+      const oldestKey = clients.keys().next().value;
+      if (oldestKey !== undefined) clients.delete(oldestKey);
+    }
+    return client;
+  };
+}
+
 export interface NaverRelayReplayGuard {
   consume(nonce: string, expiresAt: number): boolean;
 }

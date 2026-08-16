@@ -498,11 +498,23 @@ export class NaverCommerceError extends Error {
     message: string,
     readonly responseStatus?: number,
     readonly invalidInputs: NaverCommerceInvalidInput[] = [],
+    readonly diagnostics: NaverCommerceResponseDiagnostics = {},
   ) {
     super(message);
     this.name = "NaverCommerceError";
   }
 }
+
+export type NaverCommerceResponseDiagnostics = {
+  gatewayCode?: string;
+  traceId?: string;
+  rateLimitReplenishRate?: string;
+  rateLimitBurstCapacity?: string;
+  rateLimitRemaining?: string;
+  quotaPeriod?: string;
+  quotaLimit?: string;
+  quotaRemaining?: string;
+};
 
 export async function createNaverCommerceSignature(
   clientId: string,
@@ -515,6 +527,7 @@ export async function createNaverCommerceSignature(
 
 export class NaverCommerceClient {
   private token?: { value: string; expiresAt: number };
+  private tokenPromise?: Promise<string>;
   private readonly sellerTagCache = new Map<
     string,
     NaverCommerceSellerTag | null
@@ -524,6 +537,8 @@ export class NaverCommerceClient {
     private readonly config: NaverCommerceConfig,
     private readonly fetcher: typeof fetch = fetch,
     private readonly now: () => number = Date.now,
+    private readonly wait: (delayMs: number) => Promise<void> = (delayMs) =>
+      new Promise((resolve) => setTimeout(resolve, delayMs)),
   ) {}
 
   async fetchCategories(options: { last?: boolean } = {}) {
@@ -924,6 +939,16 @@ export class NaverCommerceClient {
       return this.token.value;
     }
 
+    if (this.tokenPromise) return this.tokenPromise;
+    this.tokenPromise = this.requestAccessToken(now);
+    try {
+      return await this.tokenPromise;
+    } finally {
+      this.tokenPromise = undefined;
+    }
+  }
+
+  private async requestAccessToken(now: number) {
     const timestamp = now;
     const signature = await createNaverCommerceSignature(
       this.config.clientId,
@@ -979,13 +1004,39 @@ export class NaverCommerceClient {
     const started = performance.now();
     let responseStatus: number | undefined;
     let errorCode: string | undefined;
+    let diagnostics: NaverCommerceResponseDiagnostics = {};
     try {
-      const response = await this.fetcher(url, {
-        ...init,
-        redirect: "manual",
-        signal: controller.signal,
-        cache: "no-store",
-      });
+      let response: Response | undefined;
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        response = await this.fetcher(url, {
+          ...init,
+          redirect: "manual",
+          signal: controller.signal,
+          cache: "no-store",
+        });
+        responseStatus = response.status;
+        if (response.status !== 429 || attempt === 2) break;
+
+        const gatewayError = await readGatewayError(response);
+        diagnostics = readResponseDiagnostics(response, gatewayError?.code, gatewayError?.traceId);
+        logNaverRequestTiming({
+          transport: "direct",
+          method: init.method ?? "GET",
+          path: url.pathname,
+          responseStatus: response.status,
+          errorCode: "rate_limited",
+          attempt: attempt + 1,
+          ...diagnostics,
+          started,
+        });
+        await this.wait(500 * 2 ** attempt);
+      }
+      if (!response) {
+        throw new NaverCommerceError(
+          "request_failed",
+          "네이버 커머스API 응답을 받지 못했습니다.",
+        );
+      }
       responseStatus = response.status;
       if (allowUnauthorized && response.status === 401) return response;
       if (response.status >= 300 && response.status < 400) {
@@ -998,11 +1049,18 @@ export class NaverCommerceClient {
       if (allowedStatuses.includes(response.status)) return response;
       if (!response.ok) {
         const gatewayError = await readGatewayError(response);
+        diagnostics = readResponseDiagnostics(
+          response,
+          gatewayError?.code,
+          gatewayError?.traceId,
+        );
         if (gatewayError?.code === "GW.IP_NOT_ALLOWED") {
           throw new NaverCommerceError(
             "ip_not_allowed",
             "현재 서버의 공인 IP가 네이버 커머스API 호출 IP에 등록되지 않았습니다.",
             response.status,
+            [],
+            diagnostics,
           );
         }
         throw new NaverCommerceError(
@@ -1015,6 +1073,7 @@ export class NaverCommerceClient {
                 "네이버 커머스API 요청에 실패했습니다.",
           response.status,
           gatewayError?.invalidInputs,
+          diagnostics,
         );
       }
       return response;
@@ -1040,6 +1099,7 @@ export class NaverCommerceClient {
         path: url.pathname,
         responseStatus,
         errorCode,
+        ...diagnostics,
         started,
       });
     }
@@ -1052,6 +1112,15 @@ function logNaverRequestTiming(input: {
   path: string;
   responseStatus?: number;
   errorCode?: string;
+  attempt?: number;
+  gatewayCode?: string;
+  traceId?: string;
+  rateLimitReplenishRate?: string;
+  rateLimitBurstCapacity?: string;
+  rateLimitRemaining?: string;
+  quotaPeriod?: string;
+  quotaLimit?: string;
+  quotaRemaining?: string;
   started: number;
 }) {
   const durationMs = Math.round(performance.now() - input.started);
@@ -1067,6 +1136,15 @@ function logNaverRequestTiming(input: {
     path: input.path,
     responseStatus: input.responseStatus,
     errorCode: input.errorCode,
+    attempt: input.attempt,
+    gatewayCode: input.gatewayCode,
+    traceId: input.traceId,
+    rateLimitReplenishRate: input.rateLimitReplenishRate,
+    rateLimitBurstCapacity: input.rateLimitBurstCapacity,
+    rateLimitRemaining: input.rateLimitRemaining,
+    quotaPeriod: input.quotaPeriod,
+    quotaLimit: input.quotaLimit,
+    quotaRemaining: input.quotaRemaining,
     durationMs,
   });
 }
@@ -1080,6 +1158,7 @@ async function readGatewayError(response: Response) {
     const body = (await response.clone().json()) as {
       code?: unknown;
       message?: unknown;
+      traceId?: unknown;
       invalidInputs?: unknown;
     };
     const invalidInputs = Array.isArray(body.invalidInputs)
@@ -1112,11 +1191,30 @@ async function readGatewayError(response: Response) {
     return {
       code: typeof body.code === "string" ? body.code : undefined,
       message: typeof body.message === "string" ? body.message : undefined,
+      traceId: typeof body.traceId === "string" ? body.traceId : undefined,
       invalidInputs,
     };
   } catch {
     return undefined;
   }
+}
+
+function readResponseDiagnostics(
+  response: Response,
+  gatewayCode?: string,
+  bodyTraceId?: string,
+): NaverCommerceResponseDiagnostics {
+  const header = (name: string) => response.headers.get(name) ?? undefined;
+  return {
+    gatewayCode,
+    traceId: header("GNCP-GW-Trace-ID") ?? bodyTraceId,
+    rateLimitReplenishRate: header("GNCP-GW-RateLimit-Replenish-Rate"),
+    rateLimitBurstCapacity: header("GNCP-GW-RateLimit-Burst-Capacity"),
+    rateLimitRemaining: header("GNCP-GW-RateLimit-Remaining"),
+    quotaPeriod: header("GNCP-GW-Quota-Period"),
+    quotaLimit: header("GNCP-GW-Quota-Limit"),
+    quotaRemaining: header("GNCP-GW-Quota-Remaining"),
+  };
 }
 
 function formatGatewayErrorMessage(

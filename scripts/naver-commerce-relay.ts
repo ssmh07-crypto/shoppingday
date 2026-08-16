@@ -2,7 +2,10 @@ import { createServer } from "node:http";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { NaverCommerceClient } from "../src/modules/channels/naver/naver-commerce-client";
-import { createNaverCommerceRelayHandler } from "../src/modules/channels/naver/naver-commerce-relay";
+import {
+  createCachedNaverRelayClientFactory,
+  createNaverCommerceRelayHandler,
+} from "../src/modules/channels/naver/naver-commerce-relay";
 import { PlaywrightNaverShoppingRankReader } from "./naver-shopping-rank-reader";
 
 const optionalString = z.preprocess(
@@ -57,10 +60,8 @@ const naverClient = new NaverCommerceClient({
   accountId: relayEnv.NAVER_COMMERCE_ACCOUNT_ID,
   timeoutMs: relayEnv.NAVER_COMMERCE_TIMEOUT_MS,
 });
-const relayHandler = createNaverCommerceRelayHandler({
-  sharedSecret: relayEnv.NAVER_COMMERCE_RELAY_SHARED_SECRET,
-  client: naverClient,
-  clientFactory: ({ tokenType, accountId }) =>
+const clientFactory = createCachedNaverRelayClientFactory(
+  ({ tokenType, accountId }) =>
     new NaverCommerceClient({
       apiUrl: relayEnv.NAVER_COMMERCE_API_URL,
       clientId: relayEnv.NAVER_COMMERCE_CLIENT_ID,
@@ -69,6 +70,11 @@ const relayHandler = createNaverCommerceRelayHandler({
       accountId: accountId ?? undefined,
       timeoutMs: relayEnv.NAVER_COMMERCE_TIMEOUT_MS,
     }),
+);
+const relayHandler = createNaverCommerceRelayHandler({
+  sharedSecret: relayEnv.NAVER_COMMERCE_RELAY_SHARED_SECRET,
+  client: naverClient,
+  clientFactory,
   maxClockSkewMs: relayEnv.NAVER_RELAY_MAX_CLOCK_SKEW_MS,
   shoppingRankReader: new PlaywrightNaverShoppingRankReader(),
 });

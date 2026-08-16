@@ -452,6 +452,71 @@
   color: #b42318;
   font-size: 12px;
 }
+.sourcing-keyword-exposure-tools {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) auto auto auto;
+  align-items: center;
+  gap: 10px 14px;
+  margin-top: 12px;
+  padding: 13px 14px;
+  border: 1px solid #bfd3f7;
+  border-radius: 10px;
+  background: #f7faff;
+}
+.sourcing-keyword-exposure-tools > div {
+  display: grid;
+  gap: 3px;
+}
+.sourcing-keyword-exposure-tools strong {
+  color: #183b70;
+  font-size: 13px;
+}
+.sourcing-keyword-exposure-tools span,
+.sourcing-keyword-exposure-tools small {
+  color: var(--sourcing-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.sourcing-keyword-exposure-tools label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: #344054;
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+.sourcing-keyword-exposure-tools input {
+  width: 62px;
+  min-height: 36px;
+  padding: 6px 8px;
+}
+.sourcing-keyword-exposure-tools button,
+.keyword-exposure-single,
+.keyword-exposure-result button {
+  min-height: 36px;
+  padding: 7px 10px;
+  border: 1px solid #8fb4ef;
+  border-radius: 8px;
+  background: #fff;
+  color: #1d4ed8;
+  font-size: 12px;
+  font-weight: 800;
+}
+.sourcing-keyword-exposure-tools button:disabled,
+.keyword-exposure-single:disabled,
+.keyword-exposure-result button:disabled {
+  border-color: #d0d5dd;
+  color: #98a2b3;
+  cursor: not-allowed;
+}
+.sourcing-keyword-exposure-tools button.danger {
+  border-color: #f0a29a;
+  color: #b42318;
+}
+.sourcing-keyword-exposure-tools > small {
+  grid-column: 1 / -1;
+}
 .sourcing-keyword-exclusion {
   display: grid;
   grid-template-columns: minmax(190px, 1fr) minmax(180px, 0.8fr) auto;
@@ -552,12 +617,51 @@
 }
 .sourcing-keyword-table th:nth-child(3),
 .sourcing-keyword-table td:nth-child(3) {
-  width: 390px;
+  width: 330px;
 }
 .sourcing-keyword-table th:nth-child(4),
 .sourcing-keyword-table td:nth-child(4) {
+  width: 390px;
+}
+.sourcing-keyword-table th:nth-child(5),
+.sourcing-keyword-table td:nth-child(5) {
   width: 58px;
   text-align: center;
+}
+.keyword-exposure-result {
+  display: grid;
+  gap: 6px;
+  min-width: 280px;
+}
+.keyword-exposure-result > span,
+.keyword-exposure-result > small {
+  color: #475467;
+  font-size: 11px;
+  line-height: 1.45;
+}
+.keyword-exposure-result > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.keyword-exposure-result > div strong {
+  color: #1d4ed8;
+  font-size: 12px;
+}
+.keyword-exposure-result details {
+  color: #475467;
+  font-size: 11px;
+}
+.keyword-exposure-result summary {
+  cursor: pointer;
+  font-weight: 800;
+}
+.keyword-exposure-result ul {
+  display: grid;
+  gap: 4px;
+  margin: 6px 0 0;
+  padding-left: 16px;
 }
 .sourcing-keyword-delete {
   border: 0;
@@ -1309,6 +1413,7 @@
   }
   .sourcing-keyword-import,
   .sourcing-keyword-tools,
+  .sourcing-keyword-exposure-tools,
   .sourcing-review-analyzer-head,
   .sourcing-review-actions {
     align-items: stretch;
@@ -1337,6 +1442,16 @@
   }
   .sourcing-keyword-table th:nth-child(3),
   .sourcing-keyword-table td:nth-child(3) {
+    min-width: 290px;
+  }
+  .sourcing-keyword-exposure-tools {
+    grid-template-columns: 1fr;
+  }
+  .sourcing-keyword-exposure-tools > small {
+    grid-column: 1;
+  }
+  .sourcing-keyword-table th:nth-child(4),
+  .sourcing-keyword-table td:nth-child(4) {
     min-width: 330px;
   }
   .sourcing-product-apply {

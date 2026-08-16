@@ -3,6 +3,7 @@
 const PENDING_PREFIX = "rank-pending:";
 const SUPPLIER_WORKER_PREFIX = "supplier-worker:";
 const CATALOG_WORKER_PREFIX = "zicgam-catalog-worker:";
+const KEYWORD_EXPOSURE_WORKER_PREFIX = "keyword-exposure-worker:";
 const ALLOWED_APP_ORIGINS = new Set([
   "https://shoppingday.ssmh07.workers.dev",
   "http://localhost:3000",
@@ -69,6 +70,52 @@ async function handleMessage(message, sender) {
     return pending?.kind === "rank"
       ? { ok: true, payload: pending.payload }
       : { ok: false, message: "대기 중인 순위 조회가 없습니다." };
+  }
+
+  if (message?.type === "shoppingday.keyword-exposure.request") {
+    assertShoppingdaySender(sender);
+    const request = validateKeywordExposureRequest(message.payload);
+    const sourceTabId = sender.tab?.id;
+    if (!sourceTabId) throw new Error("Shoppingday 탭을 확인하지 못했습니다.");
+    const tab = await getOrCreateKeywordExposureTab(sourceTabId);
+    await chrome.storage.session.set({
+      [pendingKey(tab.id)]: {
+        kind: "keyword_exposure",
+        sourceTabId,
+        requestId: request.requestId,
+        payload: request,
+        createdAt: Date.now(),
+      },
+    });
+    const searchUrl = new URL("https://search.shopping.naver.com/search/all");
+    searchUrl.searchParams.set("query", request.keyword);
+    await chrome.tabs.update(tab.id, { url: searchUrl.toString(), active: true });
+    return { ok: true };
+  }
+
+  if (message?.type === "shoppingday.keyword-exposure.ready") {
+    assertNaverSender(sender);
+    const pending = await getPending(sender.tab?.id);
+    return pending?.kind === "keyword_exposure"
+      ? { ok: true, payload: pending.payload }
+      : { ok: false, message: "대기 중인 키워드 노출 분석이 없습니다." };
+  }
+
+  if (message?.type === "shoppingday.keyword-exposure.result") {
+    assertNaverSender(sender);
+    const naverTabId = sender.tab?.id;
+    const pending = await getPending(naverTabId);
+    if (!pending || pending.kind !== "keyword_exposure") {
+      return { ok: false, message: "키워드 노출 분석 요청이 만료되었습니다." };
+    }
+    await chrome.tabs.sendMessage(pending.sourceTabId, {
+      type: "shoppingday.keyword-exposure.result",
+      requestId: pending.requestId,
+      result: message.result,
+    });
+    await chrome.tabs.update(pending.sourceTabId, { active: true });
+    await chrome.storage.session.remove(pendingKey(naverTabId));
+    return { ok: true };
   }
 
   if (message?.type === "shoppingday.rank.result") {
@@ -298,6 +345,19 @@ function validateRankRequest(value) {
   };
 }
 
+function validateKeywordExposureRequest(value) {
+  const requestId =
+    typeof value?.requestId === "string" ? value.requestId.trim() : "";
+  const keyword = typeof value?.keyword === "string" ? value.keyword.trim() : "";
+  if (!requestId || requestId.length > 100) {
+    throw new Error("키워드 노출 분석 요청 ID가 올바르지 않습니다.");
+  }
+  if (!keyword || keyword.length > 100) {
+    throw new Error("분석할 키워드를 입력해 주세요.");
+  }
+  return { requestId, keyword, maximumProducts: 40 };
+}
+
 function validateSupplierRequest(value) {
   const requestId =
     typeof value?.requestId === "string" ? value.requestId.trim() : "";
@@ -449,5 +509,19 @@ async function getOrCreateCatalogTab(sourceTabId) {
   await chrome.storage.session.set({
     [`${CATALOG_WORKER_PREFIX}${sourceTabId}`]: tab.id,
   });
+  return tab;
+}
+
+async function getOrCreateKeywordExposureTab(sourceTabId) {
+  const workerKey = `${KEYWORD_EXPOSURE_WORKER_PREFIX}${sourceTabId}`;
+  const stored = await chrome.storage.session.get(workerKey);
+  const existingTabId = stored[workerKey];
+  if (Number.isInteger(existingTabId)) {
+    const existing = await chrome.tabs.get(existingTabId).catch(() => null);
+    if (existing?.id) return existing;
+  }
+  const tab = await chrome.tabs.create({ url: "about:blank", active: true });
+  if (!tab.id) throw new Error("네이버쇼핑 키워드 분석 탭을 열지 못했습니다.");
+  await chrome.storage.session.set({ [workerKey]: tab.id });
   return tab;
 }

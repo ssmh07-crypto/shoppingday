@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ChangeEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from "react";
 import {
   mergeImportedKeywords,
   parseItemScoutWorkbook,
@@ -23,6 +23,15 @@ import {
   type SourcingResearchStatus,
   type SourcingReviewInput,
 } from "@/modules/sourcing/types";
+import {
+  recommendKeywordPlacement,
+  type KeywordExposureResult,
+} from "@/modules/sourcing/keyword-exposure";
+
+const KEYWORD_EXPOSURE_REQUEST_EVENT = "shoppingday:keyword-exposure-request";
+const KEYWORD_EXPOSURE_RESULT_EVENT = "shoppingday:keyword-exposure-result";
+const EXTENSION_STATUS_EVENT = "shoppingday:rank-extension-status";
+const EXTENSION_PING_EVENT = "shoppingday:rank-extension-ping";
 
 type ListItem = Pick<
   SourcingResearchRecord,
@@ -104,6 +113,14 @@ export function SourcingWorkspace({
   const [keywordVolumeFilter, setKeywordVolumeFilter] =
     useState<KeywordVolumeFilter>("all");
   const [keywordVolumeSort, setKeywordVolumeSort] = useState<"desc" | "asc">("desc");
+  const [keywordExposureResults, setKeywordExposureResults] = useState<
+    Record<string, KeywordExposureResult>
+  >({});
+  const [keywordExposureRunning, setKeywordExposureRunning] = useState(false);
+  const [keywordExposureProgress, setKeywordExposureProgress] = useState("");
+  const keywordExposureCancelRef = useRef(false);
+  const [titleExposureThreshold, setTitleExposureThreshold] = useState(30);
+  const [extensionAvailable, setExtensionAvailable] = useState<boolean | null>(null);
   const [sourcingListOpen, setSourcingListOpen] = useState(false);
   const [reviewRawText, setReviewRawText] = useState("");
   const [reviewListExpanded, setReviewListExpanded] = useState(true);
@@ -173,6 +190,83 @@ export function SourcingWorkspace({
     window.addEventListener("keydown", closeOnEscape);
     return () => window.removeEventListener("keydown", closeOnEscape);
   }, [sourcingListOpen]);
+
+  useEffect(() => {
+    const handleStatus = (event: Event) => {
+      const detail = (
+        event as CustomEvent<{ available?: boolean; version?: string | null }>
+      ).detail;
+      setExtensionAvailable(
+        detail?.available === true && isExtensionVersionSupported(detail.version),
+      );
+    };
+    window.addEventListener(EXTENSION_STATUS_EVENT, handleStatus);
+    window.dispatchEvent(new CustomEvent(EXTENSION_PING_EVENT));
+    return () => window.removeEventListener(EXTENSION_STATUS_EVENT, handleStatus);
+  }, []);
+
+  async function analyzeKeywordExposure(
+    targets: SourcingResearchInput["relatedKeywords"],
+    options: { analyzeAll?: boolean; applyRecommendations?: boolean } = {},
+  ) {
+    if (keywordExposureRunning || targets.length === 0) return;
+    if (extensionAvailable !== true) {
+      setError("Shoppingday Chrome 확장 프로그램 0.5.8 이상을 다시 로드해 주세요.");
+      return;
+    }
+    const limitedTargets = options.analyzeAll ? targets : targets.slice(0, 10);
+    keywordExposureCancelRef.current = false;
+    setKeywordExposureRunning(true);
+    setError(null);
+    setMessage(null);
+    let completedCount = 0;
+    try {
+      for (let index = 0; index < limitedTargets.length; index += 1) {
+        if (keywordExposureCancelRef.current) break;
+        const target = limitedTargets[index]!;
+        setKeywordExposureProgress(
+          `${index + 1}/${limitedTargets.length} · ${target.keyword} 분석 중`,
+        );
+        const result = await requestKeywordExposure(target.keyword);
+        setKeywordExposureResults((current) => ({
+          ...current,
+          [target.id]: result,
+        }));
+        if (result.status !== "completed") {
+          throw new Error(
+            result.message ?? `${target.keyword} 키워드 분석을 완료하지 못했습니다.`,
+          );
+        }
+        const recommendation = recommendKeywordPlacement(
+          result,
+          titleExposureThreshold,
+        );
+        if (options.applyRecommendations && recommendation) {
+          setDraft((current) => ({
+            ...current,
+            relatedKeywords: current.relatedKeywords.map((item) =>
+              item.id === target.id
+                ? { ...item, placement: recommendation.placement }
+                : item,
+            ),
+          }));
+        }
+        completedCount += 1;
+        if (index + 1 < limitedTargets.length) await wait(1_500);
+      }
+      setMessage(keywordExposureCancelRef.current
+        ? `${completedCount}개까지 분석한 뒤 전체 다시 분류를 중지했습니다. 완료된 추천은 저장 전 초안에만 반영되어 있습니다.`
+        : options.applyRecommendations
+          ? `${completedCount}개 키워드를 다시 분석하고 추천 분류를 초안에 반영했습니다. 결과를 검토한 뒤 저장해 주세요.`
+          : `${completedCount}개 키워드의 네이버쇼핑 1페이지 노출 분석을 마쳤습니다. 추천을 확인한 뒤 적용해 주세요.`,
+      );
+    } catch (caught) {
+      setError(errorMessage(caught));
+    } finally {
+      setKeywordExposureRunning(false);
+      setKeywordExposureProgress("");
+    }
+  }
 
   async function selectItem(id: string) {
     setBusy(true);
@@ -711,6 +805,86 @@ export function SourcingWorkspace({
                       </button>
                     ) : null}
                   </div>
+                  <div className="sourcing-keyword-exposure-tools">
+                    <div>
+                      <strong>네이버쇼핑 1페이지 노출 분석</strong>
+                      <span>
+                        광고·중복을 제외한 PC 가격비교 상품 최대 40개에서 상품명과 카드 부가정보를 확인합니다.
+                      </span>
+                    </div>
+                    <label>
+                      상품명 다수 기준
+                      <input
+                        type="number"
+                        min="1"
+                        max="100"
+                        value={titleExposureThreshold}
+                        onChange={(event) =>
+                          setTitleExposureThreshold(
+                            Math.min(100, Math.max(1, Number(event.target.value) || 1)),
+                          )
+                        }
+                        aria-label="상품명 노출 추천 기준"
+                      />
+                      %
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        void analyzeKeywordExposure(
+                          visibleRelatedKeywords.filter(
+                            (item) => item.placement === "unclassified",
+                          ),
+                        )
+                      }
+                      disabled={
+                        keywordExposureRunning ||
+                        !visibleRelatedKeywords.some(
+                          (item) => item.placement === "unclassified",
+                        )
+                      }
+                    >
+                      {keywordExposureRunning
+                        ? keywordExposureProgress || "분석 준비 중…"
+                        : "표시 중 미분류 최대 10개 분석"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (
+                          !window.confirm(
+                            `현재 연관키워드 ${draft.relatedKeywords.length}개를 모두 다시 검색하고 추천 분류를 초안에 반영할까요? 키워드 수에 따라 오래 걸릴 수 있으며 언제든 중지할 수 있습니다.`,
+                          )
+                        ) return;
+                        void analyzeKeywordExposure(draft.relatedKeywords, {
+                          analyzeAll: true,
+                          applyRecommendations: true,
+                        });
+                      }}
+                      disabled={keywordExposureRunning || draft.relatedKeywords.length === 0}
+                    >
+                      전체 다시 분류
+                    </button>
+                    {keywordExposureRunning ? (
+                      <button
+                        type="button"
+                        className="danger"
+                        onClick={() => {
+                          keywordExposureCancelRef.current = true;
+                          setKeywordExposureProgress("현재 키워드 완료 후 중지…");
+                        }}
+                      >
+                        분석 중지
+                      </button>
+                    ) : null}
+                    <small>
+                      {extensionAvailable === true
+                        ? "Chrome 확장 프로그램 연결됨"
+                        : extensionAvailable === false
+                          ? "확장 프로그램 0.5.8 이상을 다시 로드해야 합니다."
+                          : "확장 프로그램 연결 확인 중…"}
+                    </small>
+                  </div>
                   <div className="sourcing-keyword-exclusion">
                     <div>
                       <strong>포함어 일괄 삭제</strong>
@@ -743,12 +917,85 @@ export function SourcingWorkspace({
                   </div>
                   <div className="sourcing-keyword-table-wrap">
                     <table className="sourcing-keyword-table">
-                      <thead><tr><th>키워드</th><th>총 검색수</th><th>직접 분류</th><th><span className="sr-only">삭제</span></th></tr></thead>
+                      <thead><tr><th>키워드</th><th>총 검색수</th><th>1페이지 분석</th><th>직접 분류</th><th><span className="sr-only">삭제</span></th></tr></thead>
                       <tbody>
-                        {visibleRelatedKeywords.map((item) => (
+                        {visibleRelatedKeywords.map((item) => {
+                          const exposure = keywordExposureResults[item.id];
+                          const recommendation = exposure
+                            ? recommendKeywordPlacement(
+                                exposure,
+                                titleExposureThreshold,
+                              )
+                            : null;
+                          return (
                           <tr key={item.id}>
                             <td>{item.keyword}</td>
                             <td>{formatNumber(item.monthlySearchVolume)}</td>
+                            <td>
+                              {exposure ? (
+                                <div className="keyword-exposure-result">
+                                  {exposure.status === "completed" ? (
+                                    <>
+                                      <span>
+                                        상품명 {exposure.titleMatchCount}/{exposure.productCount} · 부가정보 {exposure.attributeMatchCount} · 카테고리 {exposure.categoryMatchCount}
+                                      </span>
+                                      {recommendation ? (
+                                        <div>
+                                          <strong>
+                                            추천 {keywordPlacementLabels[recommendation.placement]}
+                                          </strong>
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              updateKeywordPlacement(
+                                                item.id,
+                                                recommendation.placement,
+                                              );
+                                              setMessage(
+                                                `${item.keyword}을(를) ${keywordPlacementLabels[recommendation.placement]}로 반영했습니다. 저장 전까지는 초안에만 적용됩니다.`,
+                                              );
+                                            }}
+                                          >
+                                            추천 적용
+                                          </button>
+                                        </div>
+                                      ) : null}
+                                      <small>{recommendation?.reason}</small>
+                                      {exposure.samples.length > 0 ? (
+                                        <details>
+                                          <summary>일치 표본 {exposure.samples.length}개</summary>
+                                          <ul>
+                                            {exposure.samples.map((sample, index) => (
+                                              <li key={`${index}-${sample.title}`}>
+                                                {sample.evidence || sample.title}
+                                              </li>
+                                            ))}
+                                          </ul>
+                                        </details>
+                                      ) : null}
+                                    </>
+                                  ) : (
+                                    <small>{exposure.message ?? "분석 실패"}</small>
+                                  )}
+                                  <button
+                                    type="button"
+                                    onClick={() => void analyzeKeywordExposure([item])}
+                                    disabled={keywordExposureRunning}
+                                  >
+                                    다시 분석
+                                  </button>
+                                </div>
+                              ) : (
+                                <button
+                                  type="button"
+                                  className="keyword-exposure-single"
+                                  onClick={() => void analyzeKeywordExposure([item])}
+                                  disabled={keywordExposureRunning}
+                                >
+                                  노출 분석
+                                </button>
+                              )}
+                            </td>
                             <td>
                               <div className="keyword-placement-buttons" role="group" aria-label={`${item.keyword} 사용 위치`}>
                                 {(Object.entries(keywordPlacementLabels) as Array<[SourcingKeywordPlacement, string]>).filter(([value]) => value !== "unclassified").map(([value, label]) => (
@@ -776,7 +1023,8 @@ export function SourcingWorkspace({
                               </button>
                             </td>
                           </tr>
-                        ))}
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
@@ -955,7 +1203,77 @@ export function SourcingWorkspace({
     setReviewRawText("");
     setReviewListExpanded(true);
     setReviewAnalysis(null);
+    setKeywordExposureResults({});
+    setKeywordExposureProgress("");
+    keywordExposureCancelRef.current = true;
   }
+}
+
+function requestKeywordExposure(keyword: string) {
+  return new Promise<KeywordExposureResult>((resolve, reject) => {
+    const requestId = crypto.randomUUID();
+    const timeout = window.setTimeout(() => {
+      cleanup();
+      reject(new Error(`${keyword} 키워드 분석 응답 시간이 초과되었습니다.`));
+    }, 90_000);
+    const handleResult = (event: Event) => {
+      const detail = (
+        event as CustomEvent<{ requestId?: string; result?: unknown }>
+      ).detail;
+      if (detail?.requestId !== requestId) return;
+      cleanup();
+      if (!isKeywordExposureResult(detail.result)) {
+        reject(new Error("Chrome 확장 프로그램의 키워드 분석 결과가 올바르지 않습니다."));
+        return;
+      }
+      resolve(detail.result);
+    };
+    function cleanup() {
+      window.clearTimeout(timeout);
+      window.removeEventListener(KEYWORD_EXPOSURE_RESULT_EVENT, handleResult);
+    }
+    window.addEventListener(KEYWORD_EXPOSURE_RESULT_EVENT, handleResult);
+    window.dispatchEvent(
+      new CustomEvent(KEYWORD_EXPOSURE_REQUEST_EVENT, {
+        detail: { requestId, keyword },
+      }),
+    );
+  });
+}
+
+function isKeywordExposureResult(value: unknown): value is KeywordExposureResult {
+  if (!value || typeof value !== "object") return false;
+  const result = value as Partial<KeywordExposureResult>;
+  return (
+    typeof result.keyword === "string" &&
+    result.device === "pc" &&
+    ["completed", "blocked", "failed"].includes(result.status ?? "") &&
+    [
+      result.productCount,
+      result.titleMatchCount,
+      result.attributeMatchCount,
+      result.categoryMatchCount,
+    ].every((count) => Number.isInteger(count) && (count ?? -1) >= 0) &&
+    typeof result.observedAt === "string" &&
+    Array.isArray(result.samples) &&
+    (result.message === null || typeof result.message === "string")
+  );
+}
+
+function isExtensionVersionSupported(version: string | null | undefined) {
+  if (!version) return false;
+  const parts = version.split(".").map(Number);
+  if (parts.some((part) => !Number.isInteger(part) || part < 0)) return false;
+  const [major = 0, minor = 0, patch = 0] = parts;
+  return (
+    major > 0 ||
+    (major === 0 && minor > 5) ||
+    (major === 0 && minor === 5 && patch >= 8)
+  );
+}
+
+function wait(milliseconds: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
 }
 
 function normalizeKeywordText(value: string) {

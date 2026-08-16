@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  createCachedNaverRelayClientFactory,
   createNaverCommerceRelayHandler,
   NaverCommerceRelayClient,
 } from "@/modules/channels/naver/naver-commerce-relay";
@@ -459,6 +460,23 @@ describe("네이버 커머스API 중계 인증", () => {
 });
 
 describe("네이버 커머스API 중계 클라이언트", () => {
+  it("판매자 컨텍스트별 클라이언트를 재사용하고 캐시 크기를 제한한다", () => {
+    const createClient = vi.fn(() => ({
+      fetchCategories: vi.fn(),
+      fetchProductModels: vi.fn(),
+      ...metadataClientMocks(),
+    }));
+    const factory = createCachedNaverRelayClientFactory(createClient, 1);
+    const firstContext = { tokenType: "SELLER" as const, accountId: "seller-a" };
+    const secondContext = { tokenType: "SELLER" as const, accountId: "seller-b" };
+
+    const first = factory(firstContext);
+    expect(factory(firstContext)).toBe(first);
+    factory(secondContext);
+    expect(factory(firstContext)).not.toBe(first);
+    expect(createClient).toHaveBeenCalledTimes(3);
+  });
+
   it("검증된 상품 JSON만 HMAC 서명해 v2 등록 경로로 전달한다", async () => {
     const upstream = {
       fetchCategories: vi.fn(),
