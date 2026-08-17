@@ -175,10 +175,7 @@ function keywordRow(item: SourcingRelatedKeyword): Cell[] {
       ...bodyStyle,
     },
     {
-      value: exposure?.observedAt ? new Date(exposure.observedAt) : undefined,
-      type: exposure?.observedAt ? Date : undefined,
-      format: "yyyy-mm-dd hh:mm",
-      ...bodyStyle,
+      ...dateCell(exposure?.observedAt, bodyStyle),
     },
   ];
 }
@@ -259,9 +256,10 @@ function numberCell(
   value: number | null | undefined,
   style: Record<string, unknown>,
 ) {
+  if (value == null) return { value: "", ...style };
   return {
-    value: value ?? undefined,
-    type: value == null ? undefined : Number,
+    value,
+    type: Number,
     format: "#,##0",
     align: "right" as const,
     ...style,
@@ -272,11 +270,25 @@ function percentCell(
   value: number | null,
   style: Record<string, unknown>,
 ) {
+  if (value == null) return { value: "", ...style };
   return {
-    value: value ?? undefined,
-    type: value == null ? undefined : Number,
+    value,
+    type: Number,
     format: "0.0%",
     align: "right" as const,
+    ...style,
+  };
+}
+
+function dateCell(
+  value: string | null | undefined,
+  style: Record<string, unknown>,
+) {
+  if (!value) return { value: "", ...style };
+  return {
+    value: new Date(value),
+    type: Date,
+    format: "yyyy-mm-dd hh:mm",
     ...style,
   };
 }

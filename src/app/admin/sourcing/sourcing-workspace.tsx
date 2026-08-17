@@ -133,6 +133,7 @@ export function SourcingWorkspace({
   const [busy, setBusy] = useState(false);
   const [importingKeywords, setImportingKeywords] = useState(false);
   const [exportingKeywords, setExportingKeywords] = useState(false);
+  const [keywordExportStatus, setKeywordExportStatus] = useState("");
   const [manualKeywordText, setManualKeywordText] = useState("");
   const [keywordQuery, setKeywordQuery] = useState("");
   const [keywordExclusionText, setKeywordExclusionText] = useState("");
@@ -895,6 +896,7 @@ export function SourcingWorkspace({
   async function exportKeywords() {
     if (!draft.relatedKeywords.length || exportingKeywords) return;
     setExportingKeywords(true);
+    setKeywordExportStatus("엑셀 파일을 만드는 중입니다.");
     setMessage(null);
     setError(null);
     try {
@@ -902,8 +904,11 @@ export function SourcingWorkspace({
       setMessage(
         `분류 키워드 ${draft.relatedKeywords.length}개와 저장된 판독 표본을 엑셀로 내려받았습니다.`,
       );
+      setKeywordExportStatus("엑셀 다운로드를 시작했습니다.");
     } catch (caught) {
-      setError(`엑셀 파일을 만들지 못했습니다. ${errorMessage(caught)}`);
+      const exportError = `엑셀 파일을 만들지 못했습니다. ${errorMessage(caught)}`;
+      setError(exportError);
+      setKeywordExportStatus(exportError);
     } finally {
       setExportingKeywords(false);
     }
@@ -1299,6 +1304,9 @@ export function SourcingWorkspace({
                     >
                       {exportingKeywords ? "엑셀 만드는 중…" : "분류 결과 엑셀 다운로드"}
                     </button>
+                    {keywordExportStatus ? (
+                      <small role="status">{keywordExportStatus}</small>
+                    ) : null}
                   </div>
                   <div className="sourcing-keyword-exclusion">
                     <div>

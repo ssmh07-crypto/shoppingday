@@ -380,6 +380,30 @@ describe("소싱 조사 화면", () => {
     expect(within(row).getByText("물빠짐 미끄럼방지 욕실화")).toBeInTheDocument();
   });
 
+  it("분류 결과 엑셀 다운로드를 누르면 xlsx 파일 저장을 시작한다", async () => {
+    const createObjectUrl = vi.fn(() => "blob:keyword-workbook");
+    const revokeObjectUrl = vi.fn();
+    Object.defineProperty(URL, "createObjectURL", {
+      configurable: true,
+      value: createObjectUrl,
+    });
+    Object.defineProperty(URL, "revokeObjectURL", {
+      configurable: true,
+      value: revokeObjectUrl,
+    });
+
+    render(<SourcingWorkspace initialItems={[]} initialDetail={researchWithKeywords()} />);
+    fireEvent.click(sectionButton("02 연관 키워드 분류"));
+    fireEvent.click(
+      screen.getByRole("button", { name: "분류 결과 엑셀 다운로드" }),
+    );
+
+    expect(
+      await screen.findByText(/분류 키워드 2개와 저장된 판독 표본을 엑셀로 내려받았습니다/),
+    ).toBeInTheDocument();
+    expect(createObjectUrl).toHaveBeenCalledWith(expect.any(Blob));
+  });
+
   it("전체 자동 분류는 카드 부가정보만 있는 키워드를 기본 상품명 후보로 반영한다", async () => {
     stubTagDictionary(false);
     const initial = researchWithKeywords();
