@@ -319,9 +319,65 @@ describe("소싱 조사 화면", () => {
       "true",
     );
     expect(
-      screen.getByText(/저장 전까지는 초안에만 적용됩니다/),
+      screen.getByText(/임시저장하면 상세 분석 근거와 함께 보존됩니다/),
     ).toBeInTheDocument();
     window.removeEventListener("shoppingday:keyword-exposure-request", handleRequest);
+  });
+
+  it("저장된 키워드 상세 분석 근거를 다시 연 화면에 복원한다", () => {
+    const initial = researchWithKeywords();
+    initial.relatedKeywords[0] = {
+      ...initial.relatedKeywords[0]!,
+      placement: "product_name",
+      analysis: {
+        exposure: {
+          keyword: "욕실화",
+          device: "pc",
+          status: "completed",
+          productCount: 40,
+          titleMatchCount: 24,
+          attributeMatchCount: 3,
+          categoryMatchCount: 1,
+          contextKeyword: "욕실화",
+          contextMatchCount: 40,
+          contextCategoryId: "50000001",
+          contextCategoryName: "욕실화",
+          contextCategoryMatchCount: 38,
+          categoryDistribution: [
+            { category: "생활/건강 > 욕실용품 > 욕실화", count: 38 },
+          ],
+          observedAt: "2026-08-17T01:00:00.000Z",
+          samples: [{
+            title: "물빠짐 미끄럼방지 욕실화",
+            matchedIn: ["product_name"],
+            evidence: "물빠짐 미끄럼방지 욕실화",
+          }],
+          message: null,
+        },
+        tagDictionary: {
+          keyword: "욕실화",
+          status: "registered",
+          exactTag: { code: 101, text: "욕실화" },
+          candidates: [],
+          message: null,
+        },
+        officialAttributeStatus: "unmatched",
+        recommendedPlacement: "product_name",
+        recommendationReason: "상품명 24/40건으로 설정한 60% 기준을 충족했습니다.",
+        requiresReview: false,
+        titleExposureThresholdPercent: 60,
+        analyzedAt: "2026-08-17T01:00:00.000Z",
+      },
+    };
+
+    render(<SourcingWorkspace initialItems={[]} initialDetail={initial} />);
+    fireEvent.click(sectionButton("02 연관 키워드 분류"));
+
+    expect(screen.getByLabelText("상품명 노출 추천 기준")).toHaveValue(60);
+    const row = within(screen.getByRole("table")).getByText("욕실화").closest("tr")!;
+    expect(within(row).getByText("상품명 노출").parentElement).toHaveTextContent("24/40");
+    expect(within(row).getByText("카테고리 적합").parentElement).toHaveTextContent("38/40");
+    expect(within(row).getByText("물빠짐 미끄럼방지 욕실화")).toBeInTheDocument();
   });
 
   it("전체 자동 분류는 카드 부가정보만 있는 키워드를 기본 상품명 후보로 반영한다", async () => {

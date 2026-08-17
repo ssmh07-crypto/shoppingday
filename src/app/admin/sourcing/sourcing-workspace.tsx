@@ -41,6 +41,7 @@ import {
   matchOfficialAttributeKeyword,
   type OfficialAttributeContext,
 } from "@/modules/sourcing/official-keyword-metadata";
+import { downloadSourcingKeywordWorkbook } from "@/modules/sourcing/keyword-export";
 
 const KEYWORD_EXPOSURE_REQUEST_EVENT = "shoppingday:keyword-exposure-request";
 const KEYWORD_EXPOSURE_RESULT_EVENT = "shoppingday:keyword-exposure-result";
@@ -131,6 +132,7 @@ export function SourcingWorkspace({
   const [creating, setCreating] = useState(!initialDetail);
   const [busy, setBusy] = useState(false);
   const [importingKeywords, setImportingKeywords] = useState(false);
+  const [exportingKeywords, setExportingKeywords] = useState(false);
   const [manualKeywordText, setManualKeywordText] = useState("");
   const [keywordQuery, setKeywordQuery] = useState("");
   const [keywordExclusionText, setKeywordExclusionText] = useState("");
@@ -149,12 +151,14 @@ export function SourcingWorkspace({
     useState<KeywordQualityFilter>("all");
   const [keywordExposureResults, setKeywordExposureResults] = useState<
     Record<string, KeywordExposureResult>
-  >({});
+  >(() => keywordExposureResultsFrom(initialDetail?.relatedKeywords ?? []));
   const [keywordTagDictionaryResults, setKeywordTagDictionaryResults] = useState<
     Record<string, NaverTagDictionaryResult>
-  >({});
+  >(() => keywordTagDictionaryResultsFrom(initialDetail?.relatedKeywords ?? []));
   const [keywordOfficialAttributeStatuses, setKeywordOfficialAttributeStatuses] =
-    useState<Record<string, "matched" | "unmatched" | "unavailable">>({});
+    useState<Record<string, "matched" | "unmatched" | "unavailable">>(() =>
+      keywordOfficialAttributeStatusesFrom(initialDetail?.relatedKeywords ?? []),
+    );
   const keywordTagDictionaryCacheRef = useRef(
     new Map<string, NaverTagDictionaryResult>(),
   );
@@ -165,7 +169,10 @@ export function SourcingWorkspace({
   const [keywordExposureProgress, setKeywordExposureProgress] = useState("");
   const keywordExposureCancelRef = useRef(false);
   const [titleExposureThreshold, setTitleExposureThreshold] = useState(
-    DEFAULT_TITLE_EXPOSURE_THRESHOLD_PERCENT,
+    () =>
+      initialDetail?.relatedKeywords.find((item) => item.analysis)?.analysis
+        ?.titleExposureThresholdPercent ??
+      DEFAULT_TITLE_EXPOSURE_THRESHOLD_PERCENT,
   );
   const [extensionAvailable, setExtensionAvailable] = useState<boolean | null>(null);
   const [sourcingListOpen, setSourcingListOpen] = useState(false);
@@ -441,6 +448,22 @@ export function SourcingWorkspace({
                   ...(officialAttributeContext
                     ? { officialAttribute }
                     : {}),
+                  analysis: {
+                    exposure: result,
+                    tagDictionary,
+                    officialAttributeStatus: officialAttributeContext
+                      ? officialAttribute
+                        ? "matched"
+                        : "unmatched"
+                      : "unavailable",
+                    recommendedPlacement:
+                      recommendation?.placement ?? "unclassified",
+                    recommendationReason:
+                      recommendation?.reason ?? contextAssessment.reason,
+                    requiresReview,
+                    titleExposureThresholdPercent: titleExposureThreshold,
+                    analyzedAt: result.observedAt,
+                  },
                   ...(options.applyRecommendations && !options.analyzeAll &&
                   (recommendation || requiresReview)
                     ? {
@@ -470,10 +493,10 @@ export function SourcingWorkspace({
         }));
       }
       setMessage(keywordExposureCancelRef.current
-        ? `${completedCount}개까지 분석한 뒤 전체 다시 분류를 중지했습니다. 완료된 추천은 저장 전 초안에만 반영되어 있습니다.`
+        ? `${completedCount}개까지 분석한 뒤 전체 다시 분류를 중지했습니다. 완료된 분류와 상세 근거는 임시저장하면 다시 열어도 유지됩니다.`
         : options.applyRecommendations
-          ? `${completedCount}개 키워드를 다시 분석하고 추천 분류를 초안에 반영했습니다. 상품명 후보 ${automaticAllocation?.productNameKeywordIds.length ?? 0}개 중 ${automaticAllocation?.titleKeywordIds.length ?? 0}개를 상품명 조합 대상으로 검토합니다. 공식 태그 풀은 ${automaticAllocation?.tagKeywordIds.length ?? 0}개이며 등록 초안에서 상품명에 쓰지 않은 태그를 검색수순 최대 10개 사용합니다.`
-          : `${completedCount}개 키워드의 네이버쇼핑 1페이지 노출 분석을 마쳤습니다. 추천을 확인한 뒤 적용해 주세요.`,
+          ? `${completedCount}개 키워드를 다시 분석하고 추천 분류를 초안에 반영했습니다. 상품명 후보 ${automaticAllocation?.productNameKeywordIds.length ?? 0}개 중 ${automaticAllocation?.titleKeywordIds.length ?? 0}개를 상품명 조합 대상으로 검토합니다. 공식 태그 풀은 ${automaticAllocation?.tagKeywordIds.length ?? 0}개이며 등록 초안에서 상품명에 쓰지 않은 태그를 검색수순 최대 10개 사용합니다. 임시저장하면 상세 분석 근거도 함께 보존됩니다.`
+          : `${completedCount}개 키워드의 네이버쇼핑 1페이지 노출 분석을 마쳤습니다. 추천을 확인해 적용하고 임시저장하면 상세 분석 근거도 함께 보존됩니다.`,
       );
     } catch (caught) {
       setError(errorMessage(caught));
@@ -566,11 +589,13 @@ export function SourcingWorkspace({
     setDraft((current) => ({
       ...current,
       naverCategory: category,
-      relatedKeywords: current.relatedKeywords.map((item) =>
-        item.officialAttribute
-          ? { ...item, officialAttribute: null, placement: "unclassified" }
-          : item,
-      ),
+      relatedKeywords: current.relatedKeywords.map((item) => ({
+        ...item,
+        analysis: null,
+        ...(item.officialAttribute
+          ? { officialAttribute: null, placement: "unclassified" as const }
+          : {}),
+      })),
     }));
     setNaverCategorySearch("");
     setNaverCategoryResults([]);
@@ -590,7 +615,7 @@ export function SourcingWorkspace({
       setDraft(recordToInput(response.data!));
       setCreating(false);
       setSourcingListOpen(false);
-      resetEditorTransientState();
+      resetEditorTransientState(response.data!);
     } catch (caught) {
       setError(errorMessage(caught));
     } finally {
@@ -618,7 +643,7 @@ export function SourcingWorkspace({
       setDetail(response.data!);
       setDraft(recordToInput(response.data!));
       setCreating(false);
-      resetEditorTransientState();
+      resetEditorTransientState(response.data!);
       const listResponse = await api<never, ListItem[]>("/api/sourcing-researches");
       setItems(listResponse.items ?? []);
       setMessage("새 소싱 아이템을 목록에 추가했습니다.");
@@ -826,10 +851,12 @@ export function SourcingWorkspace({
           setDetail(response.data!);
           setDraft(recordToInput(response.data!));
           setCreating(false);
+          resetEditorTransientState(response.data!);
         } else {
           setDetail(null);
           setDraft(emptyResearch());
           setCreating(true);
+          resetEditorTransientState();
         }
       }
       setMessage("소싱 아이템을 삭제했습니다.");
@@ -862,6 +889,23 @@ export function SourcingWorkspace({
       setMessage("스마트스토어 상품을 열고 있습니다. 리뷰 탭에서 ‘현재 리뷰 가져오기’를 눌러 주세요.");
     } catch (caught) {
       setError(errorMessage(caught));
+    }
+  }
+
+  async function exportKeywords() {
+    if (!draft.relatedKeywords.length || exportingKeywords) return;
+    setExportingKeywords(true);
+    setMessage(null);
+    setError(null);
+    try {
+      await downloadSourcingKeywordWorkbook(draft);
+      setMessage(
+        `분류 키워드 ${draft.relatedKeywords.length}개와 저장된 판독 표본을 엑셀로 내려받았습니다.`,
+      );
+    } catch (caught) {
+      setError(`엑셀 파일을 만들지 못했습니다. ${errorMessage(caught)}`);
+    } finally {
+      setExportingKeywords(false);
     }
   }
 
@@ -1148,13 +1192,16 @@ export function SourcingWorkspace({
                         setDraft((current) => ({
                           ...current,
                           naverCategory: null,
-                          relatedKeywords: current.relatedKeywords.map((item) =>
-                            item.officialAttribute
-                              ? { ...item, officialAttribute: null, placement: "unclassified" }
-                              : item,
-                          ),
+                          relatedKeywords: current.relatedKeywords.map((item) => ({
+                            ...item,
+                            analysis: null,
+                            ...(item.officialAttribute
+                              ? { officialAttribute: null, placement: "unclassified" as const }
+                              : {}),
+                          })),
                         }));
                         setKeywordExposureResults({});
+                        setKeywordTagDictionaryResults({});
                         setKeywordOfficialAttributeStatuses({});
                         setKeywordQualityFilter("all");
                         officialAttributeContextCacheRef.current.clear();
@@ -1245,6 +1292,13 @@ export function SourcingWorkspace({
                         엑셀 키워드 삭제 ({itemScoutKeywordCount})
                       </button>
                     ) : null}
+                    <button
+                      type="button"
+                      onClick={() => void exportKeywords()}
+                      disabled={exportingKeywords}
+                    >
+                      {exportingKeywords ? "엑셀 만드는 중…" : "분류 결과 엑셀 다운로드"}
+                    </button>
                   </div>
                   <div className="sourcing-keyword-exclusion">
                     <div>
@@ -1510,7 +1564,7 @@ export function SourcingWorkspace({
                                             onClick={() => {
                                               updateKeywordPlacement(item.id, recommendation.placement);
                                               setMessage(
-                                                `${item.keyword}을(를) ${keywordPlacementLabels[recommendation.placement]}로 반영했습니다. 저장 전까지는 초안에만 적용됩니다.`,
+                                                `${item.keyword}을(를) ${keywordPlacementLabels[recommendation.placement]}로 반영했습니다. 임시저장하면 상세 분석 근거와 함께 보존됩니다.`,
                                               );
                                             }}
                                           >
@@ -1802,7 +1856,7 @@ export function SourcingWorkspace({
       ),
     }));
   }
-  function resetEditorTransientState() {
+  function resetEditorTransientState(research?: SourcingResearchInput) {
     setManualKeywordText("");
     setKeywordExclusionText("");
     setNaverCategorySearch("");
@@ -1811,14 +1865,53 @@ export function SourcingWorkspace({
     setReviewRawText("");
     setReviewListExpanded(true);
     setReviewAnalysis(null);
-    setKeywordExposureResults({});
-    setKeywordTagDictionaryResults({});
-    setKeywordOfficialAttributeStatuses({});
+    const relatedKeywords = research?.relatedKeywords ?? [];
+    setKeywordExposureResults(keywordExposureResultsFrom(relatedKeywords));
+    setKeywordTagDictionaryResults(keywordTagDictionaryResultsFrom(relatedKeywords));
+    setKeywordOfficialAttributeStatuses(
+      keywordOfficialAttributeStatusesFrom(relatedKeywords),
+    );
+    const savedThreshold = relatedKeywords.find(
+      (item) => item.analysis,
+    )?.analysis?.titleExposureThresholdPercent;
+    setTitleExposureThreshold(
+      savedThreshold ?? DEFAULT_TITLE_EXPOSURE_THRESHOLD_PERCENT,
+    );
     officialAttributeContextCacheRef.current.clear();
     setKeywordExposureProgress("");
     setKeywordQualityFilter("all");
     keywordExposureCancelRef.current = true;
   }
+}
+
+function keywordExposureResultsFrom(
+  keywords: SourcingRelatedKeyword[],
+): Record<string, KeywordExposureResult> {
+  return Object.fromEntries(
+    keywords
+      .filter((item) => item.analysis)
+      .map((item) => [item.id, item.analysis!.exposure]),
+  );
+}
+
+function keywordTagDictionaryResultsFrom(
+  keywords: SourcingRelatedKeyword[],
+): Record<string, NaverTagDictionaryResult> {
+  return Object.fromEntries(
+    keywords
+      .filter((item) => item.analysis)
+      .map((item) => [item.id, item.analysis!.tagDictionary]),
+  );
+}
+
+function keywordOfficialAttributeStatusesFrom(
+  keywords: SourcingRelatedKeyword[],
+): Record<string, "matched" | "unmatched" | "unavailable"> {
+  return Object.fromEntries(
+    keywords
+      .filter((item) => item.analysis)
+      .map((item) => [item.id, item.analysis!.officialAttributeStatus]),
+  );
 }
 
 function requestKeywordExposure(

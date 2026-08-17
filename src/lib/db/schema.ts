@@ -1157,6 +1157,19 @@ export interface SourcingRelatedKeywordData {
   placement: "unclassified" | "product_name" | "tag" | "attribute" | "category";
   source: "itemscout-xlsx" | "manual";
   importedAt: string;
+  officialTag?: {
+    code: number;
+    text: string;
+  } | null;
+  officialAttribute?: {
+    categoryId: string;
+    categoryName: string;
+    attributeSeq: number;
+    attributeName: string;
+    attributeValueSeq: number;
+    attributeValueName: string;
+  } | null;
+  analysis?: import("@/modules/sourcing/types").SourcingKeywordAnalysis | null;
 }
 export interface SourcingReviewInputData {
   id: string;
