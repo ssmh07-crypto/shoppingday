@@ -355,7 +355,7 @@ export function SourcingWorkspace({
       return;
     }
     if (extensionAvailable !== true) {
-      setError("Shoppingday Chrome 확장 프로그램 0.5.14 이상을 다시 로드해 주세요.");
+      setError("Shoppingday Chrome 확장 프로그램 0.5.16 이상을 다시 로드해 주세요.");
       return;
     }
     const limitedTargets = options.analyzeAll ? targets : targets.slice(0, 10);
@@ -844,7 +844,7 @@ export function SourcingWorkspace({
     setMessage(null);
     setError(null);
     if (extensionAvailable !== true) {
-      setError("Chrome 확장 프로그램 0.5.15 이상을 다시 불러온 뒤 Shoppingday 페이지를 새로고침해 주세요.");
+      setError("Chrome 확장 프로그램 0.5.16 이상을 다시 불러온 뒤 Shoppingday 페이지를 새로고침해 주세요.");
       return;
     }
     try {
@@ -1349,7 +1349,7 @@ export function SourcingWorkspace({
                       {extensionAvailable === true
                         ? "Chrome 확장 프로그램 연결됨"
                         : extensionAvailable === false
-                          ? "확장 프로그램 0.5.14 이상을 다시 로드해야 합니다."
+                          ? "확장 프로그램 0.5.16 이상을 다시 로드해야 합니다."
                           : "확장 프로그램 연결 확인 중…"}
                     </small>
                   </div>
@@ -1652,7 +1652,7 @@ export function SourcingWorkspace({
                       상품 열기
                     </button>
                   </div>
-                  <small>확장 프로그램 0.5.15 이상 · 자동 페이지 넘김이나 차단 우회 없이 현재 공개된 리뷰만 가져옵니다.</small>
+                  <small>확장 프로그램 0.5.16 이상 · 자동 페이지 넘김이나 차단 우회 없이 현재 공개된 리뷰만 가져옵니다.</small>
                 </div>
                 <div className="sourcing-review-analyzer-head">
                   <div>
@@ -1901,7 +1901,7 @@ function isExtensionVersionSupported(version: string | null | undefined) {
   return (
     major > 0 ||
     (major === 0 && minor > 5) ||
-    (major === 0 && minor === 5 && patch >= 14)
+    (major === 0 && minor === 5 && patch >= 16)
   );
 }
 
@@ -1925,10 +1925,25 @@ function appendReviewEntries(
   current: SourcingReviewInput[],
   additions: SourcingReviewInput[],
 ) {
+  const additionByContent = new Map<string, SourcingReviewInput>();
+  for (const entry of additions) {
+    const key = entry.content.replace(/\s+/g, "").toLocaleLowerCase("ko-KR");
+    if (!key) continue;
+    const existing = additionByContent.get(key);
+    if (!existing || (existing.rating == null && entry.rating != null)) {
+      additionByContent.set(key, entry);
+    }
+  }
+  const mergedCurrent = current.map((entry) => {
+    if (entry.rating != null) return entry;
+    const key = entry.content.replace(/\s+/g, "").toLocaleLowerCase("ko-KR");
+    const addition = additionByContent.get(key);
+    return addition?.rating != null ? { ...entry, rating: addition.rating } : entry;
+  });
   const seen = new Set(
-    current.map((entry) => entry.content.replace(/\s+/g, "").toLocaleLowerCase("ko-KR")),
+    mergedCurrent.map((entry) => entry.content.replace(/\s+/g, "").toLocaleLowerCase("ko-KR")),
   );
-  return [...current, ...additions.filter((entry) => {
+  return [...mergedCurrent, ...additions.filter((entry) => {
     const key = entry.content.replace(/\s+/g, "").toLocaleLowerCase("ko-KR");
     if (!key || seen.has(key)) return false;
     seen.add(key);
