@@ -16,6 +16,61 @@ afterEach(() => {
 });
 
 describe("성장 상품 키워드 관리 화면", () => {
+  it("관리상품 목록에 직감 상태와 저장된 판매수량을 표시한다", () => {
+    renderManager(undefined, {
+      items: [
+        {
+          ...summary,
+          salesSummary: {
+            sevenDays: 3,
+            thirtyDays: 11,
+            fetchedAt: "2026-08-17T06:00:00.000Z",
+            source: "naver_orders",
+          },
+          supplierAvailabilityCheck: {
+            provider: "zicgam",
+            status: "sold_out",
+            productName: "직감 테스트 상품",
+            checkedAt: "2026-08-17T06:00:00.000Z",
+            source: "chrome_extension",
+            url: "https://zicgam.com/product/detail.html?product_no=3649",
+            evidence: ["품절 표시"],
+            availableOptions: [],
+            soldOutOptions: [],
+          },
+        },
+      ],
+    });
+
+    expect(screen.getByText("판매 7일 3개 · 30일 11개")).toBeVisible();
+    expect(screen.getAllByText("품절").length).toBeGreaterThan(0);
+  });
+
+  it("판매수량 전체 갱신 결과를 목록에 한 번에 반영한다", async () => {
+    const refreshed = {
+      ...summary,
+      salesSummary: {
+        sevenDays: 2,
+        thirtyDays: 8,
+        fetchedAt: "2026-08-17T06:00:00.000Z",
+        source: "naver_orders" as const,
+      },
+    };
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(
+      Response.json({ success: true, items: [refreshed] }),
+    );
+    vi.stubGlobal("fetch", fetcher);
+    renderManager();
+
+    fireEvent.click(screen.getByRole("button", { name: "판매수량 전체 갱신" }));
+
+    expect(await screen.findByText("판매 7일 2개 · 30일 8개")).toBeVisible();
+    expect(fetcher).toHaveBeenCalledWith(
+      "/api/keyword-products/sales-summaries",
+      expect.objectContaining({ method: "POST" }),
+    );
+  });
+
   it("그룹과 검색량 필터를 바꿔도 선택 상태를 유지한다", () => {
     renderManager();
     openTab("키워드 분석");
@@ -450,7 +505,7 @@ describe("성장 상품 키워드 관리 화면", () => {
         }),
       ),
     );
-    expect(await screen.findByText("일부 옵션 품절")).toBeVisible();
+    expect((await screen.findAllByText("일부 옵션 품절"))[0]).toBeVisible();
     expect(screen.getByText(/블루 \[품절\]/)).toBeVisible();
   });
 

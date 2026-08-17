@@ -54,6 +54,10 @@ export interface NaverManagedProductSalesReader {
     channelProductNo: string,
     storeConnectionId?: string,
   ): Promise<ManagedProductSalesSummary>;
+  summarizeMany(
+    channelProductNos: string[],
+    storeConnectionId?: string,
+  ): Promise<Record<string, ManagedProductSalesSummary>>;
 }
 
 export class CommerceApiManagedProductImporter implements NaverManagedProductImporter {
@@ -247,6 +251,13 @@ export class CommerceApiManagedProductSalesReader implements NaverManagedProduct
   async summarize(
     channelProductNo: string,
   ): Promise<ManagedProductSalesSummary> {
+    const summaries = await this.summarizeMany([channelProductNo]);
+    return summaries[channelProductNo];
+  }
+
+  async summarizeMany(
+    channelProductNos: string[],
+  ): Promise<Record<string, ManagedProductSalesSummary>> {
     if (
       !this.client.fetchLastChangedProductOrders ||
       !this.client.fetchProductOrders
@@ -314,8 +325,13 @@ export class CommerceApiManagedProductSalesReader implements NaverManagedProduct
       }
     }
 
-    let sevenDays = 0;
-    let thirtyDays = 0;
+    const requestedProductNos = new Set(channelProductNos);
+    const counts = new Map(
+      [...requestedProductNos].map((productNo) => [
+        productNo,
+        { sevenDays: 0, thirtyDays: 0 },
+      ]),
+    );
     const ids = [...productOrderIds];
     for (let index = 0; index < ids.length; index += 300) {
       const rows = await this.client.fetchProductOrders(
@@ -326,8 +342,9 @@ export class CommerceApiManagedProductSalesReader implements NaverManagedProduct
         const paidAt = row.order.paymentDate
           ? new Date(row.order.paymentDate)
           : null;
+        const count = counts.get(order.productId);
         if (
-          order.productId !== channelProductNo ||
+          !count ||
           !paidAt ||
           Number.isNaN(paidAt.getTime()) ||
           [
@@ -340,17 +357,20 @@ export class CommerceApiManagedProductSalesReader implements NaverManagedProduct
           continue;
         }
         const quantity = order.remainQuantity ?? order.quantity;
-        if (paidAt >= thirtyDaysAgo) thirtyDays += quantity;
-        if (paidAt >= sevenDaysAgo) sevenDays += quantity;
+        if (paidAt >= thirtyDaysAgo) count.thirtyDays += quantity;
+        if (paidAt >= sevenDaysAgo) count.sevenDays += quantity;
       }
     }
-
-    return {
-      sevenDays,
-      thirtyDays,
-      fetchedAt: now.toISOString(),
-      source: "naver_orders",
-    };
+    return Object.fromEntries(
+      [...counts].map(([productNo, count]) => [
+        productNo,
+        {
+          ...count,
+          fetchedAt: now.toISOString(),
+          source: "naver_orders" as const,
+        },
+      ]),
+    );
   }
 }
 

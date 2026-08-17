@@ -399,6 +399,49 @@ export class KeywordManagementService {
     return this.get(ownerId, id);
   }
 
+  async refreshAllSalesSummaries(ownerId: string) {
+    if (!this.salesReader) {
+      throw new KeywordManagementError(
+        "external_api_not_configured",
+        "선택한 스마트스토어의 주문 API 연결을 확인해 주세요.",
+        503,
+      );
+    }
+    const items = (await this.repository.list(ownerId)).filter(
+      (item) => item.channelProductNo,
+    );
+    const groups = new Map<string, typeof items>();
+    for (const item of items) {
+      const key = item.storeConnectionId ?? "";
+      groups.set(key, [...(groups.get(key) ?? []), item]);
+    }
+    try {
+      for (const [storeConnectionId, products] of groups) {
+        const productNos = products.map((item) => item.channelProductNo!);
+        const summaries = await this.salesReader.summarizeMany(
+          productNos,
+          storeConnectionId || undefined,
+        );
+        await Promise.all(
+          products.map((item) =>
+            this.repository.updateSalesSummary(
+              ownerId,
+              item.id,
+              summaries[item.channelProductNo!],
+            ),
+          ),
+        );
+      }
+    } catch (error) {
+      throw new KeywordManagementError(
+        "external_api_error",
+        safeExternalMessage(error, "최근 판매 수량을 불러오지 못했습니다."),
+        502,
+      );
+    }
+    return this.repository.list(ownerId);
+  }
+
   async update(ownerId: string, id: string, raw: unknown) {
     const input = updateManagedProductSchema.parse(raw);
     await this.get(ownerId, id);

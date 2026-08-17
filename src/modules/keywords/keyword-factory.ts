@@ -107,6 +107,18 @@ export function createKeywordManagementService(
                 storeConnectionId,
               ),
             ).summarize(channelProductNo),
+          summarizeMany: async (
+            channelProductNos: string[],
+            storeConnectionId?: string,
+          ) =>
+            new CommerceApiManagedProductSalesReader(
+              await createConfiguredNaverClientForUser(
+                database,
+                ownerId,
+                env,
+                storeConnectionId,
+              ),
+            ).summarizeMany(channelProductNos),
         }
       : null;
   const rankReader =

@@ -174,6 +174,7 @@ export interface ManagedProductSummary {
   selectedKeywordCount: number;
   updatedAt: Date;
   supplierUrl?: string;
+  salesSummary?: ManagedProductSalesSummary;
   supplierAvailabilityCheck?: SupplierAvailabilityCheck;
 }
 

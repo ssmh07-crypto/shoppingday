@@ -40,5 +40,11 @@ async function waitForProductUi() {
       document.addEventListener("DOMContentLoaded", resolve, { once: true }),
     );
   }
-  await new Promise((resolve) => setTimeout(resolve, 1_500));
+  if (document.readyState !== "complete") {
+    await Promise.race([
+      new Promise((resolve) => window.addEventListener("load", resolve, { once: true })),
+      new Promise((resolve) => setTimeout(resolve, 1_500)),
+    ]);
+  }
+  await new Promise((resolve) => setTimeout(resolve, 500));
 }
