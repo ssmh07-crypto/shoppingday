@@ -278,6 +278,35 @@ export function KeywordManager({
                 <h2>관리 상품</h2>
                 <span>{items.length.toLocaleString("ko-KR")}개</span>
               </div>
+              <SalesBulkRefreshButton
+                items={items}
+                busy={busy}
+                onBusy={setBusy}
+                onSaved={(nextItems) => {
+                  setItems(nextItems);
+                  const active = nextItems.find((item) => item.id === activeId);
+                  if (active?.salesSummary) {
+                    setDetail((current) =>
+                      current && current.product.id === active.id
+                        ? {
+                            ...current,
+                            product: {
+                              ...current.product,
+                              productInput: {
+                                ...current.product.productInput,
+                                salesSummary: active.salesSummary,
+                              },
+                            },
+                          }
+                        : current,
+                    );
+                  }
+                }}
+                onFeedback={(nextMessage, nextError) => {
+                  setMessage(nextMessage);
+                  setError(nextError);
+                }}
+              />
               <SupplierBulkCheckPanel
                 items={items}
                 busy={busy}
@@ -311,6 +340,18 @@ export function KeywordManager({
                 disabled={busy === "supplier-bulk-check"}
               >
                 <strong>{item.finalTitle || item.editableTitle || item.supplierTitle}</strong>
+                <span className="keyword-product-list-meta">
+                  <span className={`keyword-supplier-status status-${item.supplierAvailabilityCheck?.status ?? "unchecked"}`}>
+                    {item.supplierAvailabilityCheck
+                      ? supplierAvailabilityLabel(item.supplierAvailabilityCheck.status)
+                      : "직감 미확인"}
+                  </span>
+                  <span>
+                    판매 {item.salesSummary
+                      ? `7일 ${item.salesSummary.sevenDays.toLocaleString("ko-KR")}개 · 30일 ${item.salesSummary.thirtyDays.toLocaleString("ko-KR")}개`
+                      : "미확인"}
+                  </span>
+                </span>
                 <span>키워드 {item.keywordCount}개 · 선택 {item.selectedKeywordCount}개</span>
                 <small>{item.channelProductNo ?? "상품번호 확인 필요"}</small>
               </button>
@@ -425,6 +466,7 @@ function SupplierBulkCheckPanel({
   onFeedback: (message: string | null, error: string | null) => void;
 }) {
   const [extensionAvailable, setExtensionAvailable] = useState(false);
+  const [skipRecent, setSkipRecent] = useState(true);
   const [progress, setProgress] = useState<{
     completed: number;
     total: number;
@@ -432,12 +474,16 @@ function SupplierBulkCheckPanel({
     failed: number;
   } | null>(null);
   const stopRequested = useRef(false);
+  const allTargets = useMemo(
+    () => items.filter((item) => isSupportedSupplierUrl(item.supplierUrl ?? "")),
+    [items],
+  );
   const targets = useMemo(
     () =>
-      items.filter((item) =>
-        isSupportedSupplierUrl(item.supplierUrl ?? ""),
+      allTargets.filter(
+        (item) => !skipRecent || !wasSupplierCheckedRecently(item.supplierAvailabilityCheck),
       ),
-    [items],
+    [allTargets, skipRecent],
   );
   const running = busy === "supplier-bulk-check";
 
@@ -547,6 +593,15 @@ function SupplierBulkCheckPanel({
       >
         직감 전체 확인
       </button>
+      <label className="keyword-supplier-skip-recent">
+        <input
+          type="checkbox"
+          checked={skipRecent}
+          onChange={(event) => setSkipRecent(event.target.checked)}
+          disabled={running}
+        />
+        최근 24시간 확인 상품 제외
+      </label>
       {running && (
         <button
           type="button"
@@ -562,7 +617,7 @@ function SupplierBulkCheckPanel({
         {progress
           ? `${progress.completed.toLocaleString("ko-KR")}/${progress.total.toLocaleString("ko-KR")}개${progress.currentTitle ? ` · ${progress.currentTitle}` : ""}`
           : extensionAvailable
-            ? `확인 대상 ${targets.length.toLocaleString("ko-KR")}개`
+            ? `확인 대상 ${targets.length.toLocaleString("ko-KR")}개 / 직감 연결 ${allTargets.length.toLocaleString("ko-KR")}개`
             : "확장 프로그램을 다시 로드해 주세요."}
       </small>
       {progress && (
@@ -573,6 +628,53 @@ function SupplierBulkCheckPanel({
         />
       )}
     </div>
+  );
+}
+
+function SalesBulkRefreshButton({
+  items,
+  busy,
+  onBusy,
+  onSaved,
+  onFeedback,
+}: {
+  items: ManagedProductSummary[];
+  busy: string | null;
+  onBusy: (value: string | null) => void;
+  onSaved: (items: ManagedProductSummary[]) => void;
+  onFeedback: (message: string | null, error: string | null) => void;
+}) {
+  const linkedCount = items.filter((item) => item.channelProductNo).length;
+
+  async function refreshAll() {
+    onBusy("sales-summary-all");
+    onFeedback(null, null);
+    try {
+      const response = await api<never>("/api/keyword-products/sales-summaries", {
+        method: "POST",
+      });
+      const nextItems = response.items ?? [];
+      onSaved(nextItems);
+      onFeedback(
+        `스마트스토어 주문을 한 번씩 조회해 관리상품 ${nextItems.length.toLocaleString("ko-KR")}개의 판매수량을 갱신했습니다.`,
+        null,
+      );
+    } catch (caught) {
+      onFeedback(null, errorMessage(caught));
+    } finally {
+      onBusy(null);
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      className="secondary keyword-sales-bulk-button"
+      onClick={() => void refreshAll()}
+      disabled={Boolean(busy) || linkedCount === 0}
+    >
+      {busy === "sales-summary-all" ? "판매수량 일괄 조회 중…" : "판매수량 전체 갱신"}
+    </button>
   );
 }
 
@@ -2773,6 +2875,14 @@ function supplierAvailabilityLabel(
     unknown: "판정 불가",
     failed: "확인 실패",
   }[status];
+}
+
+function wasSupplierCheckedRecently(result?: SupplierAvailabilityCheck) {
+  if (!result || ["unknown", "failed", "auth_required"].includes(result.status)) {
+    return false;
+  }
+  const checkedAt = new Date(result.checkedAt).getTime();
+  return Number.isFinite(checkedAt) && Date.now() - checkedAt < 24 * 60 * 60_000;
 }
 
 function isSupportedSupplierUrl(value: string) {

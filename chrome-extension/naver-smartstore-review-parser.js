@@ -53,9 +53,27 @@
   }
 
   function isVisible(element) {
-    if (element.hidden || element.getAttribute("aria-hidden") === "true") return false;
-    const style = element.getAttribute("style") ?? "";
-    return !/display\s*:\s*none|visibility\s*:\s*hidden/i.test(style);
+    for (let current = element; current; current = current.parentElement) {
+      if (current.hidden || current.getAttribute("aria-hidden") === "true") {
+        return false;
+      }
+      const inlineStyle = current.getAttribute("style") ?? "";
+      if (/display\s*:\s*none|visibility\s*:\s*(?:hidden|collapse)/i.test(inlineStyle)) {
+        return false;
+      }
+      const view = current.ownerDocument?.defaultView;
+      if (view?.getComputedStyle) {
+        const computed = view.getComputedStyle(current);
+        if (
+          computed.display === "none" ||
+          computed.visibility === "hidden" ||
+          computed.visibility === "collapse"
+        ) {
+          return false;
+        }
+      }
+    }
+    return true;
   }
 
   function isReviewCard(element) {
@@ -93,17 +111,58 @@
   }
 
   function reviewRating(card) {
-    const evidence = [
-      card.getAttribute("aria-label"),
-      card.getAttribute("title"),
-      ...Array.from(card.querySelectorAll("[aria-label], [title]")).flatMap((element) => [
-        element.getAttribute("aria-label"),
-        element.getAttribute("title"),
-      ]),
-      card.textContent,
-    ].filter(Boolean).join(" ");
-    const match = evidence.match(/(?:평점|별점)\s*[:：]?\s*([1-5](?:\.0)?)|([1-5](?:\.0)?)\s*점/i);
-    const rating = Number(match?.[1] ?? match?.[2]);
+    const evidenceElements = [
+      card,
+      ...Array.from(card.querySelectorAll(
+        "[aria-label], [title], [alt], [data-rating], [data-score], [data-star-rating]",
+      )),
+    ];
+    for (const element of evidenceElements) {
+      for (const attribute of ["data-rating", "data-score", "data-star-rating"]) {
+        const direct = validRating(element.getAttribute(attribute));
+        if (direct !== null) return direct;
+      }
+      for (const attribute of ["aria-label", "title", "alt"]) {
+        const rating = ratingFromText(element.getAttribute(attribute) ?? "", true);
+        if (rating !== null) return rating;
+      }
+    }
+    const textRating = ratingFromText(card.textContent ?? "", false);
+    if (textRating !== null) return textRating;
+
+    const meterElements = card.querySelectorAll(
+      "[class*='star' i][style*='width' i], [class*='rating' i][style*='width' i]",
+    );
+    for (const element of meterElements) {
+      const match = (element.getAttribute("style") ?? "").match(/width\s*:\s*(\d{1,3}(?:\.\d+)?)%/i);
+      const percent = Number(match?.[1]);
+      if (Number.isFinite(percent) && percent >= 20 && percent <= 100) {
+        const rating = percent / 20;
+        if (Number.isInteger(rating)) return rating;
+      }
+    }
+    return null;
+  }
+
+  function ratingFromText(value, allowStandalone) {
+    const text = normalize(value);
+    if (!text) return null;
+    const patterns = [
+      /(?:5\s*점\s*만점(?:에|중)?|만점\s*5\s*점(?:에|중)?)\s*([1-5](?:\.0)?)\s*점?/i,
+      /([1-5](?:\.0)?)\s*점?\s*(?:[/／]|중)\s*5\s*점?/i,
+      /(?:평점|별점|rating|score)\s*[:：]?\s*([1-5](?:\.0)?)/i,
+      ...(allowStandalone ? [/^\s*([1-5](?:\.0)?)\s*점?\s*$/i] : []),
+    ];
+    for (const pattern of patterns) {
+      const rating = validRating(text.match(pattern)?.[1] ?? null);
+      if (rating !== null) return rating;
+    }
+    return null;
+  }
+
+  function validRating(value) {
+    if (!/^\s*[1-5](?:\.0)?\s*$/.test(String(value ?? ""))) return null;
+    const rating = Number(value);
     return Number.isInteger(rating) && rating >= 1 && rating <= 5 ? rating : null;
   }
 

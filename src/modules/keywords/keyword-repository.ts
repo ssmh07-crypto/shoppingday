@@ -70,6 +70,11 @@ export interface KeywordManagementRepository {
     },
   ): Promise<{ id: string }>;
   updateProductInput(ownerId: string, id: string, input: ManagedProductInput): Promise<boolean>;
+  updateSalesSummary(
+    ownerId: string,
+    id: string,
+    summary: ManagedProductInput["salesSummary"],
+  ): Promise<boolean>;
   saveAnalysis(ownerId: string, productId: string, inputHash: string, result: AnalysisResult): Promise<void>;
   addKeywordCandidates(
     ownerId: string,
@@ -178,8 +183,31 @@ export class DrizzleKeywordManagementRepository
     return rows.map(({ productInput, ...row }) => ({
       ...row,
       supplierUrl: productInput.supplierUrl,
+      salesSummary: productInput.salesSummary,
       supplierAvailabilityCheck: productInput.supplierAvailabilityCheck,
     }));
+  }
+
+  async updateSalesSummary(
+    ownerId: string,
+    id: string,
+    summary: ManagedProductInput["salesSummary"],
+  ) {
+    if (!summary) return false;
+    const [updated] = await this.database
+      .update(keywordManagedProducts)
+      .set({
+        productInput: sql`${keywordManagedProducts.productInput} || ${JSON.stringify({ salesSummary: summary })}::jsonb`,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(keywordManagedProducts.id, id),
+          eq(keywordManagedProducts.ownerId, ownerId),
+        ),
+      )
+      .returning({ id: keywordManagedProducts.id });
+    return Boolean(updated);
   }
 
   async find(ownerId: string, id: string): Promise<ManagedProductDetail | null> {

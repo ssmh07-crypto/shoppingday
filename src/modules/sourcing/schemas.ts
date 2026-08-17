@@ -64,6 +64,61 @@ export const sourcingRelatedKeywordSchema = z.object({
     attributeValueSeq: z.number().int().positive(),
     attributeValueName: z.string().trim().min(1).max(200),
   }).nullable().optional(),
+  analysis: z.object({
+    exposure: z.object({
+      keyword: z.string().trim().min(1).max(200),
+      device: z.literal("pc"),
+      status: z.enum(["completed", "blocked", "failed"]),
+      productCount: z.number().int().min(0).max(1_000),
+      titleMatchCount: z.number().int().min(0).max(1_000),
+      attributeMatchCount: z.number().int().min(0).max(1_000),
+      categoryMatchCount: z.number().int().min(0).max(1_000),
+      contextKeyword: z.string().trim().max(200),
+      contextMatchCount: z.number().int().min(0).max(1_000),
+      contextCategoryId: z.string().trim().max(20),
+      contextCategoryName: z.string().trim().max(500),
+      contextCategoryMatchCount: z.number().int().min(0).max(1_000),
+      categoryDistribution: z.array(z.object({
+        category: z.string().trim().max(500),
+        count: z.number().int().min(0).max(1_000),
+      })).max(200),
+      observedAt: z.iso.datetime(),
+      samples: z.array(z.object({
+        title: z.string().trim().max(1_000),
+        matchedIn: z.array(z.enum(["product_name", "attribute", "category"])).max(3),
+        evidence: z.string().trim().max(2_000),
+        category: z.string().trim().max(500).optional(),
+        contextMatched: z.boolean().optional(),
+        contextCategoryMatched: z.boolean().optional(),
+      })).max(100),
+      message: z.string().trim().max(2_000).nullable(),
+    }),
+    tagDictionary: z.object({
+      keyword: z.string().trim().min(1).max(200),
+      status: z.enum(["registered", "unregistered", "unavailable"]),
+      exactTag: z.object({
+        code: z.number().int().positive(),
+        text: z.string().trim().min(1).max(200),
+      }).nullable(),
+      candidates: z.array(z.object({
+        code: z.number().int().positive(),
+        text: z.string().trim().min(1).max(200),
+      })).max(100),
+      message: z.string().trim().max(2_000).nullable(),
+    }),
+    officialAttributeStatus: z.enum(["matched", "unmatched", "unavailable"]),
+    recommendedPlacement: z.enum([
+      "unclassified",
+      "product_name",
+      "tag",
+      "attribute",
+      "category",
+    ]),
+    recommendationReason: z.string().trim().max(2_000).nullable(),
+    requiresReview: z.boolean(),
+    titleExposureThresholdPercent: z.number().int().min(1).max(100),
+    analyzedAt: z.iso.datetime(),
+  }).nullable().optional(),
 });
 
 export const sourcingReviewInputSchema = z.object({

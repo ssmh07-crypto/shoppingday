@@ -74,6 +74,31 @@ describe("소싱 리뷰 규칙 분석", () => {
     });
   });
 
+  it("칼집과 표면 긁힘 활용형을 반복 불편으로 묶어 반영한다", () => {
+    const reviews = parsePastedReviews([
+      "1점 몇 번 써보니 표면에 칼집이 너무 잘 나요",
+      "2점 첫 사용부터 칼자국이 생겨서 보기 싫어요",
+      "2점 재료를 썰었더니 금방 긁혀 흠집이 남았습니다",
+      "5점 세척은 간편하고 좋아요",
+    ].join("\n"));
+
+    const analysis = analyzeReviews(reviews);
+
+    expect(analysis.negativeTerms).toContainEqual({
+      term: "사용 중 표면에 칼집이나 흠집이 쉽게 생김",
+      count: 3,
+    });
+    expect(analysis.customerNeedCandidates).toContain(
+      "사용 중 표면에 칼집이나 흠집이 쉽게 생김 (3개 리뷰에서 확인)",
+    );
+    expect(analysis.sellingPointCandidates).toContain(
+      "샘플에서 확인: 사용 중 표면에 칼집이나 흠집이 쉽게 생김",
+    );
+    expect(formatReviewEvidence(analysis.negativeTerms, analysis.negativeExamples)).toContain(
+      "사용 중 표면에 칼집이나 흠집이 쉽게 생김: 3개 리뷰에서 확인 (반복)",
+    );
+  });
+
   it("CSV의 따옴표와 쉼표가 포함된 리뷰를 읽는다", () => {
     const reviews = parseReviewCsv('평점,리뷰 내용\n5,"튼튼하고, 좋아요"\n1,"너무 약해요"');
     expect(reviews).toEqual([

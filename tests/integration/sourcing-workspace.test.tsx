@@ -186,7 +186,7 @@ describe("소싱 조사 화면", () => {
   it("스마트스토어 상품을 열고 확장 프로그램에서 받은 리뷰를 중복 없이 누적한다", async () => {
     render(<SourcingWorkspace initialItems={[]} initialDetail={null} />);
     window.dispatchEvent(new CustomEvent("shoppingday:rank-extension-status", {
-      detail: { available: true, version: "0.5.15" },
+      detail: { available: true, version: "0.5.16" },
     }));
     fireEvent.click(sectionButton("04 상품 리뷰 조사"));
 
@@ -209,7 +209,7 @@ describe("소싱 조사 화면", () => {
           productName: "경쟁 야채탈수기",
           reviews: [
             { content: "세척하기 편해요", rating: 5 },
-            { content: "물이 잘 빠지지 않아요", rating: 2 },
+            { content: "물이 잘 빠지지 않아요", rating: null },
             { content: "세척하기 편해요", rating: 5 },
           ],
           observedAt: new Date().toISOString(),
@@ -221,6 +221,22 @@ describe("소싱 조사 화면", () => {
     expect(screen.getByDisplayValue("물이 잘 빠지지 않아요")).toBeInTheDocument();
     expect(screen.getAllByDisplayValue("세척하기 편해요")).toHaveLength(1);
     expect(screen.getByText(/현재 화면 리뷰 3개를 받았습니다/)).toBeInTheDocument();
+    expect(screen.getByText("저장 대상 리뷰 2개")).toBeInTheDocument();
+
+    window.dispatchEvent(new CustomEvent("shoppingday:smartstore-review-result", {
+      detail: {
+        requestId: request?.requestId,
+        result: {
+          status: "completed",
+          sourceUrl: request?.url,
+          productName: "경쟁 야채탈수기",
+          reviews: [{ content: "물이 잘 빠지지 않아요", rating: 2 }],
+          observedAt: new Date().toISOString(),
+        },
+      },
+    }));
+
+    expect(await screen.findByText("별점 2")).toBeInTheDocument();
     expect(screen.getByText("저장 대상 리뷰 2개")).toBeInTheDocument();
   });
 
@@ -282,7 +298,7 @@ describe("소싱 조사 화면", () => {
     render(<SourcingWorkspace initialItems={[]} initialDetail={researchWithKeywords()} />);
     window.dispatchEvent(
       new CustomEvent("shoppingday:rank-extension-status", {
-        detail: { available: true, version: "0.5.14" },
+        detail: { available: true, version: "0.5.16" },
       }),
     );
     fireEvent.click(sectionButton("02 연관 키워드 분류"));
@@ -303,9 +319,89 @@ describe("소싱 조사 화면", () => {
       "true",
     );
     expect(
-      screen.getByText(/저장 전까지는 초안에만 적용됩니다/),
+      screen.getByText(/임시저장하면 상세 분석 근거와 함께 보존됩니다/),
     ).toBeInTheDocument();
     window.removeEventListener("shoppingday:keyword-exposure-request", handleRequest);
+  });
+
+  it("저장된 키워드 상세 분석 근거를 다시 연 화면에 복원한다", () => {
+    const initial = researchWithKeywords();
+    initial.relatedKeywords[0] = {
+      ...initial.relatedKeywords[0]!,
+      placement: "product_name",
+      analysis: {
+        exposure: {
+          keyword: "욕실화",
+          device: "pc",
+          status: "completed",
+          productCount: 40,
+          titleMatchCount: 24,
+          attributeMatchCount: 3,
+          categoryMatchCount: 1,
+          contextKeyword: "욕실화",
+          contextMatchCount: 40,
+          contextCategoryId: "50000001",
+          contextCategoryName: "욕실화",
+          contextCategoryMatchCount: 38,
+          categoryDistribution: [
+            { category: "생활/건강 > 욕실용품 > 욕실화", count: 38 },
+          ],
+          observedAt: "2026-08-17T01:00:00.000Z",
+          samples: [{
+            title: "물빠짐 미끄럼방지 욕실화",
+            matchedIn: ["product_name"],
+            evidence: "물빠짐 미끄럼방지 욕실화",
+          }],
+          message: null,
+        },
+        tagDictionary: {
+          keyword: "욕실화",
+          status: "registered",
+          exactTag: { code: 101, text: "욕실화" },
+          candidates: [],
+          message: null,
+        },
+        officialAttributeStatus: "unmatched",
+        recommendedPlacement: "product_name",
+        recommendationReason: "상품명 24/40건으로 설정한 60% 기준을 충족했습니다.",
+        requiresReview: false,
+        titleExposureThresholdPercent: 60,
+        analyzedAt: "2026-08-17T01:00:00.000Z",
+      },
+    };
+
+    render(<SourcingWorkspace initialItems={[]} initialDetail={initial} />);
+    fireEvent.click(sectionButton("02 연관 키워드 분류"));
+
+    expect(screen.getByLabelText("상품명 노출 추천 기준")).toHaveValue(60);
+    const row = within(screen.getByRole("table")).getByText("욕실화").closest("tr")!;
+    expect(within(row).getByText("상품명 노출").parentElement).toHaveTextContent("24/40");
+    expect(within(row).getByText("카테고리 적합").parentElement).toHaveTextContent("38/40");
+    expect(within(row).getByText("물빠짐 미끄럼방지 욕실화")).toBeInTheDocument();
+  });
+
+  it("분류 결과 엑셀 다운로드를 누르면 xlsx 파일 저장을 시작한다", async () => {
+    const createObjectUrl = vi.fn(() => "blob:keyword-workbook");
+    const revokeObjectUrl = vi.fn();
+    Object.defineProperty(URL, "createObjectURL", {
+      configurable: true,
+      value: createObjectUrl,
+    });
+    Object.defineProperty(URL, "revokeObjectURL", {
+      configurable: true,
+      value: revokeObjectUrl,
+    });
+
+    render(<SourcingWorkspace initialItems={[]} initialDetail={researchWithKeywords()} />);
+    fireEvent.click(sectionButton("02 연관 키워드 분류"));
+    fireEvent.click(
+      screen.getByRole("button", { name: "분류 결과 엑셀 다운로드" }),
+    );
+
+    expect(
+      await screen.findByText(/분류 키워드 2개와 저장된 판독 표본을 엑셀로 내려받았습니다/),
+    ).toBeInTheDocument();
+    expect(createObjectUrl).toHaveBeenCalledWith(expect.any(Blob));
   });
 
   it("전체 자동 분류는 카드 부가정보만 있는 키워드를 기본 상품명 후보로 반영한다", async () => {
@@ -348,7 +444,7 @@ describe("소싱 조사 화면", () => {
     render(<SourcingWorkspace initialItems={[]} initialDetail={initial} />);
     window.dispatchEvent(
       new CustomEvent("shoppingday:rank-extension-status", {
-        detail: { available: true, version: "0.5.14" },
+        detail: { available: true, version: "0.5.16" },
       }),
     );
     fireEvent.click(sectionButton("02 연관 키워드 분류"));
@@ -429,7 +525,7 @@ describe("소싱 조사 화면", () => {
 
     render(<SourcingWorkspace initialItems={[]} initialDetail={initial} />);
     window.dispatchEvent(new CustomEvent("shoppingday:rank-extension-status", {
-      detail: { available: true, version: "0.5.14" },
+      detail: { available: true, version: "0.5.16" },
     }));
     fireEvent.click(sectionButton("02 연관 키워드 분류"));
     fireEvent.click(screen.getByRole("button", { name: "전체 키워드 다시 자동 분류" }));
@@ -544,7 +640,7 @@ describe("소싱 조사 화면", () => {
 
     render(<SourcingWorkspace initialItems={[]} initialDetail={initial} />);
     window.dispatchEvent(new CustomEvent("shoppingday:rank-extension-status", {
-      detail: { available: true, version: "0.5.14" },
+      detail: { available: true, version: "0.5.16" },
     }));
     fireEvent.click(sectionButton("02 연관 키워드 분류"));
     const row = within(screen.getByRole("table")).getByText("스피너").closest("tr")!;
@@ -623,7 +719,7 @@ describe("소싱 조사 화면", () => {
     render(<SourcingWorkspace initialItems={[]} initialDetail={initial} />);
     window.dispatchEvent(
       new CustomEvent("shoppingday:rank-extension-status", {
-        detail: { available: true, version: "0.5.14" },
+        detail: { available: true, version: "0.5.16" },
       }),
     );
     fireEvent.click(sectionButton("02 연관 키워드 분류"));

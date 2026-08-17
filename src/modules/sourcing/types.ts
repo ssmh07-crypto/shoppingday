@@ -42,6 +42,47 @@ export type SourcingKeywordPlacement =
   | "attribute"
   | "category";
 
+export interface SourcingKeywordAnalysis {
+  exposure: {
+    keyword: string;
+    device: "pc";
+    status: "completed" | "blocked" | "failed";
+    productCount: number;
+    titleMatchCount: number;
+    attributeMatchCount: number;
+    categoryMatchCount: number;
+    contextKeyword: string;
+    contextMatchCount: number;
+    contextCategoryId: string;
+    contextCategoryName: string;
+    contextCategoryMatchCount: number;
+    categoryDistribution: Array<{ category: string; count: number }>;
+    observedAt: string;
+    samples: Array<{
+      title: string;
+      matchedIn: Array<"product_name" | "attribute" | "category">;
+      evidence: string;
+      category?: string;
+      contextMatched?: boolean;
+      contextCategoryMatched?: boolean;
+    }>;
+    message: string | null;
+  };
+  tagDictionary: {
+    keyword: string;
+    status: "registered" | "unregistered" | "unavailable";
+    exactTag: { code: number; text: string } | null;
+    candidates: Array<{ code: number; text: string }>;
+    message: string | null;
+  };
+  officialAttributeStatus: "matched" | "unmatched" | "unavailable";
+  recommendedPlacement: SourcingKeywordPlacement;
+  recommendationReason: string | null;
+  requiresReview: boolean;
+  titleExposureThresholdPercent: number;
+  analyzedAt: string;
+}
+
 export interface SourcingRelatedKeyword {
   id: string;
   keyword: string;
@@ -62,6 +103,7 @@ export interface SourcingRelatedKeyword {
     attributeValueSeq: number;
     attributeValueName: string;
   } | null;
+  analysis?: SourcingKeywordAnalysis | null;
 }
 
 export interface SourcingNaverCategory {

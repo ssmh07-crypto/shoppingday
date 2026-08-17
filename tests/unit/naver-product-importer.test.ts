@@ -250,4 +250,43 @@ describe("네이버 관리 상품 정보 가져오기", () => {
     expect(wait).toHaveBeenCalledWith(1_000);
     expect(wait).toHaveBeenCalledWith(500);
   });
+
+  it("한 번의 주문 조회를 여러 채널 상품 판매수량으로 나눈다", async () => {
+    const client = {
+      fetchLastChangedProductOrders: vi.fn().mockResolvedValue({
+        productOrderIds: ["order-1", "order-2"],
+      }),
+      fetchProductOrders: vi.fn().mockResolvedValue([
+        {
+          order: { paymentDate: "2026-07-28T12:00:00+09:00" },
+          productOrder: {
+            productId: "200000001",
+            productOrderStatus: "DELIVERED",
+            quantity: 2,
+            remainQuantity: 2,
+          },
+        },
+        {
+          order: { paymentDate: "2026-07-15T12:00:00+09:00" },
+          productOrder: {
+            productId: "200000002",
+            productOrderStatus: "PURCHASE_DECIDED",
+            quantity: 5,
+            remainQuantity: 5,
+          },
+        },
+      ]),
+    };
+    const reader = new CommerceApiManagedProductSalesReader(
+      client as never,
+      () => new Date("2026-07-29T00:00:00.000Z"),
+      vi.fn().mockResolvedValue(undefined),
+    );
+
+    const result = await reader.summarizeMany(["200000001", "200000002"]);
+
+    expect(result["200000001"]).toMatchObject({ sevenDays: 2, thirtyDays: 2 });
+    expect(result["200000002"]).toMatchObject({ sevenDays: 0, thirtyDays: 5 });
+    expect(client.fetchLastChangedProductOrders).toHaveBeenCalledTimes(30);
+  });
 });

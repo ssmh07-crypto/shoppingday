@@ -14,6 +14,75 @@ import type {
 } from "@/modules/keywords/types";
 
 describe("키워드 관리 서비스", () => {
+  it("스토어 주문을 한 번 조회해 여러 관리상품 판매수량을 갱신한다", async () => {
+    const repository = fakeRepository();
+    vi.mocked(repository.list)
+      .mockResolvedValueOnce([
+        {
+          id: "product-1",
+          smartstoreUrl: "https://smartstore.naver.com/sample/products/1234567890",
+          channelProductNo: "1234567890",
+          storeConnectionId: "store-1",
+          supplierTitle: "상품 1",
+          editableTitle: "상품 1",
+          finalTitle: null,
+          status: "analyzed",
+          keywordCount: 0,
+          selectedKeywordCount: 0,
+          updatedAt: new Date(),
+        },
+        {
+          id: "product-2",
+          smartstoreUrl: "https://smartstore.naver.com/sample/products/2222222222",
+          channelProductNo: "2222222222",
+          storeConnectionId: "store-1",
+          supplierTitle: "상품 2",
+          editableTitle: "상품 2",
+          finalTitle: null,
+          status: "analyzed",
+          keywordCount: 0,
+          selectedKeywordCount: 0,
+          updatedAt: new Date(),
+        },
+      ])
+      .mockResolvedValueOnce([]);
+    const salesReader = {
+      summarize: vi.fn(),
+      summarizeMany: vi.fn().mockResolvedValue({
+        "1234567890": {
+          sevenDays: 1,
+          thirtyDays: 4,
+          fetchedAt: "2026-08-17T06:00:00.000Z",
+          source: "naver_orders" as const,
+        },
+        "2222222222": {
+          sevenDays: 2,
+          thirtyDays: 7,
+          fetchedAt: "2026-08-17T06:00:00.000Z",
+          source: "naver_orders" as const,
+        },
+      }),
+    };
+    const service = new KeywordManagementService(
+      repository,
+      null,
+      null,
+      config,
+      null,
+      null,
+      salesReader,
+    );
+
+    await service.refreshAllSalesSummaries("owner-1");
+
+    expect(salesReader.summarizeMany).toHaveBeenCalledTimes(1);
+    expect(salesReader.summarizeMany).toHaveBeenCalledWith(
+      ["1234567890", "2222222222"],
+      "store-1",
+    );
+    expect(repository.updateSalesSummary).toHaveBeenCalledTimes(2);
+  });
+
   it("성장관리 상품만 제거한다", async () => {
     const repository = fakeRepository();
     const service = new KeywordManagementService(repository, null, null, config);
@@ -595,6 +664,7 @@ function fakeRepository(): KeywordManagementRepository {
     findLocalPublication: vi.fn().mockResolvedValue(null),
     create: vi.fn().mockResolvedValue({ id: "product-1" }),
     updateProductInput: vi.fn().mockResolvedValue(true),
+    updateSalesSummary: vi.fn().mockResolvedValue(true),
     saveAnalysis: vi.fn().mockResolvedValue(undefined),
     addKeywordCandidates: vi.fn().mockResolvedValue(undefined),
     replaceKeywordCandidates: vi.fn().mockResolvedValue(undefined),
