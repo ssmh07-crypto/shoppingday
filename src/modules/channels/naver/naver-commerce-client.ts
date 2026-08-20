@@ -799,22 +799,30 @@ export class NaverCommerceClient {
   ): Promise<NaverProductPayload> {
     const seoInfo = payload.originProduct?.detailAttribute?.seoInfo;
     if (!seoInfo?.sellerTags.length) return payload;
-    const sellerTags = await Promise.all(
-      seoInfo.sellerTags.map(async (tag) => {
-        if (tag.code !== undefined) return tag;
-        const key = normalizeSellerTag(tag.text);
-        let recommended = this.sellerTagCache.get(key);
-        if (recommended === undefined) {
-          const candidates = await this.fetchRecommendTags(tag.text);
-          recommended =
-            candidates.find(
-              (candidate) => normalizeSellerTag(candidate.text) === key,
-            ) ?? null;
-          this.sellerTagCache.set(key, recommended);
-        }
-        return recommended ?? { text: tag.text };
-      }),
-    );
+
+    const sellerTags: Array<{ code?: number; text: string }> = [];
+    let requestedTagDictionary = false;
+    for (const tag of seoInfo.sellerTags) {
+      if (tag.code !== undefined) {
+        sellerTags.push(tag);
+        continue;
+      }
+
+      const key = normalizeSellerTag(tag.text);
+      let recommended = this.sellerTagCache.get(key);
+      if (recommended === undefined) {
+        if (requestedTagDictionary) await this.wait(550);
+        const candidates = await this.fetchRecommendTags(tag.text);
+        requestedTagDictionary = true;
+        recommended =
+          candidates.find(
+            (candidate) => normalizeSellerTag(candidate.text) === key,
+          ) ?? null;
+        this.sellerTagCache.set(key, recommended);
+      }
+      sellerTags.push(recommended ?? { text: tag.text });
+    }
+
     return {
       ...payload,
       originProduct: {
