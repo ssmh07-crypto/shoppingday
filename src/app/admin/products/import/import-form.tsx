@@ -5,7 +5,11 @@ import Link from "next/link";
 import { useState, type FormEvent } from "react";
 import type { ImportProductResult } from "@/modules/products/product-service";
 
-export function ImportForm() {
+export function ImportForm({
+  variant = "card",
+}: {
+  variant?: "card" | "embedded";
+}) {
   const [goodsno, setGoodsno] = useState("");
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<ImportProductResult | null>(null);
@@ -38,7 +42,10 @@ export function ImportForm() {
 
   return (
     <>
-      <form className="card" onSubmit={submit}>
+      <form
+        className={variant === "card" ? "card" : "supplier-import-single-form"}
+        onSubmit={submit}
+      >
         <h2>친구도매 상품번호 가져오기</h2>
         <label htmlFor="goodsno">상품번호</label>
         <div className="row" style={{ marginTop: 10 }}>
@@ -65,7 +72,10 @@ export function ImportForm() {
         )}
       </form>
       {result && (
-        <section className="card" aria-live="polite">
+        <section
+          className={variant === "card" ? "card" : "supplier-import-result"}
+          aria-live="polite"
+        >
           <p className="notice">
             {result.alreadyExists
               ? "이미 가져온 상품입니다. 외부 API를 다시 호출하지 않았습니다."

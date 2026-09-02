@@ -24,9 +24,11 @@ type SyncJob = {
 export function ProductSyncControl({
   mode,
   variant = "inventory",
+  actionLabel,
 }: {
   mode: SyncMode;
   variant?: "inventory" | "card";
+  actionLabel?: string;
 }) {
   const router = useRouter();
   const [job, setJob] = useState<SyncJob | null>(null);
@@ -58,7 +60,8 @@ export function ProductSyncControl({
   }, [refresh]);
 
   async function start() {
-    const label = mode === "all" ? "전체 상품 가져오기" : "상품 변동처리";
+    const label =
+      actionLabel ?? (mode === "all" ? "전체 상품 가져오기" : "상품 변동처리");
     if (!confirm(`${label} 작업을 시작할까요?`)) return;
     setRequesting(true);
     setError(null);
@@ -90,8 +93,11 @@ export function ProductSyncControl({
     job && job.total > 0
       ? Math.min(100, Math.round((job.processed / job.total) * 100))
       : 0;
-  const buttonLabel =
-    mode === "all"
+  const buttonLabel = actionLabel
+    ? active
+      ? `${actionLabel} 중…`
+      : actionLabel
+    : mode === "all"
       ? active
         ? "전체 상품 처리 중…"
         : "전체 상품 가져오기"

@@ -25,7 +25,12 @@ interface CatalogProgressDetail {
   message?: string;
   restored?: boolean;
   updatedAt?: number;
-  counts?: { created: number; updated: number; unchanged: number; failed: number };
+  counts?: {
+    created: number;
+    updated: number;
+    unchanged: number;
+    failed: number;
+  };
   progress?: {
     listPages?: number;
     currentPage?: number;
@@ -69,12 +74,20 @@ interface SyncJob {
 }
 
 export function ZicgamFullImport() {
-  const [extension, setExtension] = useState({ available: false, version: null as string | null });
+  const [extension, setExtension] = useState({
+    available: false,
+    version: null as string | null,
+  });
   const [requestId, setRequestId] = useState<string | null>(null);
   const [phase, setPhase] = useState<Phase>("idle");
   const [message, setMessage] = useState<string | null>(null);
   const [progress, setProgress] = useState<CatalogProgressDetail["progress"]>();
-  const [counts, setCounts] = useState({ created: 0, updated: 0, unchanged: 0, failed: 0 });
+  const [counts, setCounts] = useState({
+    created: 0,
+    updated: 0,
+    unchanged: 0,
+    failed: 0,
+  });
   const [lastActivityAt, setLastActivityAt] = useState<number | null>(null);
   const [importStartedAt, setImportStartedAt] = useState<number | null>(null);
   const [now, setNow] = useState(() => Date.now());
@@ -82,8 +95,13 @@ export function ZicgamFullImport() {
 
   useEffect(() => {
     function onStatus(event: Event) {
-      const detail = (event as CustomEvent<{ available?: boolean; version?: string | null }>).detail;
-      setExtension({ available: detail?.available === true, version: detail?.version ?? null });
+      const detail = (
+        event as CustomEvent<{ available?: boolean; version?: string | null }>
+      ).detail;
+      setExtension({
+        available: detail?.available === true,
+        version: detail?.version ?? null,
+      });
     }
     function onProgress(event: Event) {
       const detail = (event as CustomEvent<CatalogProgressDetail>).detail;
@@ -117,7 +135,10 @@ export function ZicgamFullImport() {
         if (detail.message) setMessage(detail.message);
         const action = detail.result?.action;
         if (action && !detail.restored) {
-          setCounts((current) => ({ ...current, [action]: current[action] + 1 }));
+          setCounts((current) => ({
+            ...current,
+            [action]: current[action] + 1,
+          }));
         }
       }
       if (detail.phase === "item_failed") {
@@ -134,7 +155,9 @@ export function ZicgamFullImport() {
       }
       if (detail.phase === "stopped") {
         setPhase("idle");
-        setMessage("직감 전체 상품 가져오기를 중단했습니다. 다시 실행하면 기존 상품은 중복 생성하지 않고 확인합니다.");
+        setMessage(
+          "직감 전체 상품 가져오기를 중단했습니다. 다시 실행하면 기존 상품은 중복 생성하지 않고 확인합니다.",
+        );
       }
       if (detail.phase === "failed") {
         setPhase("failed");
@@ -169,16 +192,22 @@ export function ZicgamFullImport() {
       });
       if (next.status === "queued" && next.total > 0) {
         setPhase("queued");
-        setMessage("수집을 마쳤습니다. GitHub Actions 실행을 기다리고 있습니다.");
+        setMessage(
+          "수집을 마쳤습니다. GitHub Actions 실행을 기다리고 있습니다.",
+        );
       } else if (next.status === "running") {
         setPhase("queued");
-        setMessage(`GitHub Actions에서 DB 저장 중입니다: ${next.processed} / ${next.total}개`);
+        setMessage(
+          `GitHub Actions에서 DB 저장 중입니다: ${next.processed} / ${next.total}개`,
+        );
       } else if (next.status === "succeeded") {
         setPhase("complete");
         setMessage(`직감 상품 ${next.processed}개를 DB에 저장했습니다.`);
       } else if (next.status === "failed") {
         setPhase("failed");
-        setMessage(next.errorMessage ?? "GitHub Actions 직감 저장 작업에 실패했습니다.");
+        setMessage(
+          next.errorMessage ?? "GitHub Actions 직감 저장 작업에 실패했습니다.",
+        );
       }
     }
     const initial = window.setTimeout(() => void refreshJob(), 0);
@@ -189,8 +218,16 @@ export function ZicgamFullImport() {
     };
   }, []);
 
-  const extensionReady = extension.available && isMinimumVersion(extension.version, "0.5.3");
-  const running = ["starting", "discovering", "capturing", "importing", "queued", "stopping"].includes(phase);
+  const extensionReady =
+    extension.available && isMinimumVersion(extension.version, "0.5.3");
+  const running = [
+    "starting",
+    "discovering",
+    "capturing",
+    "importing",
+    "queued",
+    "stopping",
+  ].includes(phase);
   useEffect(() => {
     if (!running) return;
     const timer = window.setInterval(() => setNow(Date.now()), 1_000);
@@ -209,12 +246,20 @@ export function ZicgamFullImport() {
     const total = progress?.total ?? 0;
     if (!importStartedAt || processed < 1 || total <= processed) return null;
     const averageMilliseconds = Math.max(0, now - importStartedAt) / processed;
-    return Math.max(1, Math.ceil((averageMilliseconds * (total - processed)) / 60_000));
+    return Math.max(
+      1,
+      Math.ceil((averageMilliseconds * (total - processed)) / 60_000),
+    );
   }, [importStartedAt, now, progress]);
 
   function start() {
     if (!extensionReady || running) return;
-    if (!confirm("로그인된 직감 계정으로 전체 상품을 순차 수집할까요? 작업 중에는 Shoppingday와 직감 탭을 닫지 마세요.")) return;
+    if (
+      !confirm(
+        "직감의 신규·변경 상품을 확인할까요? 전체 목록을 비교하므로 작업 중에는 Shoppingday와 직감 탭을 닫지 마세요.",
+      )
+    )
+      return;
     const id = crypto.randomUUID();
     setRequestId(id);
     setPhase("starting");
@@ -223,26 +268,43 @@ export function ZicgamFullImport() {
     setCounts({ created: 0, updated: 0, unchanged: 0, failed: 0 });
     setLastActivityAt(Date.now());
     setImportStartedAt(null);
-    window.dispatchEvent(new CustomEvent(START_EVENT, { detail: { requestId: id } }));
+    window.dispatchEvent(
+      new CustomEvent(START_EVENT, { detail: { requestId: id } }),
+    );
   }
 
   function stop() {
     if (!running) return;
     setPhase("stopping");
     setMessage("중단을 요청했습니다. 현재 처리 중인 페이지가 끝나면 멈춥니다.");
-    window.dispatchEvent(new CustomEvent(STOP_EVENT, { detail: { requestId } }));
+    window.dispatchEvent(
+      new CustomEvent(STOP_EVENT, { detail: { requestId } }),
+    );
   }
 
   return (
-    <section className="card" aria-live="polite">
-      <h2>직감 전체 상품 가져오기</h2>
-      <p>
-        Chrome에 로그인된 직감 승인 계정으로 전체상품 목록과 상품 상세 페이지를 순차
-        확인합니다. 새 상품은 추가하고 기존 상품은 공급처 원본 정보만 갱신합니다.
-      </p>
-      <div className="row" style={{ marginTop: 12 }}>
-        <button type="button" onClick={start} disabled={!extensionReady || running}>
-          {running ? "전체 상품 처리 중…" : "직감 전체 상품 가져오기"}
+    <article className="supplier-import-card" aria-live="polite">
+      <header className="supplier-import-card-head">
+        <div className="supplier-import-logo zicgam" aria-hidden="true">
+          직
+        </div>
+        <div>
+          <div className="supplier-import-title-row">
+            <h2>직감</h2>
+            <span className="supplier-import-badge browser">Chrome 수집</span>
+          </div>
+          <p>
+            전체 목록을 비교해 새 상품을 추가하고 기존 원본 정보를 갱신합니다.
+          </p>
+        </div>
+      </header>
+      <div className="supplier-import-primary-action">
+        <button
+          type="button"
+          onClick={start}
+          disabled={!extensionReady || running}
+        >
+          {running ? "신규·변경 상품 확인 중…" : "신규·변경 상품 확인"}
         </button>
         {running && phase !== "queued" && (
           <button type="button" className="secondary" onClick={stop}>
@@ -250,34 +312,45 @@ export function ZicgamFullImport() {
           </button>
         )}
       </div>
-      <p className={`notice${extensionReady ? "" : " error"}`}>
+      <p
+        className={`supplier-import-connection${extensionReady ? " ready" : " error"}`}
+      >
         {extensionReady
           ? `Chrome 확장 프로그램 ${extension.version ?? ""} 연결됨`
           : `Chrome 확장 프로그램 0.5.3 이상이 필요합니다${extension.version ? ` (현재 ${extension.version})` : ""}. 확장을 다시 로드하고 이 페이지를 강력 새로고침해 주세요.`}
       </p>
       {phase === "discovering" && (
         <p className="notice">
-          전체상품 목록 {progress?.currentPage ?? progress?.listPages ?? 0}페이지 확인 · 현재 페이지 {progress?.pageItemCount ?? 0}개 · 고유 상품 {progress?.discoveredProducts ?? 0}개
-          {progress?.displayedTotal !== null && progress?.displayedTotal !== undefined
+          전체상품 목록 {progress?.currentPage ?? progress?.listPages ?? 0}
+          페이지 확인 · 현재 페이지 {progress?.pageItemCount ?? 0}개 · 고유 상품{" "}
+          {progress?.discoveredProducts ?? 0}개
+          {progress?.displayedTotal !== null &&
+          progress?.displayedTotal !== undefined
             ? ` · 사이트 표시 전체 ${progress.displayedTotal}개`
             : ""}
         </p>
       )}
       {phase === "capturing" && (
         <p className="notice">
-          상세 판독 {progress?.processed ?? 0} / {progress?.total ?? 0}개 · 수집 성공 {progress?.captured ?? 0}개 · 판독 실패 {progress?.failed ?? 0}개
+          상세 판독 {progress?.processed ?? 0} / {progress?.total ?? 0}개 · 수집
+          성공 {progress?.captured ?? 0}개 · 판독 실패 {progress?.failed ?? 0}개
         </p>
       )}
       {phase === "queued" && job && (
         <div className="product-sync-status">
-          <progress value={job.total ? job.processed : undefined} max={job.total || undefined} />
+          <progress
+            value={job.total ? job.processed : undefined}
+            max={job.total || undefined}
+          />
           <small>
             {job.status === "running"
               ? `DB 저장 ${job.processed.toLocaleString("ko-KR")} / ${job.total.toLocaleString("ko-KR")}개`
               : "GitHub Actions 실행 대기 중"}
           </small>
           {job.githubRunUrl && (
-            <a href={job.githubRunUrl} target="_blank" rel="noreferrer">실행 로그 보기</a>
+            <a href={job.githubRunUrl} target="_blank" rel="noreferrer">
+              실행 로그 보기
+            </a>
           )}
         </div>
       )}
@@ -285,25 +358,33 @@ export function ZicgamFullImport() {
         <>
           <progress value={percent} max={100} style={{ width: "100%" }} />
           <p className="notice">
-            {progress?.processed ?? 0} / {progress?.total ?? 0} · 신규 {counts.created} · 갱신 {counts.updated} · 변경 없음 {counts.unchanged} · 실패 {counts.failed}
-            {progress?.current ? ` · 현재 ${progress.current}번째 상품 확인 중` : ""}
+            {progress?.processed ?? 0} / {progress?.total ?? 0} · 신규{" "}
+            {counts.created} · 갱신 {counts.updated} · 변경 없음{" "}
+            {counts.unchanged} · 실패 {counts.failed}
+            {progress?.current
+              ? ` · 현재 ${progress.current}번째 상품 확인 중`
+              : ""}
             {` · 마지막 응답 ${inactiveSeconds}초 전`}
             {estimatedMinutes ? ` · 예상 잔여 약 ${estimatedMinutes}분` : ""}
           </p>
           {inactiveSeconds >= 120 && (
             <p className="notice error">
-              2분 이상 진행 응답이 없습니다. 직감 작업 탭의 로그인 상태와 오류 화면을 확인해 주세요.
+              2분 이상 진행 응답이 없습니다. 직감 작업 탭의 로그인 상태와 오류
+              화면을 확인해 주세요.
             </p>
           )}
         </>
       )}
       {message && (
-        <p className={`notice${phase === "failed" ? " error" : ""}`}>{message}</p>
+        <p className={`notice${phase === "failed" ? " error" : ""}`}>
+          {message}
+        </p>
       )}
-      <p className="notice">
-        전체 가져오기는 상품 수에 따라 오래 걸릴 수 있습니다. 수집된 상품이 스마트스토어에 자동 등록되지는 않습니다.
-      </p>
-    </section>
+      <footer className="supplier-import-card-foot">
+        전체 목록을 비교하므로 상품 수에 따라 오래 걸릴 수 있습니다. 가져온
+        상품은 스마트스토어에 자동 등록되지 않습니다.
+      </footer>
+    </article>
   );
 }
 
