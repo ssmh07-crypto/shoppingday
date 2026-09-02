@@ -75,7 +75,7 @@
 
 .supplier-import-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
   align-items: start;
   gap: 16px;
 }
@@ -108,6 +108,9 @@
 
 .supplier-import-logo.zicgam {
   background: linear-gradient(140deg, #6d4ce8, #5032ba);
+}
+.supplier-import-logo.ebulsamchon {
+  background: linear-gradient(140deg, #168b75, #0b6657);
 }
 .supplier-import-logo.dome {
   background: linear-gradient(140deg, #2563eb, #1244a7);

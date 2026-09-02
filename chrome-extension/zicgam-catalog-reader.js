@@ -24,7 +24,9 @@ async function runCatalogImport() {
     });
     if (batchStarted?.cancelled) return;
     if (!batchStarted?.ok || !batchStarted.jobId || !batchStarted.uploadToken) {
-      throw new Error(batchStarted?.message ?? "직감 일괄 저장 작업을 만들지 못했습니다.");
+      throw new Error(
+        batchStarted?.message ?? "공급처 일괄 저장 작업을 만들지 못했습니다.",
+      );
     }
     const jobId = batchStarted.jobId;
     const uploadToken = batchStarted.uploadToken;
@@ -63,8 +65,11 @@ async function runCatalogImport() {
         if (error?.code === "auth_required") throw error;
         failed += 1;
         consecutiveFailures += 1;
-        const productId = ShoppingdayZicgamCatalogParser.productNo(new URL(url)) ?? "알 수 없음";
-        const rawMessage = error instanceof Error ? error.message : "알 수 없는 오류";
+        const productId =
+          ShoppingdayZicgamCatalogParser.productNo(new URL(url)) ??
+          "알 수 없음";
+        const rawMessage =
+          error instanceof Error ? error.message : "알 수 없는 오류";
         const failureMessage = `${stage} 실패 · 상품번호 ${productId} · ${rawMessage}`;
         recentFailures.push(failureMessage);
         if (recentFailures.length > 3) recentFailures.shift();
@@ -72,7 +77,10 @@ async function runCatalogImport() {
           type: "shoppingday.zicgam.catalog.item_failed",
           url,
           message: failureMessage,
-          progress: { processed: processed + 1, total: catalog.productUrls.length },
+          progress: {
+            processed: processed + 1,
+            total: catalog.productUrls.length,
+          },
         });
         if (response?.cancelled) return;
         if (consecutiveFailures >= 20) {
@@ -83,13 +91,19 @@ async function runCatalogImport() {
       }
       processed += 1;
       if (chunk.length >= 20) {
-        const uploaded = await uploadChunk(jobId, uploadToken, chunkIndex, chunk, {
-          current: processed,
-          processed,
-          captured,
-          failed,
-          total: catalog.productUrls.length,
-        });
+        const uploaded = await uploadChunk(
+          jobId,
+          uploadToken,
+          chunkIndex,
+          chunk,
+          {
+            current: processed,
+            processed,
+            captured,
+            failed,
+            total: catalog.productUrls.length,
+          },
+        );
         if (uploaded?.cancelled) return;
         chunk = [];
         chunkIndex += 1;
@@ -97,27 +111,42 @@ async function runCatalogImport() {
       await delay(request.delayMs);
     }
     if (chunk.length) {
-      const uploaded = await uploadChunk(jobId, uploadToken, chunkIndex, chunk, {
-        current: processed,
-        processed,
-        captured,
-        failed,
-        total: catalog.productUrls.length,
-      });
+      const uploaded = await uploadChunk(
+        jobId,
+        uploadToken,
+        chunkIndex,
+        chunk,
+        {
+          current: processed,
+          processed,
+          captured,
+          failed,
+          total: catalog.productUrls.length,
+        },
+      );
       if (uploaded?.cancelled) return;
       chunkIndex += 1;
     }
     if (!captured || !chunkIndex) {
-      throw new Error("GitHub Actions로 전달할 직감 상품을 수집하지 못했습니다.");
+      throw new Error(
+        "GitHub Actions로 전달할 공급처 상품을 수집하지 못했습니다.",
+      );
     }
     const dispatched = await chrome.runtime.sendMessage({
       type: "shoppingday.zicgam.catalog.batch_dispatch",
       payload: { jobId, chunkCount: chunkIndex, total: captured },
-      progress: { processed, captured, failed, total: catalog.productUrls.length },
+      progress: {
+        processed,
+        captured,
+        failed,
+        total: catalog.productUrls.length,
+      },
     });
     if (dispatched?.cancelled) return;
     if (!dispatched?.ok) {
-      throw new Error(dispatched?.message ?? "GitHub Actions 작업을 시작하지 못했습니다.");
+      throw new Error(
+        dispatched?.message ?? "GitHub Actions 작업을 시작하지 못했습니다.",
+      );
     }
     await chrome.runtime.sendMessage({
       type: "shoppingday.zicgam.catalog.capture_complete",
@@ -129,7 +158,7 @@ async function runCatalogImport() {
       message:
         error instanceof Error
           ? error.message
-          : "직감 전체 상품 가져오기에 실패했습니다.",
+          : "공급처 전체 상품 가져오기에 실패했습니다.",
     });
   }
 }
@@ -150,21 +179,22 @@ async function uploadChunk(jobId, uploadToken, chunkIndex, products, progress) {
     progress,
   });
   if (!response?.ok && !response?.cancelled) {
-    throw new Error(response?.message ?? `직감 수집 파일 ${chunkIndex + 1} 업로드 실패`);
+    throw new Error(
+      response?.message ?? `공급처 수집 파일 ${chunkIndex + 1} 업로드 실패`,
+    );
   }
   return response;
 }
 
 async function discoverCatalog(request) {
   const entryPage = await fetchDocument(request.startUrl);
-  const allProductsUrl =
-    ShoppingdayZicgamCatalogParser.findAllProductsListUrl(
-      entryPage.document,
-      entryPage.url,
-    );
+  const allProductsUrl = ShoppingdayZicgamCatalogParser.findAllProductsListUrl(
+    entryPage.document,
+    entryPage.url,
+  );
   if (!allProductsUrl) {
     throw new Error(
-      "직감 홈에서 전체상품 목록 주소를 찾지 못해 작업을 중단했습니다.",
+      `${request.supplierLabel ?? "공급처"}에서 전체상품 목록 주소를 찾지 못해 작업을 중단했습니다.`,
     );
   }
   let currentListUrl = allProductsUrl;
@@ -177,19 +207,23 @@ async function discoverCatalog(request) {
   let terminalEmptyPage = null;
   while (currentListUrl) {
     if (visited.size >= request.maximumListPages) {
-      throw new Error("직감 목록 페이지 안전 한도를 초과했습니다.");
+      throw new Error("공급처 목록 페이지 안전 한도를 초과했습니다.");
     }
     if (visited.has(currentListUrl)) {
-      throw new Error(`직감 목록 ${expectedPage}페이지 주소가 반복되었습니다.`);
+      throw new Error(
+        `공급처 목록 ${expectedPage}페이지 주소가 반복되었습니다.`,
+      );
     }
     visited.add(currentListUrl);
     const page = await fetchDocument(currentListUrl);
     if (
       new URL(page.url).pathname.includes("/member/login") ||
-      page.document.querySelector("form[action*='/member/login'], input[name='member_id']")
+      page.document.querySelector(
+        "form[action*='/member/login'], input[name='member_id']",
+      )
     ) {
       throw Object.assign(
-        new Error("직감 로그인 또는 승인회원 확인이 필요합니다."),
+        new Error("공급처 로그인 또는 승인회원 확인이 필요합니다."),
         { code: "auth_required" },
       );
     }
@@ -199,7 +233,7 @@ async function discoverCatalog(request) {
     );
     if (inspected.currentPage !== expectedPage) {
       throw new Error(
-        `직감 목록 페이지 번호가 ${expectedPage}에서 ${inspected.currentPage}(으)로 건너뛰었습니다.`,
+        `공급처 목록 페이지 번호가 ${expectedPage}에서 ${inspected.currentPage}(으)로 건너뛰었습니다.`,
       );
     }
     if (!inspected.productUrls.length) {
@@ -208,7 +242,7 @@ async function discoverCatalog(request) {
     }
     if (inspected.activePage !== inspected.currentPage) {
       throw new Error(
-        `직감 목록 ${expectedPage}페이지의 활성 페이지 표시를 확인하지 못했습니다.`,
+        `공급처 목록 ${expectedPage}페이지의 활성 페이지 표시를 확인하지 못했습니다.`,
       );
     }
     if (!displayedTotalInvalid && inspected.displayedTotal !== null) {
@@ -224,7 +258,7 @@ async function discoverCatalog(request) {
       const previousPage = productPages.get(id);
       if (previousPage) {
         throw new Error(
-          `직감 상품번호 ${id}가 목록 ${previousPage}페이지와 ${expectedPage}페이지에 중복 표시되어 완전성을 확인할 수 없습니다.`,
+          `공급처 상품번호 ${id}가 목록 ${previousPage}페이지와 ${expectedPage}페이지에 중복 표시되어 완전성을 확인할 수 없습니다.`,
         );
       }
       productPages.set(id, expectedPage);
@@ -241,7 +275,8 @@ async function discoverCatalog(request) {
         hasNextPage: true,
       },
     });
-    if (progress?.cancelled) throw new Error("사용자가 가져오기를 중단했습니다.");
+    if (progress?.cancelled)
+      throw new Error("사용자가 가져오기를 중단했습니다.");
     expectedPage += 1;
     currentListUrl = ShoppingdayZicgamCatalogParser.catalogPageUrl(
       allProductsUrl,
@@ -250,10 +285,10 @@ async function discoverCatalog(request) {
     await delay(request.discoveryDelayMs);
   }
   if (!products.size) {
-    throw new Error("직감 상품 목록에서 상품 상세 주소를 찾지 못했습니다.");
+    throw new Error("공급처 상품 목록에서 상품 상세 주소를 찾지 못했습니다.");
   }
   if (terminalEmptyPage === null) {
-    throw new Error("직감 상품이 없는 마지막 확인 페이지를 찾지 못했습니다.");
+    throw new Error("공급처 상품이 없는 마지막 확인 페이지를 찾지 못했습니다.");
   }
   return {
     productUrls: [...products.entries()]
@@ -277,7 +312,7 @@ async function fetchDocument(url) {
     redirect: "follow",
     signal: AbortSignal.timeout(45_000),
   });
-  if (!response.ok) throw new Error(`직감 페이지 HTTP ${response.status}`);
+  if (!response.ok) throw new Error(`공급처 페이지 HTTP ${response.status}`);
   const html = await response.text();
   return {
     document: new DOMParser().parseFromString(html, "text/html"),

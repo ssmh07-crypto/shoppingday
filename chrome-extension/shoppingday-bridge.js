@@ -15,6 +15,7 @@ const SMARTSTORE_REVIEW_REQUEST_EVENT = "shoppingday:smartstore-review-request";
 const SMARTSTORE_REVIEW_RESULT_EVENT = "shoppingday:smartstore-review-result";
 const EXTENSION_CONTEXT_MESSAGE =
   "Chrome 확장 프로그램이 업데이트되었습니다. 확장 프로그램을 다시 불러온 뒤 Shoppingday 페이지를 새로고침해 주세요.";
+const catalogProviders = new Map();
 
 window.addEventListener(PING_EVENT, () => {
   void reportStatus();
@@ -116,7 +117,9 @@ window.addEventListener(SMARTSTORE_REVIEW_REQUEST_EVENT, (event) => {
         productName: "",
         reviews: [],
         observedAt: new Date().toISOString(),
-        message: response?.message ?? "스마트스토어 리뷰 가져오기를 시작하지 못했습니다.",
+        message:
+          response?.message ??
+          "스마트스토어 리뷰 가져오기를 시작하지 못했습니다.",
       });
     })
     .catch((error) => {
@@ -126,7 +129,10 @@ window.addEventListener(SMARTSTORE_REVIEW_REQUEST_EVENT, (event) => {
         productName: "",
         reviews: [],
         observedAt: new Date().toISOString(),
-        message: error instanceof Error ? error.message : "확장 프로그램과 통신하지 못했습니다.",
+        message:
+          error instanceof Error
+            ? error.message
+            : "확장 프로그램과 통신하지 못했습니다.",
       });
     });
 });
@@ -138,10 +144,13 @@ window.addEventListener(SUPPLIER_REQUEST_EVENT, (event) => {
   })
     .then((response) => {
       if (response?.ok) return;
-      dispatchSupplierResult(event.detail?.requestId, failedSupplierResult(
-        event.detail?.url,
-        response?.message ?? "공급처 재고 확인 요청에 실패했습니다.",
-      ));
+      dispatchSupplierResult(
+        event.detail?.requestId,
+        failedSupplierResult(
+          event.detail?.url,
+          response?.message ?? "공급처 재고 확인 요청에 실패했습니다.",
+        ),
+      );
     })
     .catch((error) => {
       dispatchSupplierResult(
@@ -157,6 +166,10 @@ window.addEventListener(SUPPLIER_REQUEST_EVENT, (event) => {
 });
 
 window.addEventListener(CATALOG_START_EVENT, (event) => {
+  catalogProviders.set(
+    event.detail?.requestId,
+    event.detail?.provider ?? "zicgam",
+  );
   void sendRuntimeMessage({
     type: "shoppingday.zicgam.catalog.start",
     payload: event.detail,
@@ -165,24 +178,31 @@ window.addEventListener(CATALOG_START_EVENT, (event) => {
       if (response?.ok) return;
       dispatchCatalogProgress(event.detail?.requestId, {
         phase: "failed",
-        message: response?.message ?? "직감 전체 가져오기를 시작하지 못했습니다.",
+        message:
+          response?.message ?? "공급처 전체 가져오기를 시작하지 못했습니다.",
       });
     })
     .catch((error) => {
       dispatchCatalogProgress(event.detail?.requestId, {
         phase: "failed",
-        message: error instanceof Error ? error.message : "확장 프로그램과 통신하지 못했습니다.",
+        message:
+          error instanceof Error
+            ? error.message
+            : "확장 프로그램과 통신하지 못했습니다.",
       });
     });
 });
 
 window.addEventListener(CATALOG_STOP_EVENT, (event) => {
   void sendRuntimeMessage({ type: "shoppingday.zicgam.catalog.stop" })
-    .then(() => dispatchCatalogProgress(event.detail?.requestId, { phase: "stopped" }))
+    .then(() =>
+      dispatchCatalogProgress(event.detail?.requestId, { phase: "stopped" }),
+    )
     .catch((error) => {
       dispatchCatalogProgress(event.detail?.requestId, {
         phase: "failed",
-        message: error instanceof Error ? error.message : EXTENSION_CONTEXT_MESSAGE,
+        message:
+          error instanceof Error ? error.message : EXTENSION_CONTEXT_MESSAGE,
       });
     });
 });
@@ -220,7 +240,9 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     const total = Number(message.progress?.discoveredProducts ?? 0);
     const pages = Number(message.progress?.listPages ?? 0);
     const displayedTotal = message.progress?.displayedTotal;
-    const terminalEmptyPage = Number(message.progress?.terminalEmptyPage ?? pages + 1);
+    const terminalEmptyPage = Number(
+      message.progress?.terminalEmptyPage ?? pages + 1,
+    );
     dispatchCatalogProgress(message.requestId, {
       phase: "discovery_complete",
       progress: message.progress,
@@ -230,7 +252,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         ? ` 사이트 표시 전체 수는 ${displayedTotal.toLocaleString("ko-KR")}개입니다${displayedTotal === total ? "(일치)." : "(목록 발견 수와 다름)."}`
         : " 사이트 표시 전체 수는 읽지 못했지만 빈 페이지 기준으로 끝을 확인했습니다.";
     const approved = window.confirm(
-      `직감 전체상품 ${pages.toLocaleString("ko-KR")}페이지에서 고유 상품 ${total.toLocaleString("ko-KR")}개를 확인했고, ${terminalEmptyPage.toLocaleString("ko-KR")}페이지가 비어 있어 목록의 끝으로 판정했습니다.${siteTotalMessage} 상품 상세 정보 저장을 시작할까요?`,
+      `${message.supplierLabel ?? "공급처"} 전체상품 ${pages.toLocaleString("ko-KR")}페이지에서 고유 상품 ${total.toLocaleString("ko-KR")}개를 확인했고, ${terminalEmptyPage.toLocaleString("ko-KR")}페이지가 비어 있어 목록의 끝으로 판정했습니다.${siteTotalMessage} 상품 상세 정보 저장을 시작할까요?`,
     );
     sendResponse({ ok: approved, cancelled: !approved });
     return;
@@ -257,8 +279,19 @@ async function reportStatus() {
       }),
     );
     if (response?.catalog?.active && response.catalog.latest) {
+      catalogProviders.set(
+        response.catalog.requestId,
+        response.catalog.provider ?? "zicgam",
+      );
       dispatchCatalogProgress(response.catalog.requestId, {
-        ...catalogProgressDetail(response.catalog.latest),
+        ...catalogProgressDetail({
+          ...response.catalog.latest,
+          provider: response.catalog.provider,
+          supplierLabel:
+            response.catalog.provider === "ebulsamchon"
+              ? "이불삼촌"
+              : "직감",
+        }),
         counts: response.catalog.stats,
         restored: true,
         updatedAt: response.catalog.latest.updatedAt,
@@ -342,6 +375,7 @@ function failedSupplierResult(url, message) {
 }
 
 async function startCatalogBatch(message) {
+  const supplierLabel = catalogSupplierLabel(message);
   try {
     const body = await startCatalogBatchWithRetry(message);
     dispatchCatalogProgress(message.requestId, {
@@ -351,37 +385,53 @@ async function startCatalogBatch(message) {
     });
     return { ok: true, jobId: body.job.id, uploadToken: body.uploadToken };
   } catch (error) {
-    return { ok: false, message: error instanceof Error ? error.message : "직감 작업을 만들지 못했습니다." };
+    return {
+      ok: false,
+      message:
+        error instanceof Error
+          ? error.message
+          : `${supplierLabel} 작업을 만들지 못했습니다.`,
+    };
   }
 }
 
 async function startCatalogBatchWithRetry(message) {
   const retryDelays = [0, 2_000, 5_000, 10_000, 20_000];
-  let lastError = "직감 작업을 만들지 못했습니다.";
+  const supplierLabel = catalogSupplierLabel(message);
+  let lastError = `${supplierLabel} 작업을 만들지 못했습니다.`;
   for (let attempt = 0; attempt < retryDelays.length; attempt += 1) {
     if (retryDelays[attempt]) {
       dispatchCatalogProgress(message.requestId, {
         phase: "starting",
         progress: message.progress,
-        message: `직감 작업 생성을 재시도합니다 (${attempt}/${retryDelays.length - 1}).`,
+        message: `${supplierLabel} 작업 생성을 재시도합니다 (${attempt}/${retryDelays.length - 1}).`,
       });
       await wait(retryDelays[attempt]);
     }
     try {
-      const response = await fetch("/api/suppliers/zicgam/products/sync", {
-        method: "POST",
-        credentials: "same-origin",
-        signal: AbortSignal.timeout(45_000),
-      });
+      const response = await fetch(
+        `/api/suppliers/${catalogProvider(message)}/products/sync`,
+        {
+          method: "POST",
+          credentials: "same-origin",
+          signal: AbortSignal.timeout(45_000),
+        },
+      );
       const body = await response.json().catch(() => null);
       if (response.ok && body?.success && body.job?.id && body.uploadToken) {
         return body;
       }
       if (response.ok) {
-        lastError = invalidJsonResponseMessage("직감 작업 생성", response, body);
+        lastError = invalidJsonResponseMessage(
+          `${supplierLabel} 작업 생성`,
+          response,
+          body,
+        );
         continue;
       }
-      lastError = body?.error?.message ?? `직감 작업 생성 HTTP ${response.status}`;
+      lastError =
+        body?.error?.message ??
+        `${supplierLabel} 작업 생성 HTTP ${response.status}`;
       if (response.status !== 429 && response.status < 500) break;
     } catch (error) {
       lastError = error instanceof Error ? error.message : lastError;
@@ -393,8 +443,13 @@ async function startCatalogBatchWithRetry(message) {
 async function uploadCatalogBatchChunk(message) {
   try {
     const { jobId, uploadToken, chunkIndex, products } = message.payload ?? {};
-    if (!jobId || !uploadToken || !Number.isInteger(chunkIndex) || !Array.isArray(products)) {
-      throw new Error("직감 수집 청크가 올바르지 않습니다.");
+    if (
+      !jobId ||
+      !uploadToken ||
+      !Number.isInteger(chunkIndex) ||
+      !Array.isArray(products)
+    ) {
+      throw new Error("공급처 수집 청크가 올바르지 않습니다.");
     }
     const compressed = await gzipJson(products);
     const signed = await requestSignedChunkUpload(
@@ -411,11 +466,22 @@ async function uploadCatalogBatchChunk(message) {
     });
     return { ok: true };
   } catch (error) {
-    return { ok: false, message: error instanceof Error ? error.message : "직감 수집 파일을 업로드하지 못했습니다." };
+    return {
+      ok: false,
+      message:
+        error instanceof Error
+          ? error.message
+          : "공급처 수집 파일을 업로드하지 못했습니다.",
+    };
   }
 }
 
-async function requestSignedChunkUpload(jobId, uploadToken, chunkIndex, message) {
+async function requestSignedChunkUpload(
+  jobId,
+  uploadToken,
+  chunkIndex,
+  message,
+) {
   const retryDelays = [0, 2_000, 5_000, 10_000, 20_000];
   let lastError = "서명 URL 요청 실패";
   for (let attempt = 0; attempt < retryDelays.length; attempt += 1) {
@@ -429,7 +495,7 @@ async function requestSignedChunkUpload(jobId, uploadToken, chunkIndex, message)
     }
     try {
       const response = await fetch(
-        `/api/suppliers/zicgam/products/sync/${encodeURIComponent(jobId)}/chunks/${chunkIndex}`,
+        `/api/suppliers/${catalogProvider(message)}/products/sync/${encodeURIComponent(jobId)}/chunks/${chunkIndex}`,
         {
           method: "POST",
           headers: { "x-zicgam-upload-token": uploadToken },
@@ -438,7 +504,8 @@ async function requestSignedChunkUpload(jobId, uploadToken, chunkIndex, message)
         },
       );
       const body = await response.json().catch(() => null);
-      if (response.ok && body?.success && body.signedUrl && body.apiKey) return body;
+      if (response.ok && body?.success && body.signedUrl && body.apiKey)
+        return body;
       if (response.ok) {
         lastError = invalidJsonResponseMessage("서명 URL", response, body);
         continue;
@@ -467,7 +534,11 @@ async function uploadSignedChunk(signed, compressed, chunkIndex, message) {
     try {
       const form = new FormData();
       form.append("cacheControl", "3600");
-      form.append("", compressed, `${String(chunkIndex).padStart(5, "0")}.json.gz`);
+      form.append(
+        "",
+        compressed,
+        `${String(chunkIndex).padStart(5, "0")}.json.gz`,
+      );
       const response = await fetch(signed.signedUrl, {
         method: "PUT",
         headers: {
@@ -480,7 +551,10 @@ async function uploadSignedChunk(signed, compressed, chunkIndex, message) {
       });
       if (response.ok) return;
       const body = await response.json().catch(() => null);
-      lastError = body?.message ?? body?.error ?? `Supabase Storage HTTP ${response.status}`;
+      lastError =
+        body?.message ??
+        body?.error ??
+        `Supabase Storage HTTP ${response.status}`;
       if (response.status !== 429 && response.status < 500) break;
     } catch (error) {
       lastError = error instanceof Error ? error.message : lastError;
@@ -495,7 +569,8 @@ function wait(milliseconds) {
 
 function invalidJsonResponseMessage(label, response, body) {
   const contentType = response.headers.get("content-type") ?? "알 수 없음";
-  const fields = body && typeof body === "object" ? Object.keys(body).join(",") : "없음";
+  const fields =
+    body && typeof body === "object" ? Object.keys(body).join(",") : "없음";
   return `${label} 응답 필드 누락 · HTTP ${response.status} · ${contentType} · 필드 ${fields}`;
 }
 
@@ -503,7 +578,7 @@ async function dispatchCatalogBatch(message) {
   try {
     const { jobId, chunkCount, total } = message.payload ?? {};
     const response = await fetch(
-      `/api/suppliers/zicgam/products/sync/${encodeURIComponent(jobId)}/dispatch`,
+      `/api/suppliers/${catalogProvider(message)}/products/sync/${encodeURIComponent(jobId)}/dispatch`,
       {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -514,7 +589,10 @@ async function dispatchCatalogBatch(message) {
     );
     const body = await response.json().catch(() => null);
     if (!response.ok || !body?.success) {
-      throw new Error(body?.error?.message ?? `GitHub Actions 실행 요청 HTTP ${response.status}`);
+      throw new Error(
+        body?.error?.message ??
+          `GitHub Actions 실행 요청 HTTP ${response.status}`,
+      );
     }
     dispatchCatalogProgress(message.requestId, {
       phase: "queued",
@@ -523,27 +601,40 @@ async function dispatchCatalogBatch(message) {
     });
     return { ok: true, job: body.job };
   } catch (error) {
-    return { ok: false, message: error instanceof Error ? error.message : "GitHub Actions 작업을 시작하지 못했습니다." };
+    return {
+      ok: false,
+      message:
+        error instanceof Error
+          ? error.message
+          : "GitHub Actions 작업을 시작하지 못했습니다.",
+    };
   }
 }
 
 async function gzipJson(value) {
-  const source = new Blob([JSON.stringify(value)], { type: "application/json" });
+  const source = new Blob([JSON.stringify(value)], {
+    type: "application/json",
+  });
   const stream = source.stream().pipeThrough(new CompressionStream("gzip"));
-  return new Blob([await new Response(stream).arrayBuffer()], { type: "application/gzip" });
+  return new Blob([await new Response(stream).arrayBuffer()], {
+    type: "application/gzip",
+  });
 }
 
 async function saveCatalogProduct(message) {
   let status = null;
   let retryable = true;
   try {
-    const response = await fetch("/api/suppliers/zicgam/products/import", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      credentials: "same-origin",
-      body: JSON.stringify(message.product),
-      signal: AbortSignal.timeout(45_000),
-    });
+    const response = await fetch(
+      `/api/suppliers/${catalogProvider(message)}/products/import`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify(message.product),
+        signal: AbortSignal.timeout(45_000),
+      },
+    );
     status = response.status;
     retryable = response.status === 429 || response.status >= 500;
     const responseText = await response.text();
@@ -564,7 +655,10 @@ async function saveCatalogProduct(message) {
       phase: "item_failed",
       progress: message.progress,
       url: message.product?.url,
-      message: error instanceof Error ? error.message : "직감 상품 저장에 실패했습니다.",
+      message:
+        error instanceof Error
+          ? error.message
+          : "직감 상품 저장에 실패했습니다.",
     };
     return { ok: false, message: detail.message, retryable, status };
   }
@@ -580,10 +674,15 @@ function parseJson(value) {
 
 function catalogProgressDetail(message) {
   const suffix = message.type.split(".").at(-1);
+  const supplierLabel = catalogSupplierLabel(message);
   if (suffix === "starting") {
-    return { phase: "starting", message: "직감 전체 가져오기를 시작하고 있습니다." };
+    return {
+      phase: "starting",
+      message: `${supplierLabel} 전체 가져오기를 시작하고 있습니다.`,
+    };
   }
-  if (suffix === "discovery") return { phase: "discovering", progress: message.progress };
+  if (suffix === "discovery")
+    return { phase: "discovering", progress: message.progress };
   if (suffix === "discovery_complete") {
     return {
       phase: "discovery_complete",
@@ -595,7 +694,7 @@ function catalogProgressDetail(message) {
     return {
       phase: "capturing",
       progress: message.progress,
-      message: "직감 상품을 수집 파일로 만들고 있습니다.",
+      message: `${supplierLabel} 상품을 수집 파일로 만들고 있습니다.`,
     };
   }
   if (suffix === "batch_dispatch" || suffix === "capture_complete") {
@@ -633,16 +732,42 @@ function catalogProgressDetail(message) {
     };
   }
   if (suffix === "item_failed") {
-    return { phase: "item_failed", progress: message.progress, url: message.url, message: message.message };
+    return {
+      phase: "item_failed",
+      progress: message.progress,
+      url: message.url,
+      message: message.message,
+    };
   }
-  if (suffix === "complete") return { phase: "complete", summary: message.summary };
-  return { phase: "failed", message: message.message ?? "직감 전체 가져오기에 실패했습니다." };
+  if (suffix === "complete")
+    return { phase: "complete", summary: message.summary };
+  return {
+    phase: "failed",
+    message:
+      message.message ?? `${supplierLabel} 전체 가져오기에 실패했습니다.`,
+  };
 }
 
 function dispatchCatalogProgress(requestId, detail) {
   window.dispatchEvent(
     new CustomEvent(CATALOG_PROGRESS_EVENT, {
-      detail: { requestId, ...detail },
+      detail: {
+        requestId,
+        provider:
+          detail.provider ?? catalogProviders.get(requestId) ?? "zicgam",
+        ...detail,
+      },
     }),
+  );
+}
+
+function catalogProvider(message) {
+  return message?.provider === "ebulsamchon" ? "ebulsamchon" : "zicgam";
+}
+
+function catalogSupplierLabel(message) {
+  return (
+    message?.supplierLabel ??
+    (catalogProvider(message) === "ebulsamchon" ? "이불삼촌" : "직감")
   );
 }

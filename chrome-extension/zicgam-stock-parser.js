@@ -9,12 +9,14 @@
       locationLike.pathname.includes("/member/login") ||
       (!productDetail &&
         Boolean(
-          root.querySelector("form[action*='/member/login'], input[name='member_id']"),
+          root.querySelector(
+            "form[action*='/member/login'], input[name='member_id']",
+          ),
         ) &&
         /로그인이 필요|회원 등급을 확인|승인회원.*구매/.test(pageText))
     ) {
       return makeResult(requestUrl, "auth_required", {
-        evidence: ["직감 로그인 또는 승인회원 확인이 필요합니다."],
+        evidence: ["공급처 로그인 또는 승인회원 확인이 필요합니다."],
       });
     }
 
@@ -42,7 +44,9 @@
     if (discontinuedMarker) {
       return makeResult(requestUrl, "discontinued", {
         productName,
-        evidence: [`상품 영역에서 '${discontinuedMarker}' 문구를 확인했습니다.`],
+        evidence: [
+          `상품 영역에서 '${discontinuedMarker}' 문구를 확인했습니다.`,
+        ],
       });
     }
 
@@ -108,9 +112,7 @@
       (element) =>
         hasPurchaseAction(element) &&
         !isUnavailableControl(element) &&
-        /구매|바로구매|장바구니|BUY NOW/i.test(
-          purchaseControlLabel(element),
-        ),
+        /구매|바로구매|장바구니|BUY NOW/i.test(purchaseControlLabel(element)),
     );
     if (purchaseButton) {
       return makeResult(requestUrl, "available", {
@@ -173,7 +175,7 @@
   function hasPurchaseAction(element) {
     return Boolean(
       element.matches("#btnBuy, [onclick*='product_submit']") ||
-        element.querySelector("#btnBuy, [onclick*='product_submit']"),
+      element.querySelector("#btnBuy, [onclick*='product_submit']"),
     );
   }
 
@@ -209,15 +211,15 @@
 
   function firstMarker(text, markers) {
     return markers.find((marker) =>
-      text.toLocaleLowerCase("ko-KR").includes(
-        marker.toLocaleLowerCase("ko-KR"),
-      ),
+      text
+        .toLocaleLowerCase("ko-KR")
+        .includes(marker.toLocaleLowerCase("ko-KR")),
     );
   }
 
   function cleanProductName(value) {
     const normalized = normalizeText(value ?? "")
-      .replace(/\s*[-|]\s*(직감|위탁배송 쇼핑몰).*$/i, "")
+      .replace(/\s*[-|]\s*(직감|이불삼촌|위탁배송 쇼핑몰).*$/i, "")
       .trim();
     return normalized ? normalized.slice(0, 300) : null;
   }

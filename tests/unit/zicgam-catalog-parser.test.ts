@@ -5,7 +5,10 @@ import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 type CatalogParser = {
   catalogPageUrl(baseUrl: string, page: number): string | null;
   findAllProductsListUrl(root: Document, baseUrl: string): string | null;
-  inspectCatalogPage(root: Document, baseUrl: string): {
+  inspectCatalogPage(
+    root: Document,
+    baseUrl: string,
+  ): {
     productUrls: string[];
     paginationUrls: string[];
     currentPage: number;
@@ -13,7 +16,10 @@ type CatalogParser = {
     nextListUrl: string | null;
     displayedTotal: number | null;
   };
-  discoverPage(root: Document, baseUrl: string): {
+  discoverPage(
+    root: Document,
+    baseUrl: string,
+  ): {
     productUrls: string[];
     listUrls: string[];
   };
@@ -136,10 +142,11 @@ describe("Zicgam full catalog parser", () => {
       </div>
     `;
 
-    const result = parserGlobal.ShoppingdayZicgamCatalogParser.inspectCatalogPage(
-      document,
-      "https://zicgam.com/product/list.html?cate_no=56",
-    );
+    const result =
+      parserGlobal.ShoppingdayZicgamCatalogParser.inspectCatalogPage(
+        document,
+        "https://zicgam.com/product/list.html?cate_no=56",
+      );
 
     expect(result).toMatchObject({
       currentPage: 1,
@@ -163,10 +170,11 @@ describe("Zicgam full catalog parser", () => {
       </div>
     `;
 
-    const result = parserGlobal.ShoppingdayZicgamCatalogParser.inspectCatalogPage(
-      document,
-      "https://zicgam.com/product/list.html?cate_no=56&page=3",
-    );
+    const result =
+      parserGlobal.ShoppingdayZicgamCatalogParser.inspectCatalogPage(
+        document,
+        "https://zicgam.com/product/list.html?cate_no=56&page=3",
+      );
 
     expect(result.currentPage).toBe(3);
     expect(result.activePage).toBe(3);
@@ -183,11 +191,10 @@ describe("Zicgam full catalog parser", () => {
       51,
     );
 
-    expect(url).toBe(
-      "https://zicgam.com/product/list.html?cate_no=56&page=51",
-    );
+    expect(url).toBe("https://zicgam.com/product/list.html?cate_no=56&page=51");
 
-    document.body.innerHTML = '<div class="xans-product-listnormal"><ul class="prdList"></ul></div>';
+    document.body.innerHTML =
+      '<div class="xans-product-listnormal"><ul class="prdList"></ul></div>';
     const result = parser.inspectCatalogPage(document, url!);
     expect(result.currentPage).toBe(51);
     expect(result.productUrls).toEqual([]);
@@ -258,5 +265,40 @@ describe("Zicgam full catalog parser", () => {
         { inspect: () => ({ status: "auth_required", evidence: [] }) },
       ),
     ).toThrow("로그인");
+  });
+
+  it("reuses the Cafe24 catalog parser for the Ebul Samchon domain", () => {
+    document.body.innerHTML = `
+      <nav><a href="/product/list.html?cate_no=132">전체상품</a></nav>
+      <ul class="prdList">
+        <li><a href="/product/극세사-드림버니/652/category/132/display/1/">상품</a></li>
+      </ul>
+    `;
+    const parser = parserGlobal.ShoppingdayZicgamCatalogParser;
+    const baseUrl =
+      "https://xn--wr3bq2dn2hzng.com/product/list.html?cate_no=132";
+
+    expect(parser.findAllProductsListUrl(document, baseUrl)).toBe(baseUrl);
+    expect(parser.discoverPage(document, baseUrl).productUrls).toEqual([
+      "https://xn--wr3bq2dn2hzng.com/product/detail.html?product_no=652",
+    ]);
+  });
+
+  it("stops before saving Ebul Samchon products when the member price is hidden", () => {
+    document.head.innerHTML =
+      '<meta property="og:title" content="극세사 드림버니 - 이불삼촌">';
+    document.body.innerHTML = `
+      <section class="xans-product-detail"><div class="infoArea">
+        <span id="span_product_price_text">판매가 회원공개</span>
+      </div></section>
+    `;
+
+    expect(() =>
+      parserGlobal.ShoppingdayZicgamCatalogParser.extractProduct(
+        document,
+        "https://xn--wr3bq2dn2hzng.com/product/detail.html?product_no=652",
+        { inspect: () => ({ status: "available", evidence: [] }) },
+      ),
+    ).toThrow("공급가");
   });
 });

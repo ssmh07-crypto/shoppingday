@@ -21,6 +21,7 @@
     "import:all": "node --max-old-space-size=2048 --conditions=react-server --env-file=.env.local --import tsx scripts/import-dome-all.ts",
     "sync:products": "node --max-old-space-size=2048 --conditions=react-server --import tsx scripts/sync-dome-products.ts",
     "import:zicgam": "node --max-old-space-size=2048 --conditions=react-server --import tsx scripts/import-zicgam-batch.ts",
+    "import:ebulsamchon": "node --max-old-space-size=2048 --conditions=react-server --import tsx scripts/import-ebulsamchon-batch.ts",
     "naver:relay": "tsx scripts/naver-commerce-relay.ts",
     "naver:local-tunnel": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start-local-naver-tunnel.ps1",
     "naver:local-tunnel:autostart": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/install-local-naver-tunnel-autostart.ps1",

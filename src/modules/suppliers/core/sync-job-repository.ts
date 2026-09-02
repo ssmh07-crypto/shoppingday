@@ -71,6 +71,16 @@ export class SupplierSyncJobRepository {
     return job ?? null;
   }
 
+  async findForSupplier(id: string, supplierCode: string) {
+    const [row] = await this.database
+      .select({ job: supplierSyncJobs })
+      .from(supplierSyncJobs)
+      .innerJoin(suppliers, eq(suppliers.id, supplierSyncJobs.supplierId))
+      .where(and(eq(supplierSyncJobs.id, id), eq(suppliers.code, supplierCode)))
+      .limit(1);
+    return row?.job ?? null;
+  }
+
   async start(id: string, githubRunId?: string, githubRunUrl?: string) {
     const [job] = await this.database
       .update(supplierSyncJobs)
@@ -165,7 +175,9 @@ export class SupplierSyncJobRepository {
   async firstImportedAt(supplierCode: string) {
     const [row] = await this.database
       .select({
-        value: sql<Date | string | null>`min(${supplierProducts.firstImportedAt})`,
+        value: sql<
+          Date | string | null
+        >`min(${supplierProducts.firstImportedAt})`,
       })
       .from(supplierProducts)
       .innerJoin(suppliers, eq(suppliers.id, supplierProducts.supplierId))

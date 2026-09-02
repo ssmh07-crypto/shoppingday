@@ -2,7 +2,7 @@
 
 const PENDING_PREFIX = "rank-pending:";
 const SUPPLIER_WORKER_PREFIX = "supplier-worker:";
-const CATALOG_WORKER_PREFIX = "zicgam-catalog-worker:";
+const CATALOG_WORKER_PREFIX = "supplier-catalog-worker:";
 const KEYWORD_EXPOSURE_WORKER_PREFIX = "keyword-exposure-worker:";
 const ALLOWED_APP_ORIGINS = new Set([
   "https://shoppingday.ssmh07.workers.dev",
@@ -44,9 +44,7 @@ async function handleMessage(message, sender) {
     const sourceTabId = sender.tab?.id;
     if (!sourceTabId) throw new Error("Shoppingday 탭을 확인하지 못했습니다.");
 
-    const searchUrl = new URL(
-      "https://search.shopping.naver.com/search/all",
-    );
+    const searchUrl = new URL("https://search.shopping.naver.com/search/all");
     searchUrl.searchParams.set("query", request.keyword);
     const tab = await chrome.tabs.create({ url: "about:blank", active: true });
     if (!tab.id) throw new Error("네이버쇼핑 검색 탭을 열지 못했습니다.");
@@ -89,7 +87,10 @@ async function handleMessage(message, sender) {
     });
     const searchUrl = new URL("https://search.shopping.naver.com/search/all");
     searchUrl.searchParams.set("query", request.keyword);
-    await chrome.tabs.update(tab.id, { url: searchUrl.toString(), active: true });
+    await chrome.tabs.update(tab.id, {
+      url: searchUrl.toString(),
+      active: true,
+    });
     return { ok: true };
   }
 
@@ -142,15 +143,24 @@ async function handleMessage(message, sender) {
     assertSmartstoreSender(sender);
     const pending = await getPending(sender.tab?.id);
     return pending?.kind === "smartstore_review"
-      ? { ok: true, payload: { ...pending.payload, requestId: pending.requestId } }
-      : { ok: false, message: "대기 중인 스마트스토어 리뷰 가져오기가 없습니다." };
+      ? {
+          ok: true,
+          payload: { ...pending.payload, requestId: pending.requestId },
+        }
+      : {
+          ok: false,
+          message: "대기 중인 스마트스토어 리뷰 가져오기가 없습니다.",
+        };
   }
 
   if (message?.type === "shoppingday.smartstore-review.result") {
     assertSmartstoreSender(sender);
     const pending = await getPending(sender.tab?.id);
     if (!pending || pending.kind !== "smartstore_review") {
-      return { ok: false, message: "스마트스토어 리뷰 가져오기 요청이 만료되었습니다." };
+      return {
+        ok: false,
+        message: "스마트스토어 리뷰 가져오기 요청이 만료되었습니다.",
+      };
     }
     const result = validateSmartstoreReviewResult(message.result);
     await chrome.tabs.sendMessage(pending.sourceTabId, {
@@ -184,10 +194,7 @@ async function handleMessage(message, sender) {
     const sourceTabId = sender.tab?.id;
     if (!sourceTabId) throw new Error("Shoppingday 탭을 확인하지 못했습니다.");
 
-    const tab = await getOrCreateSupplierTab(
-      sourceTabId,
-      !request.background,
-    );
+    const tab = await getOrCreateSupplierTab(sourceTabId, !request.background);
     await chrome.storage.session.set({
       [pendingKey(tab.id)]: {
         kind: "supplier",
@@ -239,7 +246,7 @@ async function handleMessage(message, sender) {
     const tab = await getOrCreateCatalogTab(sourceTabId);
     await chrome.storage.session.set({
       [pendingKey(tab.id)]: {
-        kind: "zicgam_catalog",
+        kind: "supplier_catalog",
         sourceTabId,
         requestId: request.requestId,
         payload: request,
@@ -262,7 +269,7 @@ async function handleMessage(message, sender) {
     const sourceTabId = sender.tab?.id;
     const tab = sourceTabId ? await findCatalogTab(sourceTabId) : null;
     const pending = await getPending(tab?.id);
-    if (tab?.id && pending?.kind === "zicgam_catalog") {
+    if (tab?.id && pending?.kind === "supplier_catalog") {
       await chrome.storage.session.set({
         [pendingKey(tab.id)]: { ...pending, cancelled: true },
       });
@@ -273,24 +280,29 @@ async function handleMessage(message, sender) {
   }
 
   if (message?.type === "shoppingday.zicgam.catalog.ready") {
-    assertZicgamSender(sender);
     const pending = await getPending(sender.tab?.id);
-    return pending?.kind === "zicgam_catalog" && !pending.cancelled
+    assertCatalogSender(sender, pending);
+    return pending?.kind === "supplier_catalog" && !pending.cancelled
       ? { ok: true, payload: pending.payload }
-      : { ok: false, message: "대기 중인 직감 전체 가져오기가 없습니다." };
+      : { ok: false, message: "대기 중인 공급처 전체 가져오기가 없습니다." };
   }
 
   if (message?.type?.startsWith("shoppingday.zicgam.catalog.")) {
-    assertZicgamSender(sender);
     const workerTabId = sender.tab?.id;
     const pending = await getPending(workerTabId);
-    if (!pending || pending.kind !== "zicgam_catalog") {
-      return { ok: false, message: "직감 전체 가져오기 요청이 만료되었습니다." };
+    assertCatalogSender(sender, pending);
+    if (!pending || pending.kind !== "supplier_catalog") {
+      return {
+        ok: false,
+        message: "공급처 전체 가져오기 요청이 만료되었습니다.",
+      };
     }
     if (pending.cancelled) return { ok: false, cancelled: true };
     const forwarded = {
       type: message.type,
       requestId: pending.requestId,
+      provider: pending.payload.provider,
+      supplierLabel: pending.payload.supplierLabel,
       product: message.product,
       progress: message.progress,
       summary: message.summary,
@@ -322,8 +334,13 @@ async function handleMessage(message, sender) {
       message.type === "shoppingday.zicgam.catalog.batch_dispatch";
     const response = needsPageResponse
       ? await sendCatalogMessageWithRetry(pending.sourceTabId, forwarded)
-      : await chrome.tabs.sendMessage(pending.sourceTabId, forwarded).catch(() => null);
-    if (message.type === "shoppingday.zicgam.catalog.product" && response?.result?.action) {
+      : await chrome.tabs
+          .sendMessage(pending.sourceTabId, forwarded)
+          .catch(() => null);
+    if (
+      message.type === "shoppingday.zicgam.catalog.product" &&
+      response?.result?.action
+    ) {
       const action = response.result.action;
       const stats = {
         ...updatedPending.stats,
@@ -353,7 +370,8 @@ async function handleMessage(message, sender) {
 function validateRankRequest(value) {
   const requestId =
     typeof value?.requestId === "string" ? value.requestId.trim() : "";
-  const keyword = typeof value?.keyword === "string" ? value.keyword.trim() : "";
+  const keyword =
+    typeof value?.keyword === "string" ? value.keyword.trim() : "";
   const channelProductNo =
     typeof value?.channelProductNo === "string"
       ? value.channelProductNo.trim()
@@ -391,13 +409,20 @@ function validateRankRequest(value) {
 function validateKeywordExposureRequest(value) {
   const requestId =
     typeof value?.requestId === "string" ? value.requestId.trim() : "";
-  const keyword = typeof value?.keyword === "string" ? value.keyword.trim() : "";
+  const keyword =
+    typeof value?.keyword === "string" ? value.keyword.trim() : "";
   const contextKeyword =
-    typeof value?.contextKeyword === "string" ? value.contextKeyword.trim() : "";
+    typeof value?.contextKeyword === "string"
+      ? value.contextKeyword.trim()
+      : "";
   const contextCategoryId =
-    typeof value?.contextCategoryId === "string" ? value.contextCategoryId.trim() : "";
+    typeof value?.contextCategoryId === "string"
+      ? value.contextCategoryId.trim()
+      : "";
   const contextCategoryName =
-    typeof value?.contextCategoryName === "string" ? value.contextCategoryName.trim() : "";
+    typeof value?.contextCategoryName === "string"
+      ? value.contextCategoryName.trim()
+      : "";
   if (!requestId || requestId.length > 100) {
     throw new Error("키워드 노출 분석 요청 ID가 올바르지 않습니다.");
   }
@@ -407,7 +432,11 @@ function validateKeywordExposureRequest(value) {
   if (!contextKeyword || contextKeyword.length > 100) {
     throw new Error("검색 의도를 비교할 기준 상품어를 입력해 주세요.");
   }
-  if (!/^\d{1,20}$/.test(contextCategoryId) || !contextCategoryName || contextCategoryName.length > 200) {
+  if (
+    !/^\d{1,20}$/.test(contextCategoryId) ||
+    !contextCategoryName ||
+    contextCategoryName.length > 200
+  ) {
     throw new Error("분류 기준 네이버 카테고리를 선택해 주세요.");
   }
   return {
@@ -430,10 +459,16 @@ function validateSmartstoreReviewRequest(value) {
   const url = new URL(rawUrl);
   if (
     url.protocol !== "https:" ||
-    !["smartstore.naver.com", "m.smartstore.naver.com", "brand.naver.com"].includes(url.hostname) ||
+    ![
+      "smartstore.naver.com",
+      "m.smartstore.naver.com",
+      "brand.naver.com",
+    ].includes(url.hostname) ||
     !/^\/[^/]+\/products\/\d+/.test(url.pathname)
   ) {
-    throw new Error("스마트스토어 또는 브랜드스토어 상품 주소를 입력해 주세요.");
+    throw new Error(
+      "스마트스토어 또는 브랜드스토어 상품 주소를 입력해 주세요.",
+    );
   }
   return { requestId, url: url.toString() };
 }
@@ -445,13 +480,15 @@ function validateSmartstoreReviewResult(value) {
       typeof review?.content === "string" ? review.content.trim() : "";
     const rating = Number(review?.rating);
     if (!content || content.length > 10_000) return [];
-    return [{
-      content,
-      rating:
-        Number.isInteger(rating) && rating >= 1 && rating <= 5
-          ? rating
-          : null,
-    }];
+    return [
+      {
+        content,
+        rating:
+          Number.isInteger(rating) && rating >= 1 && rating <= 5
+            ? rating
+            : null,
+      },
+    ];
   });
   if (!validated.length) {
     throw new Error("현재 화면에서 가져올 리뷰를 찾지 못했습니다.");
@@ -459,7 +496,9 @@ function validateSmartstoreReviewResult(value) {
   return {
     status: "completed",
     sourceUrl:
-      typeof value?.sourceUrl === "string" ? value.sourceUrl.slice(0, 2_000) : "",
+      typeof value?.sourceUrl === "string"
+        ? value.sourceUrl.slice(0, 2_000)
+        : "",
     productName:
       typeof value?.productName === "string"
         ? value.productName.trim().slice(0, 500)
@@ -502,13 +541,25 @@ function validateCatalogRequest(value) {
   if (!requestId || requestId.length > 100) {
     throw new Error("전체 가져오기 요청 ID가 올바르지 않습니다.");
   }
-  return {
-    requestId,
-    startUrl: "https://zicgam.com/index.html",
-    discoveryDelayMs: 400,
-    delayMs: 800,
-    maximumListPages: 500,
-  };
+  const provider = value?.provider === "ebulsamchon" ? "ebulsamchon" : "zicgam";
+  const config =
+    provider === "ebulsamchon"
+      ? {
+          startUrl:
+            "https://xn--wr3bq2dn2hzng.com/product/list.html?cate_no=132",
+          supplierLabel: "이불삼촌",
+          hostname: "xn--wr3bq2dn2hzng.com",
+          discoveryDelayMs: 700,
+          delayMs: 1_000,
+        }
+      : {
+          startUrl: "https://zicgam.com/index.html",
+          supplierLabel: "직감",
+          hostname: "zicgam.com",
+          discoveryDelayMs: 400,
+          delayMs: 800,
+        };
+  return { requestId, provider, ...config, maximumListPages: 500 };
 }
 
 function assertShoppingdaySender(sender) {
@@ -535,7 +586,13 @@ function assertSmartstoreSender(sender) {
     throw new Error("허용되지 않은 스마트스토어 페이지입니다.");
   }
   const hostname = new URL(sender.url).hostname;
-  if (!["smartstore.naver.com", "m.smartstore.naver.com", "brand.naver.com"].includes(hostname)) {
+  if (
+    ![
+      "smartstore.naver.com",
+      "m.smartstore.naver.com",
+      "brand.naver.com",
+    ].includes(hostname)
+  ) {
     throw new Error("허용되지 않은 스마트스토어 페이지입니다.");
   }
 }
@@ -546,17 +603,29 @@ function assertZicgamSender(sender) {
   }
 }
 
+function assertCatalogSender(sender, pending) {
+  const expectedHostname = pending?.payload?.hostname;
+  if (
+    !sender.url ||
+    !expectedHostname ||
+    new URL(sender.url).hostname !== expectedHostname
+  ) {
+    throw new Error("허용되지 않은 공급처 페이지입니다.");
+  }
+}
+
 async function getPending(tabId) {
   if (!tabId) return null;
   const key = pendingKey(tabId);
   const stored = await chrome.storage.session.get(key);
   const pending = stored[key];
   if (!pending) return null;
-  const maximumAge = pending.kind === "zicgam_catalog"
-    ? 24 * 60 * 60 * 1000
-    : pending.kind === "smartstore_review"
-      ? 30 * 60 * 1000
-      : 2 * 60 * 1000;
+  const maximumAge =
+    pending.kind === "supplier_catalog"
+      ? 24 * 60 * 60 * 1000
+      : pending.kind === "smartstore_review"
+        ? 30 * 60 * 1000
+        : 2 * 60 * 1000;
   if (Date.now() - pending.createdAt > maximumAge) {
     await chrome.storage.session.remove(key);
     return null;
@@ -568,10 +637,12 @@ async function getCatalogStatus(sourceTabId) {
   if (!sourceTabId) return null;
   const tab = await findCatalogTab(sourceTabId);
   const pending = await getPending(tab?.id);
-  if (!pending || pending.kind !== "zicgam_catalog" || pending.cancelled) return null;
+  if (!pending || pending.kind !== "supplier_catalog" || pending.cancelled)
+    return null;
   return {
     active: true,
     requestId: pending.requestId,
+    provider: pending.payload.provider,
     latest: pending.latest ?? null,
     stats: pending.stats ?? null,
   };
@@ -599,7 +670,9 @@ async function sendCatalogMessageWithRetry(tabId, message) {
       await new Promise((resolve) => setTimeout(resolve, 1_000));
     }
   }
-  throw lastError ?? new Error("Shoppingday 가져오기 화면에 연결하지 못했습니다.");
+  throw (
+    lastError ?? new Error("Shoppingday 가져오기 화면에 연결하지 못했습니다.")
+  );
 }
 
 function pendingKey(tabId) {
@@ -632,7 +705,7 @@ async function getOrCreateCatalogTab(sourceTabId) {
   const existing = await findCatalogTab(sourceTabId);
   if (existing?.id) return existing;
   const tab = await chrome.tabs.create({ url: "about:blank", active: true });
-  if (!tab.id) throw new Error("직감 전체 가져오기 탭을 열지 못했습니다.");
+  if (!tab.id) throw new Error("공급처 전체 가져오기 탭을 열지 못했습니다.");
   await chrome.storage.session.set({
     [`${CATALOG_WORKER_PREFIX}${sourceTabId}`]: tab.id,
   });

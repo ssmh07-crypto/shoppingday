@@ -44,6 +44,7 @@ export default async function ImportProductPage() {
 
         <section className="supplier-import-grid" aria-label="연결된 도매처">
           <ZicgamFullImport />
+          <ZicgamFullImport provider="ebulsamchon" />
           <article className="supplier-import-card">
             <header className="supplier-import-card-head">
               <div className="supplier-import-logo dome" aria-hidden="true">

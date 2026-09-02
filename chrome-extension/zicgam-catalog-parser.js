@@ -26,7 +26,7 @@
     for (const anchor of productAnchors) {
       const href = anchor.getAttribute("href");
       const url = safeUrl(href, baseUrl);
-      if (!url || url.hostname !== "zicgam.com") continue;
+      if (!url || url.origin !== currentUrl.origin) continue;
       const productId = productNo(url);
       if (productId) {
         productUrls.set(productId, canonicalProductUrl(url, productId));
@@ -38,7 +38,7 @@
     )) {
       const href = anchor.getAttribute("href");
       const url = safeUrl(href, baseUrl);
-      if (!url || url.hostname !== "zicgam.com") continue;
+      if (!url || url.origin !== currentUrl.origin) continue;
       inheritCatalogParameters(url, currentUrl);
       const listUrl = canonicalListUrl(url);
       if (!listUrl || !sameCatalog(new URL(listUrl), currentUrl)) continue;
@@ -65,7 +65,7 @@
         continue;
       }
       const url = safeUrl(anchor.getAttribute("href"), baseUrl);
-      if (!url || url.hostname !== "zicgam.com") continue;
+      if (!url || url.origin !== new URL(baseUrl).origin) continue;
       const listUrl = canonicalListUrl(url);
       if (listUrl) return listUrl;
     }
@@ -89,17 +89,33 @@
       root.querySelector(".headingArea h2, .infoArea h2")?.textContent,
       root.querySelector("meta[name='twitter:title']")?.getAttribute("content"),
       root.title,
-    ]).replace(/\s*[-|]\s*(직감|위탁배송 쇼핑몰).*$/i, "").trim();
+    ])
+      .replace(/\s*[-|]\s*(직감|이불삼촌|위탁배송 쇼핑몰).*$/i, "")
+      .trim();
     if (!originalName) throw new Error("직감 상품명을 찾지 못했습니다.");
 
     const supplierPrice = firstPrice([
-      root.querySelector("meta[property='product:price:amount']")?.getAttribute("content"),
+      root
+        .querySelector("meta[property='product:price:amount']")
+        ?.getAttribute("content"),
       root.querySelector("#product_price")?.getAttribute("value"),
       root.querySelector("input[name='product_price']")?.getAttribute("value"),
       root.querySelector("#span_product_price_text")?.textContent,
       root.querySelector("#span_product_price_sale")?.textContent,
       root.querySelector(".xans-product-detail .price")?.textContent,
     ]);
+    if (
+      supplierPrice === null &&
+      /판매가\s*회원공개|회원에게만\s*공개/.test(
+        normalizeText(root.body?.textContent ?? ""),
+      )
+    ) {
+      const error = new Error(
+        "공급가를 보려면 로그인 또는 회원 승인이 필요합니다.",
+      );
+      error.code = "auth_required";
+      throw error;
+    }
     const images = extractImages(root, pageUrl);
     const options = extractOptions(root);
     const description = extractDescription(root, pageUrl);
@@ -152,15 +168,21 @@
       ".xans-product-option select, select[id*='product_option_id']",
     )) {
       const group = normalizeText(
-        select.closest("tr, li, .ec-product-option")?.querySelector("th, .name, label")
-          ?.textContent ?? select.getAttribute("option_title") ?? "옵션",
+        select
+          .closest("tr, li, .ec-product-option")
+          ?.querySelector("th, .name, label")?.textContent ??
+          select.getAttribute("option_title") ??
+          "옵션",
       );
       for (const option of select.querySelectorAll("option")) {
         const value = option.getAttribute("value") ?? "";
         const label = normalizeText(option.textContent ?? "");
         if (!label || !value || value === "*" || value === "**") continue;
-        const cleanLabel = label.replace(/\s*\[(?:품절|SOLD OUT)\]\s*/gi, " ").trim();
-        const name = group && group !== "옵션" ? `${group}: ${cleanLabel}` : cleanLabel;
+        const cleanLabel = label
+          .replace(/\s*\[(?:품절|SOLD OUT)\]\s*/gi, " ")
+          .trim();
+        const name =
+          group && group !== "옵션" ? `${group}: ${cleanLabel}` : cleanLabel;
         const price = firstPrice([
           option.getAttribute("data-product-option-price"),
           option.getAttribute("data-option-price"),
@@ -175,7 +197,9 @@
   }
 
   function extractDescription(root, baseUrl) {
-    const source = root.querySelector("#prdDetail, .xans-product-additional .cont");
+    const source = root.querySelector(
+      "#prdDetail, .xans-product-additional .cont",
+    );
     if (!source) return null;
     const clone = source.cloneNode(true);
     for (const element of clone.querySelectorAll(
@@ -206,7 +230,7 @@
   }
 
   function canonicalProductUrl(url, id) {
-    const result = new URL(PRODUCT_PATH, "https://zicgam.com");
+    const result = new URL(PRODUCT_PATH, url.origin);
     result.searchParams.set("product_no", id);
     for (const key of ["cate_no", "display_group"]) {
       const value = url.searchParams.get(key);
@@ -219,7 +243,10 @@
     const standard = url.pathname === "/product/list.html";
     const pretty = url.pathname.startsWith("/category/");
     if (!standard && !pretty) return null;
-    const result = new URL(pretty ? url.pathname : "/product/list.html", url.origin);
+    const result = new URL(
+      pretty ? url.pathname : "/product/list.html",
+      url.origin,
+    );
     for (const key of ["cate_no", "display_group", "page"]) {
       const value = url.searchParams.get(key);
       if (/^\d+$/.test(value ?? "")) result.searchParams.set(key, value);
@@ -240,7 +267,8 @@
     if (left.pathname !== right.pathname) return false;
     if (left.pathname === "/product/list.html") {
       return (
-        left.searchParams.get("cate_no") === right.searchParams.get("cate_no") &&
+        left.searchParams.get("cate_no") ===
+          right.searchParams.get("cate_no") &&
         (left.searchParams.get("display_group") ?? "") ===
           (right.searchParams.get("display_group") ?? "")
       );
@@ -289,13 +317,17 @@
   }
 
   function firstText(values) {
-    return normalizeText(values.find((value) => normalizeText(value ?? "")) ?? "");
+    return normalizeText(
+      values.find((value) => normalizeText(value ?? "")) ?? "",
+    );
   }
 
   function firstPrice(values) {
     for (const value of values) {
       if (value === null || value === undefined || value === "") continue;
-      const matched = String(value).replace(/,/g, "").match(/-?\d+(?:\.\d+)?/);
+      const matched = String(value)
+        .replace(/,/g, "")
+        .match(/-?\d+(?:\.\d+)?/);
       if (!matched) continue;
       const number = Number(matched[0]);
       if (Number.isFinite(number)) return Math.round(number);
