@@ -332,6 +332,12 @@ async function handleMessage(message, sender) {
       message.type === "shoppingday.zicgam.catalog.batch_start" ||
       message.type === "shoppingday.zicgam.catalog.batch_chunk" ||
       message.type === "shoppingday.zicgam.catalog.batch_dispatch";
+    if (message.type === "shoppingday.zicgam.catalog.discovery_complete") {
+      // The catalog worker tab is active while discovery runs. Bring the app
+      // back to the foreground so the user can see and answer the item-count
+      // confirmation instead of leaving a hidden modal waiting indefinitely.
+      await chrome.tabs.update(pending.sourceTabId, { active: true });
+    }
     const response = needsPageResponse
       ? await sendCatalogMessageWithRetry(pending.sourceTabId, forwarded)
       : await chrome.tabs
