@@ -4,6 +4,7 @@ import { ImportForm } from "./import-form";
 import { ProductSyncControl } from "../product-sync-control";
 import { ZicgamFullImport } from "./zicgam-full-import";
 import "./product-import.css";
+import { SupplierSyncSchedule } from "./supplier-sync-schedule";
 
 // Authentication and the database binding only exist at request time. Never
 // execute this administrator page during Next.js static prerendering.
@@ -87,6 +88,7 @@ export default async function ImportProductPage() {
                 </section>
               </div>
             </details>
+            <SupplierSyncSchedule />
             <footer className="supplier-import-card-foot">
               신규 상품은 추가하고 기존 상품은 공급처 원본만 갱신합니다.
               사용자가 편집한 판매 정보는 유지됩니다.

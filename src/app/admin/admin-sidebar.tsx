@@ -2,21 +2,52 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import type { ReactNode } from "react";
+import { Fragment, type ReactNode } from "react";
 
 const navigation = [
-  { href: "/admin/products", label: "위탁상품관리", icon: "box" },
   {
     href: "/admin/products/import",
     label: "위탁상품 가져오기",
     icon: "download",
+    group: "위탁판매 · 빠른 등록",
   },
-  { href: "/admin/keywords", label: "성장 상품 관리", icon: "trend" },
-  { href: "/admin/sourcing", label: "소싱 조사", icon: "search" },
-  { href: "/admin/wholesale-sites", label: "도매사이트 메모", icon: "link" },
-  { href: "/admin/registration", label: "상품 등록관리", icon: "clipboard" },
-  { href: "/admin/channels/naver", label: "스마트스토어 설정", icon: "store" },
-  { href: "/admin/settings/products", label: "설정", icon: "settings" },
+  { href: "/admin/products", label: "위탁상품관리", icon: "box", group: null },
+  {
+    href: "/admin/keywords",
+    label: "성장상품관리",
+    icon: "trend",
+    group: "판매 후 · 성장 관리",
+  },
+  {
+    href: "/admin/sourcing",
+    label: "소싱 조사",
+    icon: "search",
+    group: "사입판매 · 조사와 등록",
+  },
+  {
+    href: "/admin/registration",
+    label: "상품등록관리",
+    icon: "clipboard",
+    group: null,
+  },
+  {
+    href: "/admin/wholesale-sites",
+    label: "도매사이트 메모",
+    icon: "link",
+    group: "운영 도구",
+  },
+  {
+    href: "/admin/channels/naver",
+    label: "스마트스토어 설정",
+    icon: "store",
+    group: null,
+  },
+  {
+    href: "/admin/settings/products",
+    label: "상품 처리 설정",
+    icon: "settings",
+    group: null,
+  },
 ] as const;
 
 export function AdminSidebar() {
@@ -32,21 +63,28 @@ export function AdminSidebar() {
       </div>
       <nav className="inventory-nav" aria-label="관리자 메뉴">
         {navigation.map((item) => (
-          <Link
-            key={item.href}
-            className={isActive(pathname, item.href) ? "active" : undefined}
-            href={item.href}
-          >
-            <AdminIcon name={item.icon} />
-            <span>{item.label}</span>
-          </Link>
+          <Fragment key={item.href}>
+            {item.group && (
+              <h2 className="inventory-nav-group">{item.group}</h2>
+            )}
+            <Link
+              key={item.href}
+              className={isActive(pathname, item.href) ? "active" : undefined}
+              href={item.href}
+              prefetch={false}
+              aria-current={isActive(pathname, item.href) ? "page" : undefined}
+            >
+              <AdminIcon name={item.icon} />
+              <span>{item.label}</span>
+            </Link>
+          </Fragment>
         ))}
       </nav>
       <div className="inventory-sidebar-note">
         <AdminIcon name="database" />
         <div>
           <strong>공급처 연동</strong>
-          <span>친구도매·직감 상품을 관리합니다.</span>
+          <span>친구도매 · 직감 · 이불삼촌</span>
         </div>
       </div>
     </aside>

@@ -34,5 +34,15 @@ async function renderProductsPage(
     page: Number(params.page) || 1,
     pageSize: Number(params.size) || 30,
   });
-  return <ProductListView params={params} result={result} />;
+  const selectionScope = JSON.stringify([
+    params.search,
+    params.filter,
+    params.supplier,
+    params.sort,
+    result.page,
+    result.pageSize,
+  ]);
+  return (
+    <ProductListView key={selectionScope} params={params} result={result} />
+  );
 }

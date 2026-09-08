@@ -2,13 +2,14 @@
 
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { useState } from "react";
 /* eslint-disable @next/next/no-img-element -- supplier URLs are intentionally loaded directly; no image storage/optimizer proxy */
 import type { SelectedImage } from "@/lib/db/schema";
 import { ProductEditorDrawer } from "./[id]/edit/product-editor-drawer";
-import { ProductSyncControl } from "./product-sync-control";
 import { ProductTitleInlineEditor } from "./product-title-inline-editor";
 import { ProductBulkActions } from "./product-bulk-actions";
 import { SupplierProductNumberSettings } from "./supplier-product-number-settings";
+import { ProductGrowthButton } from "./product-growth-button";
 
 export type ProductListSearchParams = Record<string, string | undefined>;
 export type ProductListResult = {
@@ -27,6 +28,7 @@ export type ProductListResult = {
     originalName: string | null;
     supplierPrice: string | null;
     availability: string;
+    registered?: boolean;
   }>;
   total: number;
   page: number;
@@ -67,6 +69,12 @@ export function ProductListView({
   const totalPages = Math.max(1, Math.ceil(result.total / result.pageSize));
   const firstItem = result.total ? (result.page - 1) * result.pageSize + 1 : 0;
   const lastItem = Math.min(result.page * result.pageSize, result.total);
+  const [selection, setSelection] = useState<string[]>([]);
+  const selectedIds = selection.filter((id) =>
+    result.items.some((item) => item.id === id),
+  );
+  const allSelected =
+    result.items.length > 0 && selectedIds.length === result.items.length;
   return (
     <>
       <header className="inventory-topbar">
@@ -102,9 +110,16 @@ export function ProductListView({
           <div>
             <span className="inventory-eyebrow">위탁상품 운영</span>
             <h1>위탁상품관리</h1>
-            <p>공급처에서 가져온 상품을 확인하고 판매 정보를 편집하세요.</p>
+            <p>
+              상품 선택 → 엑셀로 키워드 가공 → 등록 준비 → 스마트스토어 등록
+            </p>
           </div>
-          <ProductSyncControl mode="changes" />
+          <Link
+            className="inventory-primary-button"
+            href="/admin/products/import"
+          >
+            상품 가져오기·변경 확인
+          </Link>
         </section>
 
         <section className="inventory-stats" aria-label="상품 현황">
@@ -116,13 +131,13 @@ export function ProductListView({
           <StatCard
             label="판매 가능"
             value={result.stats.available}
-            note="품절·단종이 아닌 상품"
+            note="공급처에서 판매 가능으로 확인"
             tone="blue"
           />
           <StatCard
             label="품절"
             value={result.stats.soldOut}
-            note="품절·단종 상태 상품"
+            note="공급처에서 품절로 확인"
             tone="red"
           />
           <StatCard
@@ -160,6 +175,8 @@ export function ProductListView({
                 <span className="sr-only">상태 필터</span>
                 <select name="filter" defaultValue={params.filter ?? ""}>
                   <option value="">모든 상태</option>
+                  <option value="unregistered">스토어 미등록</option>
+                  <option value="registered">스토어 등록됨</option>
                   <option value="draft">초안</option>
                   <option value="editing">편집 중</option>
                   <option value="ready">등록 준비 완료</option>
@@ -192,22 +209,65 @@ export function ProductListView({
                 <Icon name="filter" />
                 적용
               </button>
-              {(params.search || params.filter || params.supplier || params.sort) && (
+              {(params.search ||
+                params.filter ||
+                params.supplier ||
+                params.sort) && (
                 <Link className="inventory-reset-link" href="/admin/products">
                   초기화
                 </Link>
               )}
             </form>
-            <SupplierProductNumberSettings suppliers={result.suppliers} />
-            <ProductBulkActions
-              productIds={result.items.map((item) => item.id)}
-            />
+            <details className="inventory-list-tools">
+              <summary>상품번호 설정</summary>
+              <SupplierProductNumberSettings suppliers={result.suppliers} />
+            </details>
+            <div className="inventory-selection-toolbar">
+              <strong>
+                {selectedIds.length.toLocaleString("ko-KR")}개 선택
+              </strong>
+              <button
+                type="button"
+                onClick={() =>
+                  setSelection(
+                    result.items
+                      .filter((item) => item.status === "ready")
+                      .map((item) => item.id),
+                  )
+                }
+              >
+                현재 페이지 준비 완료 상품 선택
+              </button>
+              <button
+                type="button"
+                disabled={!selectedIds.length}
+                onClick={() => setSelection([])}
+              >
+                선택 해제
+              </button>
+              <span>선택은 현재 페이지에만 적용됩니다.</span>
+            </div>
+            <ProductBulkActions productIds={selectedIds} />
           </div>
 
           <div className="inventory-table-scroll">
             <table className="inventory-table">
               <thead>
                 <tr>
+                  <th className="selection-column">
+                    <input
+                      type="checkbox"
+                      aria-label="현재 페이지 전체 선택"
+                      checked={allSelected}
+                      onChange={(event) =>
+                        setSelection(
+                          event.target.checked
+                            ? result.items.map((item) => item.id)
+                            : [],
+                        )
+                      }
+                    />
+                  </th>
                   <th className="image-column">상품</th>
                   <th>상품명</th>
                   <th>상품번호</th>
@@ -216,6 +276,7 @@ export function ProductListView({
                   <th>판매가</th>
                   <th>공급 상태</th>
                   <th>편집 상태</th>
+                  <th>스토어 등록</th>
                   <th>마지막 수정</th>
                   <th>
                     <span className="sr-only">관리</span>
@@ -226,13 +287,38 @@ export function ProductListView({
                 {result.items.map((item) => {
                   const image = item.primaryImage;
                   return (
-                    <tr key={item.id}>
+                    <tr
+                      key={item.id}
+                      className={
+                        selectedIds.includes(item.id)
+                          ? "is-selected"
+                          : undefined
+                      }
+                    >
+                      <td>
+                        <input
+                          type="checkbox"
+                          aria-label={`${item.title} 선택`}
+                          checked={selectedIds.includes(item.id)}
+                          onChange={(event) =>
+                            setSelection(
+                              event.target.checked
+                                ? [...selectedIds, item.id]
+                                : selectedIds.filter((id) => id !== item.id),
+                            )
+                          }
+                        />
+                      </td>
                       <td>
                         <div className="inventory-product-image">
                           {image ? (
                             <img
                               src={image.storedUrl ?? image.sourceUrl}
                               alt=""
+                              loading="lazy"
+                              decoding="async"
+                              width={56}
+                              height={56}
                             />
                           ) : (
                             <Icon name="image" />
@@ -274,6 +360,13 @@ export function ProductListView({
                       <td>
                         <StatusBadge value={item.status} />
                       </td>
+                      <td>
+                        <span
+                          className={`inventory-badge ${item.registered ? "status-ready" : "status-draft"}`}
+                        >
+                          {item.registered ? "등록됨" : "미등록"}
+                        </span>
+                      </td>
                       <td className="inventory-date">
                         {formatDate(item.updatedAt)}
                         <span>{formatTime(item.updatedAt)}</span>
@@ -287,6 +380,9 @@ export function ProductListView({
                         >
                           편집
                         </Link>
+                        {item.registered && (
+                          <ProductGrowthButton productId={item.id} />
+                        )}
                       </td>
                     </tr>
                   );

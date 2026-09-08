@@ -1,4 +1,46 @@
 /* Growth product and keyword management */
+.inventory-nav-group {
+  margin: 20px 14px 6px;
+  color: #7b879b;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .04em;
+}
+.inventory-nav-group:first-child { margin-top: 6px; }
+.inventory-selection-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid #dce5f3;
+  border-radius: 10px;
+  background: #f6f9ff;
+}
+.inventory-selection-toolbar strong { color: #234da3; font-size: 13px; }
+.inventory-selection-toolbar button {
+  padding: 7px 10px;
+  border: 1px solid #d6dfed;
+  border-radius: 7px;
+  background: white;
+  color: #334155;
+  font-size: 12px;
+}
+.inventory-selection-toolbar span { color: #64748b; font-size: 12px; }
+.inventory-selection-toolbar button:disabled { opacity: .45; cursor: default; }
+.inventory-table tr.is-selected { background: #f0f6ff; }
+.inventory-table input[type="checkbox"] { width: 17px; height: 17px; accent-color: #315dd4; cursor: pointer; }
+.inventory-table .selection-column { width: 42px; }
+.inventory-list-tools { margin-left: auto; font-size: 12px; color: #64748b; }
+.inventory-list-tools summary { cursor: pointer; padding: 8px; }
+.inventory-loading { padding: 40px 0; }
+.inventory-loading h1 { font-size: 24px; margin: 12px 0; }
+.inventory-loading p { color: #64748b; }
+.inventory-loading progress { width: min(360px, 100%); margin-top: 24px; accent-color: #315dd4; }
+@media (max-width: 900px) {
+  .inventory-nav-group { flex-basis: 100%; margin: 12px 8px 0; }
+}
 /* Sourcing to SmartStore registration management */
 .registration-topbar > div {
   display: grid;

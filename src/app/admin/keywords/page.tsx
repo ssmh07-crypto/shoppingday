@@ -9,22 +9,29 @@ import { NaverStoreSettingsRepository } from "@/modules/channels/naver/naver-sto
 
 export const dynamic = "force-dynamic";
 
-export default async function KeywordManagementPage() {
-  return withDbReadRecovery((database) => renderPage(database));
+export default async function KeywordManagementPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ product?: string }>;
+}) {
+  const params = await searchParams;
+  return withDbReadRecovery((database) => renderPage(database, params.product));
 }
 
-async function renderPage(database: Database) {
+async function renderPage(database: Database, productId?: string) {
   const user = await requireAdminPage(database);
   const service = createKeywordManagementService(database);
   const [items, stores] = await Promise.all([
     service.list(user.id),
     new NaverStoreSettingsRepository(database).list(user.id),
   ]);
-  const initialDetail = items[0]
-    ? await service.get(user.id, items[0].id)
+  const selected = items.find((item) => item.id === productId) ?? items[0];
+  const initialDetail = selected
+    ? await service.get(user.id, selected.id)
     : null;
   return (
     <KeywordManager
+      key={selected?.id ?? "empty"}
       initialItems={items}
       initialDetail={initialDetail}
       initialRuntime={keywordRuntimeStatus()}

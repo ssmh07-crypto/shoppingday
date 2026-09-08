@@ -6,6 +6,13 @@
   font-size: 14px;
   line-height: 1.55;
 }
+.supplier-schedule { margin: 18px 0; padding: 16px; background: #f6f8fc; border: 1px solid #e2e8f0; border-radius: 10px; }
+.supplier-schedule h3 { margin: 0 0 6px; font-size: 14px; }
+.supplier-schedule p, .supplier-schedule small { font-size: 12px; color: #64748b; }
+.supplier-schedule fieldset { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 0; border: 0; }
+.supplier-schedule label { display: flex; align-items: center; gap: 6px; }
+.supplier-schedule select, .supplier-schedule button { border: 1px solid #ccd5e2; background: white; border-radius: 6px; padding: 7px; }
+.supplier-schedule small, .supplier-schedule [role="status"] { display: block; margin-top: 10px; }
 
 .supplier-import-section-title,
 .supplier-import-title-row,

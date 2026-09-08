@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 type SyncMode = "all" | "changes";
@@ -36,28 +36,54 @@ export function ProductSyncControl({
   const [error, setError] = useState<string | null>(null);
   const wasActive = useRef(false);
 
-  const refresh = useCallback(async () => {
-    const response = await fetch("/api/suppliers/dome/products/sync", {
-      cache: "no-store",
-      headers: { accept: "application/json" },
-    });
-    const body = await response.json().catch(() => null);
-    if (!response.ok) return;
-    const next = (body.job ?? null) as SyncJob | null;
-    const active = next?.status === "queued" || next?.status === "running";
-    if (wasActive.current && next?.status === "succeeded") router.refresh();
-    wasActive.current = active;
-    setJob(next);
-  }, [router]);
-
   useEffect(() => {
-    const initial = window.setTimeout(() => void refresh(), 0);
-    const interval = window.setInterval(() => void refresh(), 5_000);
-    return () => {
-      window.clearTimeout(initial);
-      window.clearInterval(interval);
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout>;
+    let fetching = false;
+    async function refresh() {
+      if (fetching || controller.signal.aborted) return;
+      clearTimeout(timer);
+      if (document.hidden) return;
+      fetching = true;
+      try {
+        const response = await fetch("/api/suppliers/dome/products/sync", {
+          cache: "no-store",
+          headers: { accept: "application/json" },
+          signal: controller.signal,
+        });
+        const body = await response.json().catch(() => null);
+        if (!response.ok || !body)
+          throw new Error("진행 상태를 확인하지 못했습니다.");
+        if (controller.signal.aborted) return;
+        const next = (body.job ?? null) as SyncJob | null;
+        const active = next?.status === "queued" || next?.status === "running";
+        if (wasActive.current && next?.status === "succeeded") router.refresh();
+        wasActive.current = active;
+        setJob(next);
+      } catch {
+        // Keep the last confirmed job on transient connection failures.
+      } finally {
+        fetching = false;
+        if (!controller.signal.aborted && !document.hidden) {
+          timer = setTimeout(
+            () => void refresh(),
+            wasActive.current ? 5_000 : 60_000,
+          );
+        }
+      }
+    }
+    const onVisible = () => {
+      if (!document.hidden) void refresh();
+      else clearTimeout(timer);
     };
-  }, [refresh]);
+    timer = setTimeout(() => void refresh(), 0);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      controller.abort();
+      clearTimeout(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [router, requesting]);
 
   async function start() {
     const label =

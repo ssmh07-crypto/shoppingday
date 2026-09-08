@@ -134,6 +134,18 @@ export const productProcessingSettings = pgTable(
   },
 );
 
+export const supplierSyncSchedules = pgTable("supplier_sync_schedules", {
+  supplierCode: text("supplier_code").primaryKey(),
+  ownerId: uuid("owner_id").notNull().references(() => userProfiles.userId, { onDelete: "cascade" }),
+  enabled: boolean("enabled").notNull().default(false),
+  intervalHours: integer("interval_hours").notNull().default(24),
+  nextRunAt: timestamp("next_run_at", { withTimezone: true }),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  check("supplier_sync_schedules_provider_check", sql`${table.supplierCode} = 'dome'`),
+  check("supplier_sync_schedules_interval_check", sql`${table.intervalHours} in (6, 12, 24)`),
+]);
+
 export const suppliers = pgTable("suppliers", {
   id: uuid("id").primaryKey().defaultRandom(),
   code: text("code").notNull().unique(),

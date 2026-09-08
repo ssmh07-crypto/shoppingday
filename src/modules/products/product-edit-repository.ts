@@ -7,6 +7,7 @@ import {
   productAuditLogs,
   productCategories,
   products,
+  productPublications,
   naverCommerceCategories,
   productSupplierLinks,
   supplierProducts,
@@ -77,6 +78,14 @@ export class ProductEditRepository {
     )!;
     const search = query.search?.trim();
     const conditions = [ownership, ne(suppliers.code, "sourcing")];
+    // A failed later update does not undo a successful remote registration.
+    const registered = sql<boolean>`exists (select 1 from ${productPublications}
+      where ${productPublications.productId} = ${products.id}
+      and ${productPublications.originProductNo} is not null
+      and ${productPublications.status} <> 'deleted'
+      and ${productPublications.remoteStatusType} is distinct from 'DELETE')`;
+    if (query.filter === "registered") conditions.push(registered);
+    if (query.filter === "unregistered") conditions.push(sql`not (${registered})`);
     if (search)
       conditions.push(
         or(
@@ -145,11 +154,12 @@ export class ProductEditRepository {
         originalName: supplierProducts.originalName,
         supplierPrice: supplierProducts.supplierPrice,
         availability: supplierProducts.availability,
+        registered,
       })
       .from(products)
       .innerJoin(
         productSupplierLinks,
-        eq(productSupplierLinks.productId, products.id),
+        and(eq(productSupplierLinks.productId, products.id), eq(productSupplierLinks.isPrimary, true)),
       )
       .innerJoin(
         supplierProducts,
@@ -164,7 +174,7 @@ export class ProductEditRepository {
           .from(products)
           .innerJoin(
             productSupplierLinks,
-            eq(productSupplierLinks.productId, products.id),
+            and(eq(productSupplierLinks.productId, products.id), eq(productSupplierLinks.isPrimary, true)),
           )
           .innerJoin(
             supplierProducts,
@@ -175,23 +185,21 @@ export class ProductEditRepository {
       : Promise.resolve([] as Array<{ count: number }>);
     const [items, countRows, statsRows, supplierRows] = await Promise.all([
       base
-        .orderBy(order)
+        .orderBy(order, asc(products.id))
         .limit(query.pageSize)
         .offset((query.page - 1) * query.pageSize),
       countRequest,
       this.database
         .select({
           total: sql<number>`count(*)::int`,
-          available: sql<number>`count(*) filter (where ${supplierProducts.availability} <> 'sold_out')::int`,
+          available: sql<number>`count(*) filter (where ${supplierProducts.availability} = 'active')::int`,
           soldOut: sql<number>`count(*) filter (where ${supplierProducts.availability} = 'sold_out')::int`,
-          // Marketplace publication tracking will be connected in the next phase.
-          // Until then every local product is, accurately, unregistered.
-          unregistered: sql<number>`count(*)::int`,
+          unregistered: sql<number>`count(*) filter (where not (${registered}))::int`,
         })
         .from(products)
         .innerJoin(
           productSupplierLinks,
-          eq(productSupplierLinks.productId, products.id),
+          and(eq(productSupplierLinks.productId, products.id), eq(productSupplierLinks.isPrimary, true)),
         )
         .innerJoin(
           supplierProducts,

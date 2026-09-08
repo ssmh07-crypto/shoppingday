@@ -1,6 +1,12 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ProductBulkActions } from "@/app/admin/products/product-bulk-actions";
 
@@ -11,13 +17,85 @@ afterEach(() => {
 });
 
 describe("상품 대량 작업", () => {
-  it("현재 페이지 상품을 확인 후 큐에 넣고 완료 상태까지 갱신한다", async () => {
+  it("선택이 없으면 등록 요청을 보내지 않는다", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(Response.json({ jobs: [] }));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<ProductBulkActions productIds={[]} />);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    expect(
+      screen.getByRole("button", { name: "선택 상품 스마트스토어 등록" }),
+    ).toBeDisabled();
+  });
+
+  it("최신 완료 작업보다 이전 진행 중 작업을 우선 복구한다", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        Response.json({
+          jobs: [
+            {
+              id: "new",
+              type: "publish",
+              status: "completed",
+              processed: 1,
+              total: 1,
+              succeeded: 1,
+              failed: 0,
+            },
+            {
+              id: "active",
+              type: "upload_images",
+              status: "running",
+              processed: 3,
+              total: 10,
+              succeeded: 3,
+              failed: 0,
+            },
+          ],
+        }),
+      ),
+    );
+    render(<ProductBulkActions productIds={["one"]} />);
+    await screen.findByRole("button", { name: "작업 계속" });
+    expect(screen.getByRole("status")).toHaveTextContent("이미지 · 3/10");
+    expect(
+      screen.getByRole("button", { name: "선택 상품 스마트스토어 등록" }),
+    ).toBeDisabled();
+  });
+
+  it("작업 생성 중 중복 클릭을 막고 연결 실패를 안내한다", async () => {
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    let rejectRequest: (error: Error) => void = () => undefined;
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(Response.json({ jobs: [] }))
+      .mockImplementationOnce(
+        () =>
+          new Promise((_resolve, reject) => {
+            rejectRequest = reject;
+          }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    render(<ProductBulkActions productIds={["one"]} />);
+    const button = screen.getByRole("button", {
+      name: "선택 상품 스마트스토어 등록",
+    });
+    await waitFor(() => expect(button).toBeEnabled());
+    fireEvent.click(button);
+    fireEvent.click(button);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(button).toBeDisabled();
+    rejectRequest(new Error("offline"));
+    await screen.findByText(
+      "연결이 끊겼습니다. 새로고침해 기존 작업을 확인한 뒤 계속하세요.",
+    );
+  });
+
+  it("선택 상품을 확인 후 큐에 넣고 완료 상태까지 갱신한다", async () => {
     vi.spyOn(window, "confirm").mockReturnValue(true);
     const fetchMock = vi
       .fn<typeof fetch>()
-      .mockResolvedValueOnce(
-        Response.json({ success: true, jobs: [] }),
-      )
+      .mockResolvedValueOnce(Response.json({ success: true, jobs: [] }))
       .mockResolvedValueOnce(
         Response.json(
           {
@@ -60,9 +138,13 @@ describe("상품 대량 작업", () => {
         ]}
       />,
     );
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "선택 상품 이미지 업로드" }),
+      ).toBeEnabled(),
+    );
     fireEvent.click(
-      screen.getByRole("button", { name: "현재 페이지 이미지 업로드" }),
+      screen.getByRole("button", { name: "선택 상품 이미지 업로드" }),
     );
 
     await screen.findByText("2개 작업을 완료했습니다.");

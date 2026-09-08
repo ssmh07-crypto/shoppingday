@@ -3,7 +3,7 @@ import { requireAdminPage } from "@/lib/auth/admin";
 import { withDbReadRecovery, type Database } from "@/lib/db";
 import { isNaverCommerceConfigured } from "@/modules/channels/naver/naver-category-service";
 import { NaverStoreSettingsRepository } from "@/modules/channels/naver/naver-store-settings-repository";
-import { RegistrationManagementRepository } from "@/modules/products/registration-management-repository";
+import { redirect } from "next/navigation";
 import { registrationDisplay } from "@/modules/sourcing/registration-display";
 import { createSourcingResearchService } from "@/modules/sourcing/sourcing-factory";
 import { RegistrationNaverActions } from "./registration-naver-actions";
@@ -31,31 +31,20 @@ async function renderPage(
 ) {
   const user = await requireAdminPage(database);
   const params = await searchParams;
-  const activeTab = params.tab === "wholesale" ? "wholesale" : "sourcing";
-  const wholesalePage = Math.max(1, Number(params.page) || 1);
-  const [sourcingItems, wholesaleResult, storeSettings] = await Promise.all([
+  if (params.tab === "wholesale") {
+    const query = new URLSearchParams();
+    if (params.supplier) query.set("supplier", params.supplier);
+    if (params.page) query.set("page", params.page);
+    redirect(`/admin/products${query.size ? `?${query}` : ""}`);
+  }
+  const [sourcingItems, storeSettings] = await Promise.all([
     createSourcingResearchService(database).listRegistrations(user.id),
-    new RegistrationManagementRepository(database).listWholesaleProducts(
-      user.id,
-      {
-        supplierCode: params.supplier || undefined,
-        page: wholesalePage,
-      },
-    ),
     new NaverStoreSettingsRepository(database).get(user.id),
   ]);
-  const wholesaleItems = wholesaleResult.items;
   const connected = isNaverCommerceConfigured() && Boolean(storeSettings);
-  const suppliers = wholesaleResult.suppliers;
-  const selectedSupplier = suppliers.some(
-    (supplier) => supplier.code === params.supplier,
-  )
-    ? params.supplier
-    : "";
-  const wholesaleGroups = groupWholesaleItems(wholesaleItems);
-  const publishedCount =
-    sourcingItems.filter((item) => item.smartstorePublished).length +
-    wholesaleResult.summary.published;
+  const publishedCount = sourcingItems.filter(
+    (item) => item.smartstorePublished,
+  ).length;
 
   return (
     <>
@@ -63,8 +52,7 @@ async function renderPage(
         <div>
           <strong>상품 등록관리</strong>
           <span>
-            소싱 상품과 위탁상품의 스마트스토어 등록·변경·판매 상태를 한 곳에서
-            관리합니다.
+            소싱 조사를 마친 사입상품의 등록 준비와 판매 상태를 관리합니다.
           </span>
         </div>
         <Link href="/admin/channels/naver">
@@ -80,8 +68,8 @@ async function renderPage(
             <span className="inventory-eyebrow">PRODUCT REGISTRATION</span>
             <h1>스마트스토어 상품 등록관리</h1>
             <p>
-              상품의 출처별 준비 상태를 확인하고 등록, 변경, 품절, 판매재개,
-              삭제 작업을 빠르게 처리하세요.
+              소싱 조사 → 이미지·상세페이지 준비 → 카테고리·속성 확인 →
+              스마트스토어 등록
             </p>
           </div>
         </section>
@@ -92,9 +80,9 @@ async function renderPage(
             <strong>{sourcingItems.length.toLocaleString("ko-KR")}</strong>
           </article>
           <article>
-            <span>위탁상품</span>
+            <span>등록 준비 중</span>
             <strong>
-              {wholesaleResult.summary.total.toLocaleString("ko-KR")}
+              {(sourcingItems.length - publishedCount).toLocaleString("ko-KR")}
             </strong>
           </article>
           <article>
@@ -114,39 +102,21 @@ async function renderPage(
           </div>
         )}
 
-        <nav className="registration-source-tabs" aria-label="상품 출처">
+        <nav className="registration-source-tabs" aria-label="상품 작업 경로">
+          <Link href="/admin/sourcing">소싱 조사</Link>
           <Link
-            className={activeTab === "sourcing" ? "active" : undefined}
-            href="/admin/registration?tab=sourcing"
+            className="active"
+            href="/admin/registration"
+            aria-current="page"
           >
-            소싱조사 상품
-            <strong>{sourcingItems.length}</strong>
+            사입상품 등록 준비
           </Link>
-          <Link
-            className={activeTab === "wholesale" ? "active" : undefined}
-            href="/admin/registration?tab=wholesale"
-          >
-            위탁상품
-            <strong>{wholesaleResult.summary.total}</strong>
-          </Link>
+          <Link href="/admin/products">위탁상품은 위탁상품관리에서 →</Link>
         </nav>
-
-        {activeTab === "sourcing" ? (
-          <SourcingRegistrationTable
-            items={sourcingItems}
-            connected={connected}
-          />
-        ) : (
-          <WholesaleRegistrationTable
-            groups={wholesaleGroups}
-            suppliers={suppliers}
-            selectedSupplier={selectedSupplier}
-            total={wholesaleResult.total}
-            page={wholesaleResult.page}
-            pageSize={wholesaleResult.pageSize}
-            connected={connected}
-          />
-        )}
+        <SourcingRegistrationTable
+          items={sourcingItems}
+          connected={connected}
+        />
       </main>
     </>
   );
@@ -242,164 +212,6 @@ function SourcingRegistrationTable({
   );
 }
 
-type WholesaleItem = Awaited<
-  ReturnType<RegistrationManagementRepository["listWholesaleProducts"]>
->["items"][number];
-
-function WholesaleRegistrationTable({
-  groups,
-  suppliers,
-  selectedSupplier,
-  total,
-  page,
-  pageSize,
-  connected,
-}: {
-  groups: Map<string, WholesaleItem[]>;
-  suppliers: Array<{ code: string; name: string }>;
-  selectedSupplier: string | undefined;
-  total: number;
-  page: number;
-  pageSize: number;
-  connected: boolean;
-}) {
-  return (
-    <section className="registration-panel">
-      <div className="registration-panel-head registration-wholesale-head">
-        <div>
-          <h2>위탁상품 등록관리</h2>
-          <p>도매처별 상품 {total.toLocaleString("ko-KR")}개를 표시합니다.</p>
-        </div>
-        <form action="/admin/registration">
-          <input type="hidden" name="tab" value="wholesale" />
-          <select
-            name="supplier"
-            defaultValue={selectedSupplier}
-            aria-label="도매처 선택"
-          >
-            <option value="">모든 도매처</option>
-            {suppliers.map((supplier) => (
-              <option key={supplier.code} value={supplier.code}>
-                {supplier.name}
-              </option>
-            ))}
-          </select>
-          <button type="submit">적용</button>
-        </form>
-      </div>
-      <div className="registration-table-wrap">
-        <table className="registration-table wholesale-registration-table">
-          <thead>
-            <tr>
-              <th>상품</th>
-              <th>도매처 상품번호</th>
-              <th>판매가</th>
-              <th>공급 상태</th>
-              <th>스마트스토어 상태</th>
-              <th>스마트스토어 작업</th>
-            </tr>
-          </thead>
-          {[...groups.entries()].map(([supplierCode, items]) => (
-            <tbody key={supplierCode}>
-              <tr className="registration-supplier-row">
-                <th colSpan={6}>
-                  {items[0]?.supplierName}
-                  <span>{items.length}개 상품</span>
-                </th>
-              </tr>
-              {items.map((item) => (
-                <tr key={item.id}>
-                  <td>
-                    <strong>{item.title || item.externalProductId}</strong>
-                    <span>
-                      {item.status === "ready" ? "등록 준비 완료" : "편집 중"}
-                    </span>
-                  </td>
-                  <td>
-                    <code>{item.externalProductId}</code>
-                  </td>
-                  <td>{formatWon(item.sellingPrice)}</td>
-                  <td>{availabilityLabel(item.supplierAvailability)}</td>
-                  <td>
-                    <RegistrationStatus
-                      label={publicationLabel(item)}
-                      className={
-                        item.publicationStatus === "published"
-                          ? "published"
-                          : (item.publicationStatus ?? "waiting")
-                      }
-                      remoteStatusType={item.remoteStatusType}
-                      channelProductNo={item.channelProductNo}
-                    />
-                  </td>
-                  <td>
-                    <RegistrationNaverActions
-                      productId={item.id}
-                      title={item.title || item.externalProductId}
-                      editHref={`/admin/products?edit=${encodeURIComponent(
-                        item.id,
-                      )}`}
-                      channelProductNo={item.channelProductNo}
-                      publicationStatus={item.publicationStatus}
-                      remoteStatusType={item.remoteStatusType}
-                      connected={connected}
-                    />
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          ))}
-        </table>
-      </div>
-      {!total && (
-        <div className="registration-empty">
-          <strong>조건에 맞는 위탁상품이 없습니다.</strong>
-          <Link href="/admin/products">위탁상품관리 열기</Link>
-        </div>
-      )}
-      {total > pageSize && (
-        <RegistrationPagination
-          page={page}
-          pageSize={pageSize}
-          total={total}
-          supplier={selectedSupplier}
-        />
-      )}
-    </section>
-  );
-}
-
-function RegistrationPagination({
-  page,
-  pageSize,
-  total,
-  supplier,
-}: {
-  page: number;
-  pageSize: number;
-  total: number;
-  supplier?: string;
-}) {
-  const totalPages = Math.ceil(total / pageSize);
-  const href = (targetPage: number) => {
-    const query = new URLSearchParams({
-      tab: "wholesale",
-      page: String(targetPage),
-    });
-    if (supplier) query.set("supplier", supplier);
-    return `/admin/registration?${query.toString()}`;
-  };
-  return (
-    <nav className="registration-pagination" aria-label="위탁상품 페이지">
-      {page > 1 ? <Link href={href(page - 1)}>← 이전</Link> : <span />}
-      <strong>
-        {page} / {totalPages}
-      </strong>
-      {page < totalPages ? <Link href={href(page + 1)}>다음 →</Link> : <span />}
-    </nav>
-  );
-}
-
 function RegistrationStatus({
   label,
   className,
@@ -422,13 +234,6 @@ function RegistrationStatus({
   );
 }
 
-function publicationLabel(item: WholesaleItem) {
-  if (item.publicationStatus === "deleted") return "스마트스토어 삭제됨";
-  if (item.publicationStatus === "failed") return "등록 확인 필요";
-  if (item.channelProductNo) return "스마트스토어 등록완료";
-  return item.status === "ready" ? "등록 가능" : "상품정보 편집 필요";
-}
-
 function remoteStatusLabel(status: string) {
   return (
     {
@@ -437,27 +242,6 @@ function remoteStatusLabel(status: string) {
       DELETE: "삭제",
     }[status] ?? status
   );
-}
-
-function availabilityLabel(status: string) {
-  return (
-    {
-      active: "판매 가능",
-      sold_out: "공급처 품절",
-      discontinued: "공급처 단종",
-      unknown: "확인 필요",
-    }[status] ?? status
-  );
-}
-
-function groupWholesaleItems(items: WholesaleItem[]) {
-  const groups = new Map<string, WholesaleItem[]>();
-  for (const item of items) {
-    const group = groups.get(item.supplierCode) ?? [];
-    group.push(item);
-    groups.set(item.supplierCode, group);
-  }
-  return groups;
 }
 
 function sourcingStatusLabel(status: string) {

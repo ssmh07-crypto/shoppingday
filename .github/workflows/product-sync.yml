@@ -1,6 +1,8 @@
 name: 친구도매 상품 동기화
 
 on:
+  schedule:
+    - cron: '17 * * * *'
   workflow_dispatch:
     inputs:
       mode:
@@ -58,4 +60,9 @@ jobs:
         run: npm clean-install --progress=false
 
       - name: 상품 동기화
+        if: github.event_name == 'workflow_dispatch'
         run: npm run sync:products
+
+      - name: 예약된 변경 확인
+        if: github.event_name == 'schedule'
+        run: node --conditions=react-server --import tsx scripts/run-supplier-schedules.ts
