@@ -58,12 +58,17 @@ export class NaverBulkJobRepository {
   }
 
   async list(ownerId: string, limit = 10) {
-    return this.database
+    const jobs = await this.database
       .select()
       .from(naverBulkJobs)
       .where(eq(naverBulkJobs.ownerId, ownerId))
       .orderBy(desc(naverBulkJobs.createdAt))
       .limit(limit);
+    if (!jobs.length) return [];
+    const failures = await this.database.select({ jobId: naverBulkJobItems.jobId, productId: naverBulkJobItems.productId, message: naverBulkJobItems.lastError, title: products.title })
+      .from(naverBulkJobItems).innerJoin(products, eq(products.id, naverBulkJobItems.productId))
+      .where(and(inArray(naverBulkJobItems.jobId, jobs.map(job => job.id)), eq(naverBulkJobItems.status, "failed")));
+    return jobs.map(job => ({ ...job, failures: failures.filter(item => item.jobId === job.id) }));
   }
 
   async get(jobId: string, ownerId: string) {
@@ -139,6 +144,9 @@ export class NaverBulkJobRepository {
         .limit(1)
         .for("update", { skipLocked: true });
       if (!item) return { job, item: null };
+      const [running] = await tx.select({ id: naverBulkJobItems.id })
+        .from(naverBulkJobItems).where(and(eq(naverBulkJobItems.jobId, jobId), eq(naverBulkJobItems.status, "running"))).limit(1);
+      if (running) return { job, item: null };
       const [claimed] = await tx
         .update(naverBulkJobItems)
         .set({
@@ -156,11 +164,15 @@ export class NaverBulkJobRepository {
   async finishItem(
     jobId: string,
     itemId: string,
+    claimedAttempt: number,
     result:
       | { success: true }
       | { success: false; message: string; retry: boolean; attempts: number },
   ) {
     await this.database.transaction(async (tx) => {
+      // Keep the same lock order as claim: job, then item.
+      await tx.select({ id: naverBulkJobs.id }).from(naverBulkJobs)
+        .where(eq(naverBulkJobs.id, jobId)).for("update");
       const retry =
         !result.success && result.retry && result.attempts < 3;
       await tx
@@ -193,6 +205,8 @@ export class NaverBulkJobRepository {
           and(
             eq(naverBulkJobItems.id, itemId),
             eq(naverBulkJobItems.jobId, jobId),
+            eq(naverBulkJobItems.status, "running"),
+            eq(naverBulkJobItems.attempts, claimedAttempt),
           ),
         );
       const [summary] = await tx
@@ -229,6 +243,11 @@ export class NaverBulkJobRepository {
         })
         .where(eq(naverBulkJobs.id, jobId));
     });
+  }
+
+  async heartbeat(itemId: string, attempt: number) {
+    await this.database.update(naverBulkJobItems).set({ updatedAt: new Date() })
+      .where(and(eq(naverBulkJobItems.id, itemId), eq(naverBulkJobItems.status, "running"), eq(naverBulkJobItems.attempts, attempt)));
   }
 
   async refresh(jobId: string, ownerId: string) {

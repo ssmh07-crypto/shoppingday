@@ -3202,3 +3202,12 @@
     font-size: 12px;
   }
 }
+.inventory-keyword-reuse { margin: 16px 0; padding: 16px; border: 1px solid #d5e1f3; border-radius: 12px; background: #fff; }
+.inventory-keyword-reuse summary { cursor: pointer; font-weight: 600; }
+.inventory-keyword-reuse fieldset { display: grid; gap: 12px; border: 0; padding: 0; min-width: 0; }
+.inventory-keyword-reuse label { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.inventory-keyword-reuse select { max-width: 100%; padding: 8px; border: 1px solid #cbd5e1; border-radius: 6px; }
+.inventory-keyword-reuse button { justify-self: start; padding: 10px 14px; border: 1px solid #cbd5e1; border-radius: 8px; background: #f4f7fc; }
+.inventory-keyword-reuse button:disabled { opacity: .5; }
+.inventory-keyword-reuse li { margin-block: 8px; overflow-wrap: anywhere; }
+.inventory-keyword-reuse [role="status"] { overflow-wrap: anywhere; }

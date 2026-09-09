@@ -774,6 +774,18 @@ export class NaverCommerceClient {
     return { success: true as const };
   }
 
+  async changeSalePrice(originProductNo: string, salePrice: number) {
+    assertNaverProductNo(originProductNo, "원상품");
+    if (!Number.isSafeInteger(Number(originProductNo)) || !Number.isInteger(salePrice) || salePrice <= 0 || salePrice > 2147483647) {
+      throw new NaverCommerceError("request_failed", "원상품번호 또는 판매가가 올바르지 않습니다.");
+    }
+    await this.authorizedJsonRequest("PATCH", new URL(`${this.config.apiUrl}/v1/products/origin-products/multi-update`), {
+      multiProductUpdateRequestVos: [{ originProductNo: Number(originProductNo), multiUpdateTypes: ["SALE_PRICE"], productSalePrice: { salePrice } }],
+    });
+    // Callers must read the channel product to verify per-product application.
+    return { success: true as const };
+  }
+
   async deleteChannelProduct(channelProductNo: string) {
     assertNaverProductNo(channelProductNo, "채널 상품");
     await this.authorizedDelete(
@@ -896,7 +908,7 @@ export class NaverCommerceClient {
   }
 
   private async authorizedJsonRequest(
-    method: "POST" | "PUT",
+    method: "POST" | "PUT" | "PATCH",
     url: URL,
     value: unknown,
   ) {

@@ -1,4 +1,4 @@
-export type SupplierAvailability = "active" | "sold_out" | "unknown";
+export type SupplierAvailability = "active" | "sold_out" | "discontinued" | "unknown";
 
 export interface SupplierProductOption {
   name: string;

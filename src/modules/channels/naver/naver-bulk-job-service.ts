@@ -45,24 +45,29 @@ export class NaverBulkJobService {
         waiting: true,
       };
     }
+    const heartbeat = setInterval(() => {
+      void this.jobs.heartbeat(claimed.item!.id, claimed.item!.attempts).catch(() => undefined);
+    }, 30_000);
     try {
       await this.execute(
         claimed.job.type,
         claimed.item.productId,
         ownerId,
       );
-      await this.jobs.finishItem(jobId, claimed.item.id, { success: true });
+      await this.jobs.finishItem(jobId, claimed.item.id, claimed.item.attempts, { success: true });
     } catch (error) {
       const source =
         error instanceof NaverImageUploadProgressError
           ? error.originalError
           : error;
-      await this.jobs.finishItem(jobId, claimed.item.id, {
+      await this.jobs.finishItem(jobId, claimed.item.id, claimed.item.attempts, {
         success: false,
         message: errorMessage(source),
         retry: isTransient(source),
         attempts: claimed.item.attempts,
       });
+    } finally {
+      clearInterval(heartbeat);
     }
     return {
       job: await this.jobs.refresh(jobId, ownerId),

@@ -1,0 +1,1 @@
+ALTER TABLE "supplier_sync_schedules" ADD COLUMN "apply_prices" boolean DEFAULT false NOT NULL;

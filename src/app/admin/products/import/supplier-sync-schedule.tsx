@@ -4,11 +4,13 @@ import { useEffect, useState } from "react";
 
 type Schedule = {
   enabled: boolean;
+  applyPrices: boolean;
   intervalHours: number;
   nextRunAt: string | null;
 };
 const initial: Schedule = {
   enabled: false,
+  applyPrices: false,
   intervalHours: 24,
   nextRunAt: null,
 };
@@ -53,6 +55,7 @@ export function SupplierSyncSchedule() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           enabled: schedule.enabled,
+          applyPrices: schedule.applyPrices,
           intervalHours: schedule.intervalHours,
         }),
       });
@@ -78,10 +81,10 @@ export function SupplierSyncSchedule() {
     <section className="supplier-schedule" aria-label="친구도매 변경 확인 예약">
       <h3>변경 확인 예약</h3>
       <p>
-        공급처 원본의 변경을 정기적으로 가져옵니다. 스마트스토어 반영은 상품
-        편집·등록에서 진행합니다.
+        공급처 원본의 변경을 정기적으로 가져옵니다. 아래 옵션을 켜면 재계산한 판매가도 스마트스토어에 반영합니다. 네이버 릴레이가 실행 중이어야 합니다.
       </p>
       <fieldset disabled={loading || saving || !loaded}>
+        <label><input type="checkbox" checked={schedule.applyPrices ?? false} onChange={(event) => setSchedule({ ...schedule, applyPrices: event.target.checked })} />재계산한 판매가도 자동 반영</label>
         <label>
           <input
             type="checkbox"

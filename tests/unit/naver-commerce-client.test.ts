@@ -51,6 +51,15 @@ function json(value: unknown, status = 200) {
 }
 
 describe("네이버 커머스API 클라이언트", () => {
+  it("판매가만 절대 금액으로 변경해 재시도 시 중복 인상을 막는다", async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(json({ access_token: "token", expires_in: 10800, token_type: "Bearer" })).mockResolvedValueOnce(json({ code: "SUCCESS" }));
+    const client = new NaverCommerceClient(config, fetcher);
+    await client.changeSalePrice("123456", 18000);
+    expect(String(fetcher.mock.calls[1]![0])).toContain("/v1/products/origin-products/multi-update");
+    expect(fetcher.mock.calls[1]![1]?.method).toBe("PATCH");
+    expect(JSON.parse(String(fetcher.mock.calls[1]![1]?.body))).toEqual({ multiProductUpdateRequestVos: [{ originProductNo: 123456, multiUpdateTypes: ["SALE_PRICE"], productSalePrice: { salePrice: 18000 } }] });
+    await expect(client.changeSalePrice("123456", 0)).rejects.toThrow();
+  });
   it("변경 주문 번호와 상품 주문 상세를 개인정보 없이 조회한다", async () => {
     const fetcher = vi
       .fn<typeof fetch>()

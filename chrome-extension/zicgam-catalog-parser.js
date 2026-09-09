@@ -127,7 +127,7 @@
       availability:
         stock.status === "available" || stock.status === "partial_sold_out"
           ? "active"
-          : stock.status === "sold_out" || stock.status === "discontinued"
+          : stock.status === "discontinued" ? "discontinued" : stock.status === "sold_out"
             ? "sold_out"
             : "unknown",
       images,

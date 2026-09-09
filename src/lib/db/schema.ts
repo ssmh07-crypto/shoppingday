@@ -25,6 +25,7 @@ export const supplierStatusEnum = pgEnum("supplier_status", [
 export const availabilityEnum = pgEnum("supplier_availability", [
   "active",
   "sold_out",
+  "discontinued",
   "unknown",
 ]);
 export const productStatusEnum = pgEnum("product_status", [
@@ -139,6 +140,7 @@ export const supplierSyncSchedules = pgTable("supplier_sync_schedules", {
   ownerId: uuid("owner_id").notNull().references(() => userProfiles.userId, { onDelete: "cascade" }),
   enabled: boolean("enabled").notNull().default(false),
   intervalHours: integer("interval_hours").notNull().default(24),
+  applyPrices: boolean("apply_prices").notNull().default(false),
   nextRunAt: timestamp("next_run_at", { withTimezone: true }),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
@@ -889,6 +891,8 @@ export const keywordManagedProducts = pgTable(
     editableTitle: text("editable_title").notNull(),
     finalTitle: text("final_title"),
     productInput: jsonb("product_input").$type<ManagedProductInput>().notNull(),
+    researchDraft: jsonb("research_draft").$type<import("@/modules/sourcing/types").SourcingResearchInput>(),
+    researchVersion: integer("research_version").notNull().default(0),
     status: text("status").notNull().default("active"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
@@ -1427,6 +1431,18 @@ export const productAuditLogs = pgTable(
 );
 
 export type ProductRow = typeof products.$inferSelect;
+export const supplierPriceApplications = pgTable("supplier_price_applications", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  productId: uuid("product_id").notNull().references(() => products.id, { onDelete: "cascade" }),
+  publicationId: uuid("publication_id").notNull().references(() => productPublications.id, { onDelete: "cascade" }),
+  targetPrice: integer("target_price").notNull(),
+  status: text("status").$type<"pending" | "running" | "succeeded" | "failed" | "superseded">().notNull().default("pending"),
+  attempts: integer("attempts").notNull().default(0),
+  errorMessage: text("error_message"),
+  attemptedAt: timestamp("attempted_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  completedAt: timestamp("completed_at", { withTimezone: true }),
+}, (table) => [index("supplier_price_applications_pending_idx").on(table.status, table.createdAt), check("supplier_price_applications_price_positive", sql`${table.targetPrice} > 0`), check("supplier_price_applications_status_check", sql`${table.status} in ('pending','running','succeeded','failed','superseded')`)]);
 export type ProductPublicationRow = typeof productPublications.$inferSelect;
 
 export type SupplierProductRow = typeof supplierProducts.$inferSelect;

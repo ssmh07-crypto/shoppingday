@@ -27,7 +27,10 @@ window.addEventListener(REQUEST_EVENT, (event) => {
     payload: event.detail,
   })
     .then((response) => {
-      if (response?.ok) return;
+      if (response?.ok) {
+        dispatchCatalogProgress(event.detail?.requestId, { phase: "starting", message: "도매처 로그인과 상품 목록을 확인하고 있습니다." });
+        return;
+      }
       dispatchResult(event.detail?.requestId, {
         device: "pc",
         status: "failed",
@@ -192,9 +195,12 @@ window.addEventListener(CATALOG_START_EVENT, (event) => {
       });
     });
 });
+window.addEventListener("shoppingday:supplier-vault-open", () => {
+  void sendRuntimeMessage({ type: "shoppingday.supplier.vault.open" }).catch(() => undefined);
+});
 
 window.addEventListener(CATALOG_STOP_EVENT, (event) => {
-  void sendRuntimeMessage({ type: "shoppingday.zicgam.catalog.stop" })
+  void sendRuntimeMessage({ type: "shoppingday.zicgam.catalog.stop", requestId: event.detail?.requestId })
     .then(() =>
       dispatchCatalogProgress(event.detail?.requestId, { phase: "stopped" }),
     )
@@ -251,7 +257,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       Number.isInteger(displayedTotal) && displayedTotal >= 0
         ? ` 사이트 표시 전체 수는 ${displayedTotal.toLocaleString("ko-KR")}개입니다${displayedTotal === total ? "(일치)." : "(목록 발견 수와 다름)."}`
         : " 사이트 표시 전체 수는 읽지 못했지만 빈 페이지 기준으로 끝을 확인했습니다.";
-    const approved = window.confirm(
+    const approved = message.batchConfirmed === true || window.confirm(
       `${message.supplierLabel ?? "공급처"} 전체상품 ${pages.toLocaleString("ko-KR")}페이지에서 고유 상품 ${total.toLocaleString("ko-KR")}개를 확인했고, ${terminalEmptyPage.toLocaleString("ko-KR")}페이지가 비어 있어 목록의 끝으로 판정했습니다.${siteTotalMessage} 상품 상세 정보 저장을 시작할까요?`,
     );
     sendResponse({ ok: approved, cancelled: !approved });

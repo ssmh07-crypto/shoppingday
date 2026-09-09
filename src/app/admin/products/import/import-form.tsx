@@ -126,6 +126,7 @@ export function ImportForm({
   );
 }
 function availabilityLabel(value: string) {
+  if (value === "discontinued") return "단종";
   return value === "sold_out"
     ? "품절"
     : value === "active"

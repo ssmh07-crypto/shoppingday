@@ -6,9 +6,13 @@ import {
   productSupplierLinks,
   supplierProducts,
   suppliers,
+  productAuditLogs,
+  productPublications,
+  supplierPriceApplications,
   type SupplierProductRow,
 } from "@/lib/db/schema";
 import type { SupplierProduct } from "@/modules/suppliers/core/types";
+import { preserveMarginPrice } from "@/modules/pricing/preserve-margin";
 import {
   productSyncProtectedFields,
   type ProductSyncProtectedField,
@@ -82,20 +86,37 @@ export class DrizzleProductRepository implements ProductRepository {
       options?.protectedFields ?? supplierEditableFields,
     );
     return this.database.transaction(async (tx) => {
-      const [currentProduct] = options?.refreshDescriptionIfUnedited
-        ? await tx
-            .select({ description: products.description })
-            .from(products)
-            .where(eq(products.id, imported.productId))
-            .for("update")
-            .limit(1)
-        : [];
+      const [currentProduct] = await tx
+        .select()
+        .from(products)
+        .where(eq(products.id, imported.productId))
+        .for("update")
+        .limit(1);
+      const [previousSupplier] = await tx
+        .select()
+        .from(supplierProducts)
+        .where(eq(supplierProducts.id, supplierProductId))
+        .for("update")
+        .limit(1);
+      if (!currentProduct || !previousSupplier)
+        throw new Error("product_link_not_found");
+      const sellingPrice =
+        currentProduct.currency === product.currency &&
+        product.currency === previousSupplier.currency
+          ? preserveMarginPrice(
+              previousSupplier.supplierPrice === null
+                ? null
+                : Number(previousSupplier.supplierPrice),
+              currentProduct.sellingPrice,
+              product.supplierPrice,
+            )
+          : null;
       const refreshDescription = Boolean(
-        currentProduct &&
-          supplierDescriptionIsUnedited(
-            currentProduct.description,
-            imported.supplierProduct.rawDescription,
-          ),
+        options?.refreshDescriptionIfUnedited &&
+        supplierDescriptionIsUnedited(
+          currentProduct.description,
+          previousSupplier.rawDescription,
+        ),
       );
       const [supplierProduct] = await tx
         .update(supplierProducts)
@@ -121,6 +142,10 @@ export class DrizzleProductRepository implements ProductRepository {
       if (!supplierProduct) throw new Error("supplier_product_not_found");
 
       const productUpdates = {
+        ...(sellingPrice !== null &&
+        sellingPrice !== currentProduct.sellingPrice
+          ? { sellingPrice }
+          : {}),
         ...(!protectedFields.has("title")
           ? { title: product.originalName ?? "" }
           : {}),
@@ -134,6 +159,59 @@ export class DrizzleProductRepository implements ProductRepository {
           ? { editedOptions: optionsFromSupplier(product.options) }
           : {}),
       };
+      const oldValues = {
+        supplierPrice: previousSupplier.supplierPrice,
+        availability: previousSupplier.availability,
+        rawDescription: previousSupplier.rawDescription,
+        sellingPrice: currentProduct.sellingPrice,
+      };
+      const newValues = {
+        supplierPrice: supplierProduct.supplierPrice,
+        availability: supplierProduct.availability,
+        rawDescription: supplierProduct.rawDescription,
+        sellingPrice: sellingPrice ?? currentProduct.sellingPrice,
+      };
+      const changedFields = (
+        Object.keys(oldValues) as (keyof typeof oldValues)[]
+      ).filter((key) => oldValues[key] !== newValues[key]);
+      if (changedFields.length && currentProduct.ownerId) {
+        await tx
+          .insert(productAuditLogs)
+          .values({
+            actorId: currentProduct.ownerId,
+            entityId: imported.productId,
+            action: "supplier_sync",
+            changedFields,
+            oldValues,
+            newValues,
+            requestId: crypto.randomUUID(),
+          });
+      }
+      if (
+        sellingPrice !== null &&
+        sellingPrice !== currentProduct.sellingPrice
+      ) {
+        const publications = await tx
+          .select({ id: productPublications.id })
+          .from(productPublications)
+          .where(
+            and(
+              eq(productPublications.productId, imported.productId),
+              sql`${productPublications.originProductNo} is not null`,
+              sql`${productPublications.remoteStatusType} is distinct from 'DELETE'`,
+            ),
+          );
+        if (publications.length)
+          await tx
+            .insert(supplierPriceApplications)
+            .values(
+              publications.map((publication) => ({
+                productId: imported.productId,
+                publicationId: publication.id,
+                targetPrice: sellingPrice,
+              })),
+            );
+      }
       if (Object.keys(productUpdates).length) {
         await tx
           .update(products)

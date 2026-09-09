@@ -18,7 +18,7 @@ import {
   NaverPublicationUpdateRequiredError,
 } from "@/modules/channels/naver/naver-publication-service";
 import { ProductEditRepository } from "@/modules/products/product-edit-repository";
-import { ProductNotFoundError } from "@/modules/products/product-errors";
+import { ProductNotFoundError, ProductConflictError } from "@/modules/products/product-errors";
 import { NaverStoreTargetRepository } from "@/modules/channels/naver/naver-store-target-repository";
 import {
   withAdminProductReadRoute,
@@ -33,6 +33,7 @@ const updateInputSchema = publishInputSchema;
 const statusInputSchema = z.object({
   confirmed: z.literal(true),
   statusType: z.enum(["SALE", "OUTOFSTOCK", "SUSPENSION"]),
+  expectedSupplierAvailability: z.enum(["sold_out", "discontinued"]).optional(),
 });
 const deleteInputSchema = z.object({ confirmed: z.literal(true) });
 
@@ -163,6 +164,12 @@ export async function PATCH(
     try {
       const { id } = await params;
       const input = statusInputSchema.parse(await request.json());
+      if (input.expectedSupplierAvailability) {
+        const current = await new ProductEditRepository(database).find(id, user.id);
+        if (!current) throw new ProductNotFoundError();
+        const expectedStatus = input.expectedSupplierAvailability === "sold_out" ? "OUTOFSTOCK" : "SUSPENSION";
+        if (current.supplier.availability !== input.expectedSupplierAvailability || input.statusType !== expectedStatus) throw new ProductConflictError();
+      }
       const targetStore = await new NaverStoreTargetRepository(
         database,
       ).getForProduct(id, user.id);

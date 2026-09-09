@@ -1,4 +1,5 @@
-/* global chrome */
+/* global chrome, importScripts, ShoppingdayCredentialVault */
+importScripts("credential-vault.js");
 
 const PENDING_PREFIX = "rank-pending:";
 const SUPPLIER_WORKER_PREFIX = "supplier-worker:";
@@ -29,6 +30,23 @@ chrome.tabs.onRemoved.addListener((tabId) => {
 });
 
 async function handleMessage(message, sender) {
+  if (message?.type === "shoppingday.supplier.vault.open") {
+    assertShoppingdaySender(sender);
+    await chrome.runtime.openOptionsPage();
+    return { ok: true };
+  }
+  if (message?.type === "shoppingday.supplier.login") {
+    const pending = await getPending(sender.tab?.id);
+    assertCatalogSender(sender, pending);
+    const url = new URL(sender.url);
+    if (sender.frameId !== 0 || url.protocol !== "https:" || url.pathname !== "/member/login.html" || pending?.kind !== "supplier_catalog" || pending.cancelled || pending.loginAttempted) {
+      return { ok: false, message: "로그인 또는 추가 인증을 직접 확인한 뒤 다시 실행해 주세요." };
+    }
+    const credentials = await ShoppingdayCredentialVault.credentials(pending.payload.provider);
+    if (!credentials) return { ok: false, message: "PC 로그인 보관함에 이 도매처의 로그인 정보를 저장해 주세요." };
+    await chrome.storage.session.set({ [pendingKey(sender.tab.id)]: { ...pending, loginAttempted: true } });
+    return { ok: true, credentials };
+  }
   if (message?.type === "shoppingday.rank.ping") {
     assertShoppingdaySender(sender);
     return {
@@ -244,6 +262,10 @@ async function handleMessage(message, sender) {
     const sourceTabId = sender.tab?.id;
     if (!sourceTabId) throw new Error("Shoppingday 탭을 확인하지 못했습니다.");
     const tab = await getOrCreateCatalogTab(sourceTabId);
+    const previous = await getPending(tab.id);
+    if (previous?.kind === "supplier_catalog" && !previous.cancelled && !["failed", "capture_complete", "stopped"].includes(previous.latest?.type?.split(".").at(-1))) {
+      return { ok: false, message: "다른 도매처 수집이 진행 중입니다. 완료 또는 중단 후 실행해 주세요." };
+    }
     await chrome.storage.session.set({
       [pendingKey(tab.id)]: {
         kind: "supplier_catalog",
@@ -260,7 +282,11 @@ async function handleMessage(message, sender) {
         stats: { created: 0, updated: 0, unchanged: 0, failed: 0 },
       },
     });
-    await chrome.tabs.update(tab.id, { url: request.startUrl, active: true });
+    const vaultState = await ShoppingdayCredentialVault.status();
+    const startUrl = vaultState.unlocked && vaultState.providers.includes(request.provider)
+      ? `https://${request.hostname}/member/login.html?returnUrl=${encodeURIComponent(request.startUrl)}`
+      : request.startUrl;
+    await chrome.tabs.update(tab.id, { url: startUrl, active: true });
     return { ok: true };
   }
 
@@ -270,6 +296,7 @@ async function handleMessage(message, sender) {
     const tab = sourceTabId ? await findCatalogTab(sourceTabId) : null;
     const pending = await getPending(tab?.id);
     if (tab?.id && pending?.kind === "supplier_catalog") {
+      if (message.requestId && pending.requestId !== message.requestId) return { ok: false, message: "중단할 작업 ID가 다릅니다." };
       await chrome.storage.session.set({
         [pendingKey(tab.id)]: { ...pending, cancelled: true },
       });
@@ -309,6 +336,7 @@ async function handleMessage(message, sender) {
       url: message.url,
       message: message.message,
       payload: message.payload,
+      batchConfirmed: pending.payload.batchConfirmed,
     };
     let updatedPending = {
       ...pending,
@@ -565,7 +593,7 @@ function validateCatalogRequest(value) {
           discoveryDelayMs: 400,
           delayMs: 800,
         };
-  return { requestId, provider, ...config, maximumListPages: 500 };
+  return { requestId, provider, ...config, maximumListPages: 500, batchConfirmed: value?.batchConfirmed === true };
 }
 
 function assertShoppingdaySender(sender) {
@@ -613,6 +641,8 @@ function assertCatalogSender(sender, pending) {
   const expectedHostname = pending?.payload?.hostname;
   if (
     !sender.url ||
+    sender.frameId !== 0 ||
+    new URL(sender.url).protocol !== "https:" ||
     !expectedHostname ||
     new URL(sender.url).hostname !== expectedHostname
   ) {

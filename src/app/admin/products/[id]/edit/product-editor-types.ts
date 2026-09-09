@@ -75,6 +75,7 @@ export type ProductEditorInitial = {
     originalImages: string[];
     originalOptions: Array<{ name: string; price: number | null }>;
     lastSyncedAt: string;
+    rawDescription?: string | null;
   };
 };
 

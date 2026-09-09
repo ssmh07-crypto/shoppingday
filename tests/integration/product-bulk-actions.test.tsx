@@ -17,6 +17,20 @@ afterEach(() => {
 });
 
 describe("상품 대량 작업", () => {
+  it("서버 실행 선택 시 화면의 다음 상품 실행 요청 없이 서버에 접수한다", async () => {
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    const job = { id: "server-job", type: "publish", status: "queued", total: 1, processed: 0, succeeded: 0, failed: 0 };
+    const fetchMock = vi.fn().mockResolvedValueOnce(Response.json({ jobs: [] })).mockResolvedValueOnce(Response.json({ job })).mockResolvedValueOnce(Response.json({ success: true, job }));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<ProductBulkActions productIds={["one"]} />);
+    const start = screen.getByRole("button", { name: "선택 상품 스마트스토어 등록" });
+    await waitFor(() => expect(start).toBeEnabled());
+    fireEvent.click(screen.getByLabelText("화면을 닫아도 서버에서 처리"));
+    fireEvent.click(start);
+    await screen.findByText("서버 실행을 접수했습니다. 화면을 닫아도 이어서 처리합니다. 네이버 릴레이 PC는 켜 두세요.");
+    expect(fetchMock).toHaveBeenNthCalledWith(3, "/api/products/bulk-jobs/server-job/background", { method: "POST" });
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
   it("선택이 없으면 등록 요청을 보내지 않는다", async () => {
     const fetchMock = vi.fn().mockResolvedValue(Response.json({ jobs: [] }));
     vi.stubGlobal("fetch", fetchMock);

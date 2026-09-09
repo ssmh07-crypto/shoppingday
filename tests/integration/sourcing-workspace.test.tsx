@@ -11,6 +11,19 @@ afterEach(() => {
 });
 
 describe("소싱 조사 화면", () => {
+  it("성장 분석은 기존 분류 화면을 재사용하며 소싱 등록을 만들지 않는다", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(Response.json({ success: true, version: 1 }));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<SourcingWorkspace initialItems={[]} initialDetail={null} growth={{ id: "growth-one", version: 0 }} />);
+    expect(screen.queryByRole("button", { name: "소싱 아이템 저장" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "품목 조사" })).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "연관 키워드 분류" })).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("분석 기준 키워드", { exact: false }), { target: { value: "욕실화" } });
+    fireEvent.click(screen.getByRole("button", { name: "성장 분석 저장" }));
+    await screen.findByText("성장상품에 분류와 분석 근거를 저장했습니다.");
+    expect(fetchMock).toHaveBeenCalledWith("/api/growth-research/growth-one", expect.objectContaining({ method: "PUT" }));
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({ version: 0, draft: { sourcingKeyword: "욕실화" } });
+  });
   it("네 조사 항목을 기본으로 접고 제거한 항목은 표시하지 않는다", () => {
     render(<SourcingWorkspace initialItems={[]} initialDetail={null} />);
 

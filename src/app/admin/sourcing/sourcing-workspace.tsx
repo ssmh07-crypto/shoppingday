@@ -120,10 +120,13 @@ const signalQuestions: Array<{
 export function SourcingWorkspace({
   initialItems,
   initialDetail,
+  growth,
 }: {
   initialItems: ListItem[];
   initialDetail: SourcingResearchRecord | null;
+  growth?: { id: string; version: number };
 }) {
+  const [growthVersion, setGrowthVersion] = useState(growth?.version ?? 0);
   const [items, setItems] = useState(initialItems);
   const [detail, setDetail] = useState<SourcingResearchRecord | null>(initialDetail);
   const [draft, setDraft] = useState<SourcingResearchInput>(() =>
@@ -660,6 +663,14 @@ export function SourcingWorkspace({
     setMessage(null);
     setError(null);
     try {
+      if (growth) {
+        const response = await fetch(`/api/growth-research/${growth.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ version: growthVersion, draft }) });
+        const body = await response.json();
+        if (!response.ok) throw new Error(body.error?.message ?? "성장 분석 저장 실패");
+        setGrowthVersion(body.version);
+        setMessage("성장상품에 분류와 분석 근거를 저장했습니다.");
+        return;
+      }
       const response = await api<SourcingResearchRecord>(
         creating ? "/api/sourcing-researches" : `/api/sourcing-researches/${detail!.id}`,
         {
@@ -1004,19 +1015,19 @@ export function SourcingWorkspace({
     <>
       <header className="inventory-topbar sourcing-topbar">
         <div>
-          <strong>소싱 조사</strong>
-          <span>키워드에서 시작해 시장·품목 위험·리뷰를 순서대로 검토합니다.</span>
+          <strong>{growth ? "성장상품 정밀 분석" : "소싱 조사"}</strong>
+          <span>{growth ? "판매 중인 상품의 키워드·공식 태그·속성과 리뷰 근거를 검토합니다." : "키워드에서 시작해 시장·품목 위험·리뷰를 순서대로 검토합니다."}</span>
         </div>
         <div className="sourcing-topbar-actions">
-          <a href="/admin/registration">상품 등록관리</a>
-          <button type="button" onClick={startNew} disabled={busy}>소싱 리스트 추가</button>
+          {growth ? <a href="/admin/keywords">성장상품관리</a> : <><a href="/admin/registration">상품 등록관리</a>
+          <button type="button" onClick={startNew} disabled={busy}>소싱 리스트 추가</button></>}
         </div>
       </header>
       <main className="inventory-content sourcing-page">
         <section className="inventory-heading sourcing-heading">
           <div>
             <span className="inventory-eyebrow">SOURCING RESEARCH</span>
-            <h1>상품보다 시장을 먼저 조사하세요</h1>
+            <h1>{growth ? "판매 반응이 있는 상품을 더 세밀하게 검토하세요" : "상품보다 시장을 먼저 조사하세요"}</h1>
             <p>
               사실 데이터와 직접 확인한 리뷰를 기록해 소싱 판단의 재현성을 높입니다.
               체크리스트는 재고 소진, 검색 노출 또는 매출을 보장하지 않습니다.
@@ -1025,7 +1036,7 @@ export function SourcingWorkspace({
         </section>
         {message && <div className="sourcing-callout success">{message}</div>}
         {error && <div className="sourcing-callout error">{error}</div>}
-        <div className="sourcing-workspace">
+        <div className="sourcing-workspace" style={growth ? { gridTemplateColumns: "minmax(0, 1fr)" } : undefined}>
           {sourcingListOpen ? (
             <button
               type="button"
@@ -1034,7 +1045,7 @@ export function SourcingWorkspace({
               onClick={() => setSourcingListOpen(false)}
             />
           ) : null}
-          <aside
+          {!growth && <aside
             id="sourcing-list-panel"
             className={`sourcing-list${sourcingListOpen ? " open" : ""}`}
             aria-label="소싱 목록"
@@ -1079,12 +1090,12 @@ export function SourcingWorkspace({
             )) : (
               <div className="sourcing-list-empty">첫 소싱 키워드를 기록해 보세요.</div>
             )}
-          </aside>
+          </aside>}
 
           <div className="sourcing-editor">
             <div className="sourcing-editor-bar">
               <div className="sourcing-editor-title">
-                <button
+                {!growth && <button
                   type="button"
                   className="sourcing-list-trigger"
                   aria-controls="sourcing-list-panel"
@@ -1095,11 +1106,11 @@ export function SourcingWorkspace({
                   <span aria-hidden="true">☰</span>
                   소싱 목록
                   <strong>{items.length}</strong>
-                </button>
+                </button>}
                 <strong>{draft.sourcingKeyword || "새 소싱 아이템"}</strong>
                 <span>각 항목은 직접 확인한 값만 입력하세요.</span>
               </div>
-              <label>
+              {!growth && <label>
                 <span>진행 상태</span>
                 <select
                   value={draft.status}
@@ -1109,10 +1120,11 @@ export function SourcingWorkspace({
                     <option value={value} key={value}>{label}</option>
                   ))}
                 </select>
-              </label>
+              </label>}
             </div>
 
-            <ResearchSection number="01" title="키워드 시장 조사" description="온라인에서 실제로 진입할 키워드 시장의 크기를 기록합니다.">
+            {growth && <Field label="분석 기준 키워드" required><input value={draft.sourcingKeyword} onChange={event => setField("sourcingKeyword", event.target.value)} /></Field>}
+            {!growth && <ResearchSection number="01" title="키워드 시장 조사" description="온라인에서 실제로 진입할 키워드 시장의 크기를 기록합니다.">
               <div className="sourcing-grid three">
                 <Field label="소싱하고 싶은 키워드" required>
                   <input value={draft.sourcingKeyword} onChange={(event) => setField("sourcingKeyword", event.target.value)} placeholder="예: 욕실 선반" />
@@ -1136,7 +1148,7 @@ export function SourcingWorkspace({
                   <textarea rows={4} value={draft.marketNotes} onChange={(event) => setField("marketNotes", event.target.value)} placeholder="데이터 출처, 조회일, 상위 상품 특징 등을 기록하세요." />
                 </Field>
               </div>
-            </ResearchSection>
+            </ResearchSection>}
 
             <ResearchSection number="02" title="연관 키워드 분류" description="아이템스카우트 엑셀에서 키워드와 총 검색수만 가져온 뒤, 직접 검색한 결과에 따라 사용할 위치를 표시합니다.">
               <div className="sourcing-keyword-import">
@@ -1678,7 +1690,7 @@ export function SourcingWorkspace({
               )}
             </ResearchSection>
 
-            <ResearchSection number="03" title="품목 조사" description="진입 위험을 확인하고, 어떤 제품을 찾아야 하는지 기준을 세웁니다.">
+            {!growth && <ResearchSection number="03" title="품목 조사" description="진입 위험을 확인하고, 어떤 제품을 찾아야 하는지 기준을 세웁니다.">
               <div className="sourcing-signal-grid">
                 {signalQuestions.map(({ key, ...question }) => (
                   <SignalQuestion
@@ -1689,7 +1701,7 @@ export function SourcingWorkspace({
                   />
                 ))}
               </div>
-            </ResearchSection>
+            </ResearchSection>}
 
             <ResearchSection number="04" title="상품 리뷰 조사" description="상세페이지보다 낮은 평점과 반복되는 불만을 먼저 읽고 개선 조건을 정리합니다.">
               <div className="sourcing-review-analyzer">
@@ -1841,10 +1853,10 @@ export function SourcingWorkspace({
               <span>검색수·매출·체크리스트는 참고 자료이며 재고 소진, 노출 순위 또는 판매 성과를 보장하지 않습니다.</span>
             </div>
             <div className="sourcing-save-bar">
-              <span>임시저장은 조사 목록에만 남고, 소싱 아이템 저장은 등록 초안을 만들어 상품등록관리로 보냅니다.</span>
+              <span>{growth ? "분류와 근거를 성장상품에 저장합니다. 실제 상품 변경은 성장상품관리에서 확인 후 반영합니다." : "임시저장은 조사 목록에만 남고, 소싱 아이템 저장은 등록 초안을 만들어 상품등록관리로 보냅니다."}</span>
               <div className="sourcing-save-actions">
-                <button type="button" className="secondary" onClick={() => save(true)} disabled={busy}>{busy ? "저장 중…" : "임시저장"}</button>
-                <button type="button" onClick={saveAndCreateRegistration} disabled={busy || !draft.sourcingKeyword.trim()}>{busy ? "등록 초안 생성 중…" : "소싱 아이템 저장"}</button>
+                <button type="button" className="secondary" onClick={() => save(true)} disabled={busy}>{busy ? "저장 중…" : growth ? "성장 분석 저장" : "임시저장"}</button>
+                {!growth && <button type="button" onClick={saveAndCreateRegistration} disabled={busy || !draft.sourcingKeyword.trim()}>{busy ? "등록 초안 생성 중…" : "소싱 아이템 저장"}</button>}
               </div>
             </div>
           </div>

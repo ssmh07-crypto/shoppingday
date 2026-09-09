@@ -8,6 +8,7 @@ import type { SelectedImage } from "@/lib/db/schema";
 import { ProductEditorDrawer } from "./[id]/edit/product-editor-drawer";
 import { ProductTitleInlineEditor } from "./product-title-inline-editor";
 import { ProductBulkActions } from "./product-bulk-actions";
+import { ProductKeywordReuse } from "./product-keyword-reuse";
 import { SupplierProductNumberSettings } from "./supplier-product-number-settings";
 import { ProductGrowthButton } from "./product-growth-button";
 
@@ -181,6 +182,7 @@ export function ProductListView({
                   <option value="editing">편집 중</option>
                   <option value="ready">등록 준비 완료</option>
                   <option value="sold_out">품절 원본</option>
+                  <option value="discontinued">단종 원본</option>
                   <option value="missing_price">판매가 미입력</option>
                   <option value="missing_category">카테고리 미지정</option>
                   <option value="missing_image">이미지 없음</option>
@@ -248,6 +250,7 @@ export function ProductListView({
               <span>선택은 현재 페이지에만 적용됩니다.</span>
             </div>
             <ProductBulkActions productIds={selectedIds} />
+            <ProductKeywordReuse key={selectedIds.join(",")} products={result.items.filter((item) => selectedIds.includes(item.id)).map((item) => ({ id: item.id, title: item.title }))} />
           </div>
 
           <div className="inventory-table-scroll">
@@ -469,7 +472,7 @@ function AvailabilityBadge({ value }: { value: string }) {
       ? "판매 가능"
       : value === "sold_out"
         ? "품절"
-        : "확인 필요";
+        : value === "discontinued" ? "단종" : "확인 필요";
   return (
     <span className={`inventory-badge availability-${value}`}>{label}</span>
   );

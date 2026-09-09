@@ -24,7 +24,8 @@ function parseDate(value: unknown): Date | null {
 export function mapDomeAvailability(status: unknown): SupplierAvailability {
   const normalized = optionalText(status)?.replace(/\s/g, '')
   if (normalized === '정상' || normalized === '판매중') return 'active'
-  if (normalized === '품절' || normalized === '판매중지' || normalized === '단종') return 'sold_out'
+  if (normalized === '단종') return 'discontinued'
+  if (normalized === '품절' || normalized === '판매중지') return 'sold_out'
   return 'unknown'
 }
 

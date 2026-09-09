@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useSupplierBatchLock } from "./import/use-supplier-batch-lock";
 
 type SyncMode = "all" | "changes";
 type SyncJob = {
@@ -31,6 +32,7 @@ export function ProductSyncControl({
   actionLabel?: string;
 }) {
   const router = useRouter();
+  const batchLocked = useSupplierBatchLock();
   const [job, setJob] = useState<SyncJob | null>(null);
   const [requesting, setRequesting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -137,7 +139,7 @@ export function ProductSyncControl({
         type="button"
         className={variant === "inventory" ? "inventory-primary-button" : ""}
         onClick={() => void start()}
-        disabled={requesting || active}
+        disabled={requesting || active || batchLocked}
       >
         <SyncIcon />
         {requesting ? "작업 요청 중…" : buttonLabel}

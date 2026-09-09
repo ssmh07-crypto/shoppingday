@@ -141,6 +141,23 @@ function Update-WorkerRelaySettings {
 
   $TunnelUrl | & npx wrangler secret put NAVER_COMMERCE_RELAY_URL_OVERRIDE
   if ($LASTEXITCODE -ne 0) { throw "Failed to update the Worker relay URL." }
+
+  # Existing secrets are the opt-in: keep the approved Actions connection in
+  # sync when Quick Tunnel rotates. Never create a new integration implicitly.
+  if (Get-Command gh -ErrorAction SilentlyContinue) {
+    $actionSecretNames = & gh secret list --repo ssmh07-crypto/shoppingday --json name 2>$null
+    if ($LASTEXITCODE -eq 0) {
+      $actionSecretNames = ($actionSecretNames | ConvertFrom-Json).name
+      if ($actionSecretNames -contains "NAVER_COMMERCE_RELAY_URL" -and $actionSecretNames -contains "NAVER_COMMERCE_RELAY_SHARED_SECRET") {
+        $SharedSecret | & gh secret set NAVER_COMMERCE_RELAY_SHARED_SECRET --repo ssmh07-crypto/shoppingday
+        if ($LASTEXITCODE -ne 0) { throw "Failed to refresh the Actions relay secret." }
+        $TunnelUrl | & gh secret set NAVER_COMMERCE_RELAY_URL --repo ssmh07-crypto/shoppingday
+        if ($LASTEXITCODE -ne 0) { throw "Failed to refresh the Actions relay URL." }
+      }
+    } else {
+      Write-Warning "Actions relay settings could not be checked. Verify GitHub CLI authentication."
+    }
+  }
 }
 
 function Write-SupervisorLog {

@@ -6,6 +6,7 @@ import {
   SupplierSyncJobRepository,
 } from "@/modules/suppliers/core/sync-job-repository";
 import { ProductProcessingSettingsRepository } from "@/modules/products/product-processing-settings-repository";
+import { applyNextSupplierPrice } from "@/modules/suppliers/core/price-application-service";
 
 async function main() {
   const database = getDb();
@@ -53,6 +54,15 @@ async function main() {
           : reject(new Error(`예약 동기화 실행 실패 (${code})`)),
       );
     });
+    if (schedule.applyPrices) {
+      for (let count = 0; count < 1000; count++) {
+        const current = await new SyncScheduleRepository(database).get(schedule.ownerId);
+        if (!current?.enabled || !current.applyPrices) break;
+        const applied = await applyNextSupplierPrice(database, schedule.ownerId, "dome");
+        console.info(`가격 반영: ${applied.status}`);
+        if (["idle", "busy", "failed"].includes(applied.status)) break;
+      }
+    }
   } catch (error) {
     if (isActiveJobConflict(error)) {
       console.info("이미 공급처 동기화가 진행 중입니다.");

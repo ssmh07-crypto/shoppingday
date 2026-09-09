@@ -1,0 +1,1 @@
+ALTER TYPE "public"."supplier_availability" ADD VALUE 'discontinued' BEFORE 'unknown';

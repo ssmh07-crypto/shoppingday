@@ -49,6 +49,7 @@ export type ProductEditorRecord = {
     name: string;
     externalProductId: string;
     originalName: string | null;
+    rawDescription?: string | null;
     supplierPrice: string | null;
     currency: string;
     availability: string;
@@ -104,6 +105,7 @@ export class ProductEditRepository {
       );
     if (query.filter === "sold_out")
       conditions.push(eq(supplierProducts.availability, "sold_out"));
+    if (query.filter === "discontinued") conditions.push(eq(supplierProducts.availability, "discontinued"));
     if (query.filter === "missing_price")
       conditions.push(isNull(products.sellingPrice));
     if (query.filter === "missing_category")
@@ -282,6 +284,7 @@ export class ProductEditRepository {
           productNumberPrefix: suppliers.productNumberPrefix,
           externalProductId: supplierProducts.externalProductId,
           originalName: supplierProducts.originalName,
+          rawDescription: supplierProducts.rawDescription,
           supplierPrice: supplierProducts.supplierPrice,
           currency: supplierProducts.currency,
           availability: supplierProducts.availability,

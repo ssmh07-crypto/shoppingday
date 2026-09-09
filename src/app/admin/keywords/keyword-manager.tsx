@@ -10,6 +10,7 @@ import {
 } from "react";
 import Image from "next/image";
 import dynamic from "next/dynamic";
+import { GrowthResearchSuggestion } from "./growth-research-suggestion";
 import type { NaverProductAttribute } from "@/lib/db/schema";
 import {
   defaultKeywordFilters,
@@ -1221,6 +1222,8 @@ function KeywordProductDetail({
               <a href={detail.product.smartstoreUrl} target="_blank" rel="noreferrer">
                 스마트스토어 상품 보기 ↗
               </a>
+              <a href={`/admin/keywords/${detail.product.id}/research`} target="_blank" rel="noreferrer">정밀 분석 · 키워드 분류·공식 태그·속성 ↗</a>
+              {detail.product.linkedProductId && <a href={`/admin/products/${detail.product.linkedProductId}/edit`} target="_blank" rel="noreferrer">공통 상품 편집 · 엑셀 키워드·카테고리·속성 ↗</a>}
               <button
                 type="button"
                 className="keyword-remove-managed"
@@ -1433,6 +1436,7 @@ function KeywordProductDetail({
               ))}
             </div>
           </div>
+          <GrowthResearchSuggestion id={detail.product.id} categoryId={detail.product.productInput.naverCategoryId} attributes={naverAttributes} onApply={(title, tags, attributes) => { setOptimizationTitle(title); setOptimizationTags(tags); setNaverAttributes(attributes); }} />
           <details
             className="keyword-attribute-editor"
             open={attributesOpen}

@@ -9,6 +9,10 @@ async function runCatalogImport() {
   if (!ready?.ok || !ready.payload) return;
   const request = ready.payload;
   try {
+    if (location.pathname === "/member/login.html") {
+      await loginForCatalog();
+      return;
+    }
     const catalog = await discoverCatalog(request);
     const approval = await chrome.runtime.sendMessage({
       type: "shoppingday.zicgam.catalog.discovery_complete",
@@ -161,6 +165,37 @@ async function runCatalogImport() {
           : "공급처 전체 상품 가져오기에 실패했습니다.",
     });
   }
+}
+
+async function loginForCatalog() {
+  const username = document.querySelector("#member_id");
+  const password = document.querySelector("#member_passwd");
+  if (!username || !password) {
+    throw new Error("로그인 화면을 확인해 주세요. 직접 로그인한 뒤 다시 실행하세요.");
+  }
+  const form = password.closest("form");
+  const action = form && new URL(form.getAttribute("action") || location.href, location.href);
+  if (!form || !form.contains(username) || action.protocol !== "https:" || action.origin !== location.origin) {
+    throw new Error("안전한 로그인 양식을 확인하지 못했습니다. 직접 로그인해 주세요.");
+  }
+  if (document.querySelector('iframe[src*="recaptcha"], iframe[src*="hcaptcha"], input[name*="captcha"]')) {
+    throw new Error("추가 인증이 필요합니다. 직접 로그인한 뒤 다시 실행하세요.");
+  }
+  const response = await chrome.runtime.sendMessage({ type: "shoppingday.supplier.login" });
+  if (!response?.ok || !response.credentials) {
+    throw new Error(response?.message || "PC 로그인 보관함을 해제하거나 직접 로그인해 주세요.");
+  }
+  const submit = form.querySelector('button[type="submit"], input[type="submit"], a[onclick*="MemberAction.login"]');
+  if (!submit) throw new Error("로그인 버튼을 확인하지 못했습니다. 직접 로그인해 주세요.");
+  username.value = response.credentials.username;
+  password.value = response.credentials.password;
+  username.dispatchEvent(new Event("input", { bubbles: true }));
+  password.dispatchEvent(new Event("input", { bubbles: true }));
+  response.credentials.password = "";
+  submit.click();
+  await delay(15_000);
+  password.value = "";
+  throw new Error("로그인 완료를 확인하지 못했습니다. 도매처 화면에서 추가 인증을 확인한 뒤 다시 실행하세요.");
 }
 
 async function fetchDocumentWithRetry(url) {

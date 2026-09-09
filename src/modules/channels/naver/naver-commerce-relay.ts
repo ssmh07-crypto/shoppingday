@@ -59,6 +59,7 @@ export type NaverCommerceRelayConfig = {
 };
 
 export interface NaverCategoriesClient {
+  changeSalePrice?(originProductNo: string, salePrice: number): Promise<{ success: true }>;
   fetchCategories(options?: {
     last?: boolean;
   }): Promise<NaverCommerceCategory[]>;
@@ -106,6 +107,11 @@ export interface NaverCategoriesClient {
 }
 
 export class NaverCommerceRelayClient implements NaverCategoriesClient {
+  async changeSalePrice(originProductNo: string, salePrice: number) {
+    if (!/^\d{1,20}$/.test(originProductNo) || !Number.isInteger(salePrice) || salePrice <= 0 || salePrice > 2147483647) throw new NaverCommerceError("request_failed", "판매가 변경 요청이 올바르지 않습니다.");
+    await this.request(this.relayUrl(`v1/products/origin-products/${originProductNo}/sale-price`), { method: "PUT", contentType: "application/json;charset=UTF-8", body: new TextEncoder().encode(JSON.stringify({ salePrice })) });
+    return { success: true as const };
+  }
   constructor(
     private readonly config: NaverCommerceRelayConfig,
     private readonly fetcher: typeof fetch = fetch,
@@ -686,6 +692,7 @@ export function createNaverCommerceRelayHandler(
       request.method === "PUT" && ORIGIN_PRODUCT_PATH.test(url.pathname);
     const isProductStatusChange =
       request.method === "PUT" && PRODUCT_STATUS_PATH.test(url.pathname);
+    const isProductPriceChange = request.method === "PUT" && /^\/v1\/products\/origin-products\/\d{1,20}\/sale-price$/.test(url.pathname);
     const isProductOrdersQuery =
       request.method === "POST" &&
       url.pathname === PRODUCT_ORDERS_QUERY_PATH;
@@ -702,6 +709,7 @@ export function createNaverCommerceRelayHandler(
       !isProductCreate &&
       !isProductUpdate &&
       !isProductStatusChange &&
+      !isProductPriceChange &&
       !isProductOrdersQuery &&
       !isShoppingRankObserve &&
       !isProductDelete
@@ -748,6 +756,7 @@ export function createNaverCommerceRelayHandler(
       isProductCreate ||
       isProductUpdate ||
       isProductStatusChange ||
+      isProductPriceChange ||
       isProductOrdersQuery ||
       isShoppingRankObserve
       ? new Uint8Array(await request.arrayBuffer())
@@ -758,6 +767,7 @@ export function createNaverCommerceRelayHandler(
         ((isProductCreate ||
           isProductUpdate ||
           isProductStatusChange ||
+          isProductPriceChange ||
           isProductOrdersQuery ||
           isShoppingRankObserve) &&
           body.byteLength > MAX_PRODUCT_BODY_BYTES))
@@ -947,6 +957,15 @@ async function handleRelayRequest(
     );
   }
   const statusMatch = PRODUCT_STATUS_PATH.exec(url.pathname);
+  const priceMatch = /^\/v1\/products\/origin-products\/(\d{1,20})\/sale-price$/.exec(url.pathname);
+  if (priceMatch) {
+    if (url.search || request.method !== "PUT") return relayJson(400, "invalid_request", "판매가 변경 요청을 확인해 주세요.");
+    const input = parseRelayJsonBody(request, body);
+    if (input instanceof Response) return input;
+    const parsed = z.object({ salePrice: z.number().int().positive().max(2147483647) }).strict().safeParse(input);
+    if (!parsed.success || !client.changeSalePrice) return relayJson(400, "invalid_request", "판매가 변경 기능을 확인해 주세요.");
+    return client.changeSalePrice(priceMatch[1]!, parsed.data.salePrice);
+  }
   if (statusMatch) {
     if (url.search) {
       return relayJson(400, "invalid_request", "판매 상태 변경에는 검색 조건을 사용할 수 없습니다.");

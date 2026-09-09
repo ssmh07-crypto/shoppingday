@@ -21,7 +21,7 @@ export const ebulsamchonCapturedProductSchema = z.object({
   ),
   originalName: z.string().trim().min(1).max(200),
   supplierPrice: z.number().int().min(0).max(1_000_000_000),
-  availability: z.enum(["active", "sold_out", "unknown"]),
+  availability: z.enum(["active", "sold_out", "discontinued", "unknown"]),
   images: z.array(httpUrl).max(100),
   options: z.array(capturedOptionSchema).max(500),
   rawDescription: z.string().max(200_000).nullable(),

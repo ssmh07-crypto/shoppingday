@@ -21,7 +21,7 @@ export const zicgamCapturedProductSchema = z.object({
   url: httpUrl.refine((value) => new URL(value).hostname === "zicgam.com"),
   originalName: z.string().trim().min(1).max(200),
   supplierPrice: z.number().int().min(0).max(1_000_000_000).nullable(),
-  availability: z.enum(["active", "sold_out", "unknown"]),
+  availability: z.enum(["active", "sold_out", "discontinued", "unknown"]),
   images: z.array(httpUrl).max(100),
   options: z.array(capturedOptionSchema).max(500),
   rawDescription: z.string().max(200_000).nullable(),

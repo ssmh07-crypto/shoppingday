@@ -1738,7 +1738,7 @@ export function ProductEditor({
           <strong>
             {activeSupplier.availability === "sold_out"
               ? "품절"
-              : "판매 가능"}
+              : activeSupplier.availability === "discontinued" ? "단종" : activeSupplier.availability === "active" ? "판매 가능" : "확인 필요"}
           </strong>
         </div>
       </div>
@@ -2889,6 +2889,12 @@ export function ProductEditor({
                 </div>
               </div>
               <div className="drawer-description-preview">
+                {activeSupplier.rawDescription && activeSupplier.rawDescription !== form.description && <details>
+                  <summary>공급처 최신 상세페이지 비교</summary>
+                  <p>수집된 원본을 확인한 뒤 판매용 상세페이지에 적용하세요. 적용 후 저장하고 스마트스토어 변경사항을 반영해야 합니다.</p>
+                  <iframe sandbox="" srcDoc={activeSupplier.rawDescription} title="공급처 원본 상세페이지 미리보기" />
+                  <button type="button" onClick={() => { if (window.confirm("현재 편집 중인 상세페이지를 공급처 원본으로 교체할까요?")) setForm(current => ({ ...current, description: activeSupplier.rawDescription! })); }}>공급처 상세페이지를 편집 초안에 적용</button>
+                </details>}
                 <span>미리보기</span>
                 <iframe
                   sandbox=""

@@ -5,6 +5,8 @@ import { ProductSyncControl } from "../product-sync-control";
 import { ZicgamFullImport } from "./zicgam-full-import";
 import "./product-import.css";
 import { SupplierSyncSchedule } from "./supplier-sync-schedule";
+import { SupplierBatchControl } from "./supplier-batch-control";
+import Link from "next/link";
 
 // Authentication and the database binding only exist at request time. Never
 // execute this administrator page during Next.js static prerendering.
@@ -24,6 +26,8 @@ export default async function ImportProductPage() {
           </p>
         </header>
 
+        <SupplierBatchControl />
+        <Link href="/admin/products/changes">공급가·품절·상세페이지 변경 이력 확인</Link>
         <section
           className="supplier-import-summary"
           aria-label="가져오기 운영 안내"

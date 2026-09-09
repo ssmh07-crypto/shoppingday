@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useSupplierBatchLock } from "./use-supplier-batch-lock";
 
 const STATUS_EVENT = "shoppingday:rank-extension-status";
 const PING_EVENT = "shoppingday:rank-extension-ping";
@@ -80,6 +81,7 @@ export function ZicgamFullImport({
   provider?: "zicgam" | "ebulsamchon";
 }) {
   const supplierLabel = provider === "ebulsamchon" ? "이불삼촌" : "직감";
+  const batchLocked = useSupplierBatchLock();
   const [extension, setExtension] = useState({
     available: false,
     version: null as string | null,
@@ -98,6 +100,7 @@ export function ZicgamFullImport({
   const [importStartedAt, setImportStartedAt] = useState<number | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const [job, setJob] = useState<SyncJob | null>(null);
+  const captureActive = useRef(false);
 
   useEffect(() => {
     function onStatus(event: Event) {
@@ -112,8 +115,10 @@ export function ZicgamFullImport({
     function onProgress(event: Event) {
       const detail = (event as CustomEvent<CatalogProgressDetail>).detail;
       if (detail?.provider && detail.provider !== provider) return;
-      if (!detail || (requestId && detail.requestId !== requestId)) return;
-      if (!requestId && detail.requestId) setRequestId(detail.requestId);
+      if (!detail || (requestId && detail.requestId !== requestId && detail.phase !== "starting")) return;
+      if (detail.requestId) setRequestId(detail.requestId);
+      if (detail.phase === "starting") captureActive.current = true;
+      if (["queued", "complete", "failed", "stopped"].includes(detail.phase ?? "")) captureActive.current = false;
       setLastActivityAt(detail.updatedAt ?? Date.now());
       if (detail.counts) setCounts(detail.counts);
       if (detail.progress) setProgress(detail.progress);
@@ -196,7 +201,7 @@ export function ZicgamFullImport({
       if (!response.ok || !body?.success) return;
       const next = (body.job ?? null) as SyncJob | null;
       setJob(next);
-      if (!next) return;
+      if (!next || captureActive.current) return;
       setCounts({
         created: next.created,
         updated: next.updated,
@@ -226,8 +231,8 @@ export function ZicgamFullImport({
         );
       }
     }
-    const initial = window.setTimeout(() => void refreshJob(), 0);
-    const interval = window.setInterval(() => void refreshJob(), 5_000);
+    const initial = window.setTimeout(() => void refreshJob().catch(() => undefined), 0);
+    const interval = window.setInterval(() => void refreshJob().catch(() => undefined), 5_000);
     return () => {
       window.clearTimeout(initial);
       window.clearInterval(interval);
@@ -318,7 +323,7 @@ export function ZicgamFullImport({
         <button
           type="button"
           onClick={start}
-          disabled={!extensionReady || running}
+          disabled={!extensionReady || running || batchLocked}
         >
           {running ? "신규·변경 상품 확인 중…" : "신규·변경 상품 확인"}
         </button>
