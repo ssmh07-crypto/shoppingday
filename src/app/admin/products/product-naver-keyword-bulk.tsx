@@ -22,6 +22,9 @@ export function ProductNaverKeywordBulk({ productIds }: { productIds: string[] }
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [meta, setMeta] = useState<{ groupCount: number; tagLookupConfigured: boolean } | null>(null);
+  const applicableCount = previews.filter(
+    (item) => item.selected && (item.applyTitle || item.applyTags),
+  ).length;
 
   async function analyze() {
     setBusy(true); setMessage(""); setPreviews([]);
@@ -82,9 +85,11 @@ export function ProductNaverKeywordBulk({ productIds }: { productIds: string[] }
       {meta && <p className="inventory-bulk-meta">카테고리 {meta.groupCount}개로 묶어 조회 · 공식 태그 {meta.tagLookupConfigured ? "연결됨" : "미연결(기존 태그 유지)"}</p>}
       {previews.length > 0 && <>
         <div className="inventory-bulk-selection">
+          <button className="inventory-bulk-save" type="button" disabled={busy || !applicableCount} onClick={() => void apply()}>
+            {applicableCount ? `${applicableCount}개 가공 결과 적용·저장` : "적용할 변경 없음"}
+          </button>
           <button type="button" onClick={() => setPreviews((items) => items.map((item) => ({ ...item, selected: true })))}>전체 선택</button>
           <button type="button" onClick={() => setPreviews((items) => items.map((item) => ({ ...item, selected: false })))}>전체 해제</button>
-          <button type="button" disabled={busy} onClick={() => void apply()}>선택 상품 저장</button>
         </div>
         <div className="inventory-keyword-preview-list">
           {previews.map((item) => <article key={item.id} className={item.selected ? "is-selected" : ""}>
@@ -93,6 +98,12 @@ export function ProductNaverKeywordBulk({ productIds }: { productIds: string[] }
             <label className="inventory-keyword-change"><input type="checkbox" checked={item.applyTags} onChange={(event) => update(item.id, { applyTags: event.target.checked })} /><span>태그</span><input value={item.proposedTags.join(", ")} onChange={(event) => update(item.id, { proposedTags: event.target.value.split(",").map((tag) => tag.trim()).filter(Boolean).slice(0, 10) })} placeholder="쉼표로 구분, 최대 10개" /></label>
             {item.warning && <small>{item.warning}</small>}
           </article>)}
+        </div>
+        <div className="inventory-bulk-selection inventory-bulk-selection-bottom">
+          <span>선택한 상품명·태그 변경을 Shoppingday 초안에 저장합니다.</span>
+          <button className="inventory-bulk-save" type="button" disabled={busy || !applicableCount} onClick={() => void apply()}>
+            {applicableCount ? `${applicableCount}개 가공 결과 적용·저장` : "적용할 변경 없음"}
+          </button>
         </div>
       </>}
       <p role="status">{message}</p>

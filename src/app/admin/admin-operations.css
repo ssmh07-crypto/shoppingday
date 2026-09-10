@@ -3214,6 +3214,9 @@
 .inventory-naver-keyword-bulk > p { color: #64748b; font-size: 13px; }
 .inventory-bulk-meta { margin: 10px 0 0; }
 .inventory-bulk-selection { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0; }
+.inventory-keyword-reuse .inventory-bulk-save { border-color: #234da3; background: #234da3; color: #fff; font-weight: 700; }
+.inventory-bulk-selection-bottom { position: sticky; bottom: 0; align-items: center; justify-content: flex-end; padding: 10px; border: 1px solid #d5e1f3; border-radius: 10px; background: rgba(255, 255, 255, .96); box-shadow: 0 -6px 18px rgba(35, 77, 163, .08); }
+.inventory-bulk-selection-bottom span { margin-right: auto; color: #475569; font-size: 12px; }
 .inventory-keyword-preview-list { display: grid; gap: 10px; max-height: 560px; overflow: auto; }
 .inventory-keyword-preview-list article { display: grid; gap: 10px; padding: 12px; border: 1px solid #e2e8f0; border-radius: 10px; background: #f8fafc; }
 .inventory-keyword-preview-list article.is-selected { border-color: #93b4ee; background: #f4f7ff; }
