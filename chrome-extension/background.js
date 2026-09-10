@@ -39,12 +39,30 @@ async function handleMessage(message, sender) {
     const pending = await getPending(sender.tab?.id);
     assertCatalogSender(sender, pending);
     const url = new URL(sender.url);
-    if (sender.frameId !== 0 || url.protocol !== "https:" || url.pathname !== "/member/login.html" || pending?.kind !== "supplier_catalog" || pending.cancelled || pending.loginAttempted) {
-      return { ok: false, message: "로그인 또는 추가 인증을 직접 확인한 뒤 다시 실행해 주세요." };
+    if (
+      sender.frameId !== 0 ||
+      url.protocol !== "https:" ||
+      url.pathname !== "/member/login.html" ||
+      pending?.kind !== "supplier_catalog" ||
+      pending.cancelled ||
+      pending.loginAttempted
+    ) {
+      return {
+        ok: false,
+        message: "로그인 또는 추가 인증을 직접 확인한 뒤 다시 실행해 주세요.",
+      };
     }
-    const credentials = await ShoppingdayCredentialVault.credentials(pending.payload.provider);
-    if (!credentials) return { ok: false, message: "PC 로그인 보관함에 이 도매처의 로그인 정보를 저장해 주세요." };
-    await chrome.storage.session.set({ [pendingKey(sender.tab.id)]: { ...pending, loginAttempted: true } });
+    const credentials = await ShoppingdayCredentialVault.credentials(
+      pending.payload.provider,
+    );
+    if (!credentials)
+      return {
+        ok: false,
+        message: "PC 로그인 보관함에 이 도매처의 로그인 정보를 저장해 주세요.",
+      };
+    await chrome.storage.session.set({
+      [pendingKey(sender.tab.id)]: { ...pending, loginAttempted: true },
+    });
     return { ok: true, credentials };
   }
   if (message?.type === "shoppingday.rank.ping") {
@@ -263,8 +281,18 @@ async function handleMessage(message, sender) {
     if (!sourceTabId) throw new Error("Shoppingday 탭을 확인하지 못했습니다.");
     const tab = await getOrCreateCatalogTab(sourceTabId);
     const previous = await getPending(tab.id);
-    if (previous?.kind === "supplier_catalog" && !previous.cancelled && !["failed", "capture_complete", "stopped"].includes(previous.latest?.type?.split(".").at(-1))) {
-      return { ok: false, message: "다른 도매처 수집이 진행 중입니다. 완료 또는 중단 후 실행해 주세요." };
+    if (
+      previous?.kind === "supplier_catalog" &&
+      !previous.cancelled &&
+      !["failed", "capture_complete", "stopped"].includes(
+        previous.latest?.type?.split(".").at(-1),
+      )
+    ) {
+      return {
+        ok: false,
+        message:
+          "다른 도매처 수집이 진행 중입니다. 완료 또는 중단 후 실행해 주세요.",
+      };
     }
     await chrome.storage.session.set({
       [pendingKey(tab.id)]: {
@@ -283,9 +311,10 @@ async function handleMessage(message, sender) {
       },
     });
     const vaultState = await ShoppingdayCredentialVault.status();
-    const startUrl = vaultState.unlocked && vaultState.providers.includes(request.provider)
-      ? `https://${request.hostname}/member/login.html?returnUrl=${encodeURIComponent(request.startUrl)}`
-      : request.startUrl;
+    const startUrl =
+      vaultState.unlocked && vaultState.providers.includes(request.provider)
+        ? `https://${request.hostname}/member/login.html?returnUrl=${encodeURIComponent(request.startUrl)}`
+        : request.startUrl;
     await chrome.tabs.update(tab.id, { url: startUrl, active: true });
     return { ok: true };
   }
@@ -296,7 +325,8 @@ async function handleMessage(message, sender) {
     const tab = sourceTabId ? await findCatalogTab(sourceTabId) : null;
     const pending = await getPending(tab?.id);
     if (tab?.id && pending?.kind === "supplier_catalog") {
-      if (message.requestId && pending.requestId !== message.requestId) return { ok: false, message: "중단할 작업 ID가 다릅니다." };
+      if (message.requestId && pending.requestId !== message.requestId)
+        return { ok: false, message: "중단할 작업 ID가 다릅니다." };
       await chrome.storage.session.set({
         [pendingKey(tab.id)]: { ...pending, cancelled: true },
       });
@@ -593,7 +623,46 @@ function validateCatalogRequest(value) {
           discoveryDelayMs: 400,
           delayMs: 800,
         };
-  return { requestId, provider, ...config, maximumListPages: 500, batchConfirmed: value?.batchConfirmed === true };
+  const scope = value?.scope === "registered" ? "registered" : "all";
+  const targets =
+    scope === "registered"
+      ? validateRegisteredTargets(value?.targets, config.hostname)
+      : [];
+  return {
+    requestId,
+    provider,
+    ...config,
+    scope,
+    targets,
+    maximumListPages: 500,
+    batchConfirmed: value?.batchConfirmed === true,
+  };
+}
+
+function validateRegisteredTargets(value, hostname) {
+  if (!Array.isArray(value) || !value.length || value.length > 5_000) {
+    throw new Error("확인할 스마트스토어 등록 상품 목록이 올바르지 않습니다.");
+  }
+  const seen = new Set();
+  return value.map((target) => {
+    const externalProductId =
+      typeof target?.externalProductId === "string"
+        ? target.externalProductId.trim()
+        : "";
+    const url = new URL(typeof target?.url === "string" ? target.url : "");
+    if (
+      !/^\d{1,30}$/.test(externalProductId) ||
+      seen.has(externalProductId) ||
+      url.protocol !== "https:" ||
+      url.hostname !== hostname ||
+      url.pathname !== "/product/detail.html" ||
+      url.searchParams.get("product_no") !== externalProductId
+    ) {
+      throw new Error("등록 상품의 공급처 주소를 확인하지 못했습니다.");
+    }
+    seen.add(externalProductId);
+    return { externalProductId, url: url.toString() };
+  });
 }
 
 function assertShoppingdaySender(sender) {

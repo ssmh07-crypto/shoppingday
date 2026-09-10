@@ -28,7 +28,10 @@ window.addEventListener(REQUEST_EVENT, (event) => {
   })
     .then((response) => {
       if (response?.ok) {
-        dispatchCatalogProgress(event.detail?.requestId, { phase: "starting", message: "도매처 로그인과 상품 목록을 확인하고 있습니다." });
+        dispatchCatalogProgress(event.detail?.requestId, {
+          phase: "starting",
+          message: "도매처 로그인과 상품 목록을 확인하고 있습니다.",
+        });
         return;
       }
       dispatchResult(event.detail?.requestId, {
@@ -196,11 +199,16 @@ window.addEventListener(CATALOG_START_EVENT, (event) => {
     });
 });
 window.addEventListener("shoppingday:supplier-vault-open", () => {
-  void sendRuntimeMessage({ type: "shoppingday.supplier.vault.open" }).catch(() => undefined);
+  void sendRuntimeMessage({ type: "shoppingday.supplier.vault.open" }).catch(
+    () => undefined,
+  );
 });
 
 window.addEventListener(CATALOG_STOP_EVENT, (event) => {
-  void sendRuntimeMessage({ type: "shoppingday.zicgam.catalog.stop", requestId: event.detail?.requestId })
+  void sendRuntimeMessage({
+    type: "shoppingday.zicgam.catalog.stop",
+    requestId: event.detail?.requestId,
+  })
     .then(() =>
       dispatchCatalogProgress(event.detail?.requestId, { phase: "stopped" }),
     )
@@ -244,6 +252,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
   if (message?.type === "shoppingday.zicgam.catalog.discovery_complete") {
     const total = Number(message.progress?.discoveredProducts ?? 0);
+    const registeredOnly = message.progress?.scope === "registered";
     const pages = Number(message.progress?.listPages ?? 0);
     const displayedTotal = message.progress?.displayedTotal;
     const terminalEmptyPage = Number(
@@ -253,13 +262,18 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       phase: "discovery_complete",
       progress: message.progress,
     });
-    const siteTotalMessage =
-      Number.isInteger(displayedTotal) && displayedTotal >= 0
+    const siteTotalMessage = registeredOnly
+      ? " 스마트스토어에 등록 연결된 상품만 확인합니다."
+      : Number.isInteger(displayedTotal) && displayedTotal >= 0
         ? ` 사이트 표시 전체 수는 ${displayedTotal.toLocaleString("ko-KR")}개입니다${displayedTotal === total ? "(일치)." : "(목록 발견 수와 다름)."}`
         : " 사이트 표시 전체 수는 읽지 못했지만 빈 페이지 기준으로 끝을 확인했습니다.";
-    const approved = message.batchConfirmed === true || window.confirm(
-      `${message.supplierLabel ?? "공급처"} 전체상품 ${pages.toLocaleString("ko-KR")}페이지에서 고유 상품 ${total.toLocaleString("ko-KR")}개를 확인했고, ${terminalEmptyPage.toLocaleString("ko-KR")}페이지가 비어 있어 목록의 끝으로 판정했습니다.${siteTotalMessage} 상품 상세 정보 저장을 시작할까요?`,
-    );
+    const approved =
+      message.batchConfirmed === true ||
+      window.confirm(
+        registeredOnly
+          ? `${message.supplierLabel ?? "공급처"}의 스마트스토어 등록 상품 ${total.toLocaleString("ko-KR")}개만 확인할까요?${siteTotalMessage}`
+          : `${message.supplierLabel ?? "공급처"} 전체상품 ${pages.toLocaleString("ko-KR")}페이지에서 고유 상품 ${total.toLocaleString("ko-KR")}개를 확인했고, ${terminalEmptyPage.toLocaleString("ko-KR")}페이지가 비어 있어 목록의 끝으로 판정했습니다.${siteTotalMessage} 상품 상세 정보 저장을 시작할까요?`,
+      );
     sendResponse({ ok: approved, cancelled: !approved });
     return;
   }
@@ -294,9 +308,7 @@ async function reportStatus() {
           ...response.catalog.latest,
           provider: response.catalog.provider,
           supplierLabel:
-            response.catalog.provider === "ebulsamchon"
-              ? "이불삼촌"
-              : "직감",
+            response.catalog.provider === "ebulsamchon" ? "이불삼촌" : "직감",
         }),
         counts: response.catalog.stats,
         restored: true,
@@ -419,6 +431,10 @@ async function startCatalogBatchWithRetry(message) {
         `/api/suppliers/${catalogProvider(message)}/products/sync`,
         {
           method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            mode: message.payload?.scope === "registered" ? "changes" : "all",
+          }),
           credentials: "same-origin",
           signal: AbortSignal.timeout(45_000),
         },

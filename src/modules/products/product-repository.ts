@@ -39,8 +39,12 @@ export interface ProductRepository {
   findImported(
     supplierCode: string,
     externalProductId: string,
+    options?: { registeredOnly?: boolean; ownerId?: string },
   ): Promise<ImportedProductRecord | null>;
-  listImported(supplierCode: string): Promise<ImportedProductRecord[]>;
+  listImported(
+    supplierCode: string,
+    options?: { registeredOnly?: boolean; ownerId?: string },
+  ): Promise<ImportedProductRecord[]>;
   importSupplierProduct(
     product: SupplierProduct,
     ownerId: string,
@@ -177,17 +181,15 @@ export class DrizzleProductRepository implements ProductRepository {
         Object.keys(oldValues) as (keyof typeof oldValues)[]
       ).filter((key) => oldValues[key] !== newValues[key]);
       if (changedFields.length && currentProduct.ownerId) {
-        await tx
-          .insert(productAuditLogs)
-          .values({
-            actorId: currentProduct.ownerId,
-            entityId: imported.productId,
-            action: "supplier_sync",
-            changedFields,
-            oldValues,
-            newValues,
-            requestId: crypto.randomUUID(),
-          });
+        await tx.insert(productAuditLogs).values({
+          actorId: currentProduct.ownerId,
+          entityId: imported.productId,
+          action: "supplier_sync",
+          changedFields,
+          oldValues,
+          newValues,
+          requestId: crypto.randomUUID(),
+        });
       }
       if (
         sellingPrice !== null &&
@@ -204,30 +206,53 @@ export class DrizzleProductRepository implements ProductRepository {
             ),
           );
         if (publications.length)
-          await tx
-            .insert(supplierPriceApplications)
-            .values(
-              publications.map((publication) => ({
-                productId: imported.productId,
-                publicationId: publication.id,
-                targetPrice: sellingPrice,
-              })),
-            );
+          await tx.insert(supplierPriceApplications).values(
+            publications.map((publication) => ({
+              productId: imported.productId,
+              publicationId: publication.id,
+              targetPrice: sellingPrice,
+            })),
+          );
       }
       // Keep unapplied description tasks current across repeated supplier refreshes.
       // Their previous value remains the remote baseline, so a remote seller edit is still protected.
-      const nextDescription = sanitizeDescription(supplierProduct.rawDescription ?? "");
+      const nextDescription = sanitizeDescription(
+        supplierProduct.rawDescription ?? "",
+      );
       const carriedPublicationIds = new Set<string>();
-      if (previousSupplier.rawDescription !== supplierProduct.rawDescription && nextDescription) {
-        const pendingDescriptions = await tx.select().from(supplierChangeApplications).where(and(
-          eq(supplierChangeApplications.productId, imported.productId),
-          eq(supplierChangeApplications.supplierProductId, supplierProductId),
-          eq(supplierChangeApplications.kind, "description"),
-          inArray(supplierChangeApplications.status, ["pending", "failed"]),
-        ));
+      if (
+        previousSupplier.rawDescription !== supplierProduct.rawDescription &&
+        nextDescription
+      ) {
+        const pendingDescriptions = await tx
+          .select()
+          .from(supplierChangeApplications)
+          .where(
+            and(
+              eq(supplierChangeApplications.productId, imported.productId),
+              eq(
+                supplierChangeApplications.supplierProductId,
+                supplierProductId,
+              ),
+              eq(supplierChangeApplications.kind, "description"),
+              inArray(supplierChangeApplications.status, ["pending", "failed"]),
+            ),
+          );
         for (const task of pendingDescriptions) {
-          if (![task.previousValue, task.targetValue].includes(currentProduct.description)) continue;
-          await tx.update(supplierChangeApplications).set({ targetValue: nextDescription, status: "pending", errorMessage: null }).where(eq(supplierChangeApplications.id, task.id));
+          if (
+            ![task.previousValue, task.targetValue].includes(
+              currentProduct.description,
+            )
+          )
+            continue;
+          await tx
+            .update(supplierChangeApplications)
+            .set({
+              targetValue: nextDescription,
+              status: "pending",
+              errorMessage: null,
+            })
+            .where(eq(supplierChangeApplications.id, task.id));
           carriedPublicationIds.add(task.publicationId);
         }
       }
@@ -239,16 +264,33 @@ export class DrizzleProductRepository implements ProductRepository {
         editedDescription: currentProduct.description,
       });
       if (changeTargets.length) {
-        const publications = await tx.select({ id: productPublications.id }).from(productPublications).where(and(
-          eq(productPublications.productId, imported.productId),
-          sql`${productPublications.originProductNo} is not null`,
-          sql`${productPublications.status} <> 'deleted'`,
-          sql`${productPublications.remoteStatusType} is distinct from 'DELETE'`,
-        ));
-        const tasks = publications.flatMap(publication => changeTargets.filter(target => target.kind !== "description" || !carriedPublicationIds.has(publication.id)).map(target => ({
-          ...target, productId: imported.productId, supplierProductId, publicationId: publication.id,
-        })));
-        if (tasks.length) await tx.insert(supplierChangeApplications).values(tasks);
+        const publications = await tx
+          .select({ id: productPublications.id })
+          .from(productPublications)
+          .where(
+            and(
+              eq(productPublications.productId, imported.productId),
+              sql`${productPublications.originProductNo} is not null`,
+              sql`${productPublications.status} <> 'deleted'`,
+              sql`${productPublications.remoteStatusType} is distinct from 'DELETE'`,
+            ),
+          );
+        const tasks = publications.flatMap((publication) =>
+          changeTargets
+            .filter(
+              (target) =>
+                target.kind !== "description" ||
+                !carriedPublicationIds.has(publication.id),
+            )
+            .map((target) => ({
+              ...target,
+              productId: imported.productId,
+              supplierProductId,
+              publicationId: publication.id,
+            })),
+        );
+        if (tasks.length)
+          await tx.insert(supplierChangeApplications).values(tasks);
       }
       if (Object.keys(productUpdates).length) {
         await tx
@@ -267,7 +309,11 @@ export class DrizzleProductRepository implements ProductRepository {
     });
   }
 
-  async findImported(supplierCode: string, externalProductId: string) {
+  async findImported(
+    supplierCode: string,
+    externalProductId: string,
+    options?: { registeredOnly?: boolean; ownerId?: string },
+  ) {
     const [row] = await this.database
       .select({
         productId: productSupplierLinks.productId,
@@ -280,17 +326,23 @@ export class DrizzleProductRepository implements ProductRepository {
         productSupplierLinks,
         eq(productSupplierLinks.supplierProductId, supplierProducts.id),
       )
+      .innerJoin(products, eq(products.id, productSupplierLinks.productId))
       .where(
         and(
           eq(suppliers.code, supplierCode),
           eq(supplierProducts.externalProductId, externalProductId),
+          options?.ownerId ? eq(products.ownerId, options.ownerId) : undefined,
+          options?.registeredOnly ? registeredPublicationExists() : undefined,
         ),
       )
       .limit(1);
     return row ?? null;
   }
 
-  async listImported(supplierCode: string) {
+  async listImported(
+    supplierCode: string,
+    options?: { registeredOnly?: boolean; ownerId?: string },
+  ) {
     return this.database
       .select({
         productId: productSupplierLinks.productId,
@@ -303,7 +355,14 @@ export class DrizzleProductRepository implements ProductRepository {
         productSupplierLinks,
         eq(productSupplierLinks.supplierProductId, supplierProducts.id),
       )
-      .where(eq(suppliers.code, supplierCode));
+      .innerJoin(products, eq(products.id, productSupplierLinks.productId))
+      .where(
+        and(
+          eq(suppliers.code, supplierCode),
+          options?.ownerId ? eq(products.ownerId, options.ownerId) : undefined,
+          options?.registeredOnly ? registeredPublicationExists() : undefined,
+        ),
+      );
   }
 
   async importSupplierProduct(product: SupplierProduct, ownerId: string) {
@@ -397,6 +456,16 @@ export class DrizzleProductRepository implements ProductRepository {
       .limit(1);
     return row ?? null;
   }
+}
+
+function registeredPublicationExists() {
+  return sql`exists (
+    select 1 from ${productPublications}
+    where ${productPublications.productId} = ${products.id}
+      and ${productPublications.originProductNo} is not null
+      and ${productPublications.status} <> 'deleted'
+      and ${productPublications.remoteStatusType} is distinct from 'DELETE'
+  )`;
 }
 
 function isUniqueViolation(error: unknown): boolean {

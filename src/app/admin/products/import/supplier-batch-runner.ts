@@ -82,6 +82,7 @@ async function waitForJob(
 
 function capture(
   provider: Exclude<BatchSupplier, "dome">,
+  targets: { externalProductId: string; url: string }[],
   signal: AbortSignal,
   update: (value: SupplierRunUpdate) => void,
 ) {
@@ -127,7 +128,7 @@ function capture(
         cleanup();
         reject(
           new Error(
-            "확장 프로그램 0.5.19 이상을 다시 로드하고 로그인 보관함을 확인해 주세요.",
+            "확장 프로그램 0.5.20 이상을 다시 로드하고 로그인 보관함을 확인해 주세요.",
           ),
         );
       }
@@ -140,7 +141,13 @@ function capture(
     }
     window.dispatchEvent(
       new CustomEvent("shoppingday:zicgam-catalog-start", {
-        detail: { requestId, provider, batchConfirmed: true },
+        detail: {
+          requestId,
+          provider,
+          batchConfirmed: true,
+          scope: "registered",
+          targets,
+        },
       }),
     );
   });
@@ -161,15 +168,27 @@ export async function runSupplier(
       );
     return waitForJob(provider, latest.id, signal, update);
   }
-  const id =
-    provider === "dome"
-      ? (
-          await json("/api/suppliers/dome/products/sync", signal, {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ mode: "changes" }),
-          })
-        ).job.id
-      : await capture(provider, signal, update);
+  let id: string;
+  if (provider === "dome") {
+    id = (
+      await json("/api/suppliers/dome/products/sync", signal, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ mode: "changes" }),
+      })
+    ).job.id;
+  } else {
+    const targetBody = await json(
+      `/api/suppliers/${provider}/products/registered-targets`,
+      signal,
+    );
+    const targets = targetBody.targets as {
+      externalProductId: string;
+      url: string;
+    }[];
+    if (!targets.length) return "스마트스토어 등록 상품 없음 · 확인 생략";
+    update({ message: `등록 상품 ${targets.length}개만 확인합니다.` });
+    id = await capture(provider, targets, signal, update);
+  }
   return waitForJob(provider, id, signal, update);
 }

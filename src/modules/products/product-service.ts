@@ -233,22 +233,24 @@ export class ProductImportService {
       ]),
     );
     const existing = new Map(
-      (await this.products.listImported(this.supplier.code)).map((record) => [
-        record.supplierProduct.externalProductId,
-        record,
-      ]),
+      (
+        await this.products.listImported(this.supplier.code, {
+          registeredOnly: true,
+          ownerId: actorId,
+        })
+      ).map((record) => [record.supplierProduct.externalProductId, record]),
+    );
+    const targets = [...incoming.values()].filter((product) =>
+      existing.has(product.externalProductId),
     );
 
-    let created = 0;
+    const created = 0;
     let updated = 0;
     let unchanged = 0;
     let processed = 0;
-    for (const product of incoming.values()) {
-      const current = existing.get(product.externalProductId);
-      if (!current) {
-        await this.products.importSupplierProduct(product, actorId);
-        created += 1;
-      } else if (supplierProductChanged(current.supplierProduct, product)) {
+    for (const product of targets) {
+      const current = existing.get(product.externalProductId)!;
+      if (supplierProductChanged(current.supplierProduct, product)) {
         await (protectedFields
           ? this.products.updateSupplierProduct(
               current.supplierProductId,
@@ -266,10 +268,10 @@ export class ProductImportService {
         unchanged += 1;
       }
       processed += 1;
-      if (processed % 25 === 0 || processed === incoming.size) {
+      if (processed % 25 === 0 || processed === targets.length) {
         await onProgress?.({
           success: true,
-          total: incoming.size,
+          total: targets.length,
           processed,
           created,
           updated,
@@ -280,7 +282,7 @@ export class ProductImportService {
 
     return {
       success: true,
-      total: incoming.size,
+      total: targets.length,
       created,
       updated,
       unchanged,

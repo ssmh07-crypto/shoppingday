@@ -30,7 +30,7 @@ async function main() {
   const database = getDb();
   const jobs = new SupplierSyncJobRepository(database);
   const job = await jobs.findForSupplier(jobId, "ebulsamchon");
-  if (!job || job.type !== "all") {
+  if (!job || !["all", "changes"].includes(job.type)) {
     throw new Error("유효한 이불삼촌 가져오기 작업을 찾지 못했습니다.");
   }
   const runId = process.env.GITHUB_RUN_ID;
@@ -71,7 +71,9 @@ async function main() {
       );
       const products = ebulsamchonCapturedProductSchema.array().parse(parsed);
       for (const product of products) {
-        const result = await importer.importCaptured(product, job.actorId);
+        const result = await importer.importCaptured(product, job.actorId, {
+          registeredOnly: job.type === "changes",
+        });
         progress.processed += 1;
         progress[result.action] += 1;
         if (

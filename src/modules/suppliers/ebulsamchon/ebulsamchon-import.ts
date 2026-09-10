@@ -40,7 +40,11 @@ export class EbulsamchonImportService {
     this.products = new DrizzleProductRepository(database);
   }
 
-  async importCaptured(input: EbulsamchonCapturedProduct, ownerId: string) {
+  async importCaptured(
+    input: EbulsamchonCapturedProduct,
+    ownerId: string,
+    options?: { registeredOnly?: boolean },
+  ) {
     await this.database
       .insert(suppliers)
       .values({
@@ -55,8 +59,17 @@ export class EbulsamchonImportService {
     const existing = await this.products.findImported(
       product.supplierCode,
       product.externalProductId,
+      options?.registeredOnly ? { registeredOnly: true, ownerId } : undefined,
     );
     if (!existing) {
+      if (options?.registeredOnly) {
+        return {
+          success: true as const,
+          action: "unchanged" as const,
+          productId: null,
+          externalProductId: product.externalProductId,
+        };
+      }
       const imported = await this.products.importSupplierProduct(
         product,
         ownerId,

@@ -7,12 +7,17 @@ import {
   SupplierSyncJobRepository,
 } from "@/modules/suppliers/core/sync-job-repository";
 import { createZicgamUploadToken } from "@/modules/suppliers/zicgam/zicgam-batch-storage";
+import { z } from "zod";
+
+const inputSchema = z.object({ mode: z.enum(["all", "changes"]) }).strict();
 
 export async function GET() {
   return withDbSession(async (database) => {
     try {
       await requireAdmin(database);
-      const job = await new SupplierSyncJobRepository(database).latest("zicgam");
+      const job = await new SupplierSyncJobRepository(database).latest(
+        "zicgam",
+      );
       return NextResponse.json(
         { success: true, job },
         { headers: { "Cache-Control": "private, no-store" } },
@@ -23,11 +28,12 @@ export async function GET() {
   });
 }
 
-export async function POST() {
+export async function POST(request: Request) {
   return withDbSession(async (database) => {
     const jobs = new SupplierSyncJobRepository(database);
     try {
       const user = await requireAdmin(database);
+      const input = inputSchema.parse(await request.json().catch(() => null));
       await database
         .insert(suppliers)
         .values({
@@ -39,13 +45,14 @@ export async function POST() {
         .onConflictDoNothing({ target: suppliers.code });
       let job;
       try {
-        job = await jobs.create("zicgam", user.id, "all");
+        job = await jobs.create("zicgam", user.id, input.mode);
       } catch (error) {
         if (!isActiveJobConflict(error)) throw error;
         const existing = await jobs.latest("zicgam");
         if (
           !existing ||
           existing.actorId !== user.id ||
+          existing.type !== input.mode ||
           existing.status !== "queued" ||
           existing.total !== 0
         ) {
@@ -68,6 +75,18 @@ export async function POST() {
 }
 
 function syncError(error: unknown) {
+  if (error instanceof z.ZodError) {
+    return NextResponse.json(
+      {
+        success: false,
+        error: {
+          code: "invalid_sync_mode",
+          message: "가져오기 모드를 확인해 주세요.",
+        },
+      },
+      { status: 400 },
+    );
+  }
   if (error instanceof AuthenticationError) {
     return NextResponse.json(
       { success: false, error: { code: error.code, message: error.message } },

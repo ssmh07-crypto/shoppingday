@@ -227,6 +227,31 @@ describe("상품 import 통합 흐름", () => {
       unchanged: 0,
     });
     expect(context.calls).toHaveLength(2);
+    expect(context.repository.listImported).toHaveBeenCalledWith("dome", {
+      registeredOnly: true,
+      ownerId: "u1",
+    });
+  });
+  it("변경 조회 결과에서 스마트스토어 미등록 상품은 가져오지 않는다", async () => {
+    const context = setup();
+    vi.mocked(context.adapter.fetchProducts)
+      .mockResolvedValueOnce({ products: [], responseStatus: 200 })
+      .mockResolvedValueOnce({ products: [product], responseStatus: 200 });
+
+    const result = await context.service.syncChanges("u1", {
+      from: "2026-07-15",
+      to: "2026-07-16",
+    });
+
+    expect(context.repository.importSupplierProduct).not.toHaveBeenCalled();
+    expect(context.repository.updateSupplierProduct).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      success: true,
+      total: 0,
+      created: 0,
+      updated: 0,
+      unchanged: 0,
+    });
   });
   it("전체 가져오기는 기존 상품을 한 번에 읽고 동일 상품의 DB 쓰기를 생략한다", async () => {
     const context = setup(saved);

@@ -26,7 +26,7 @@ export function SupplierBatchControl() {
     versionParts.length === 3 &&
     (versionParts[0] > 0 ||
       versionParts[1] > 5 ||
-      (versionParts[1] === 5 && versionParts[2] >= 19));
+      (versionParts[1] === 5 && versionParts[2] >= 20));
   useEffect(() => {
     const selectionTimer = window.setTimeout(() => {
       try {
@@ -76,14 +76,14 @@ export function SupplierBatchControl() {
     if (controller.current || !targets.length) return;
     if (targets.some((key) => key !== "dome") && !extensionReady) {
       alert(
-        "Chrome 확장 프로그램 0.5.19 이상을 다시 로드한 뒤 이 화면을 새로고침해 주세요.",
+        "Chrome 확장 프로그램 0.5.20 이상을 다시 로드한 뒤 이 화면을 새로고침해 주세요.",
       );
       return;
     }
     if (
       !scheduled &&
       !confirm(
-        `${targets.map((key) => supplierNames[key]).join(", ")}의 신규·변경 상품을 확인할까요? Chrome 수집 도매처는 이 화면을 열어 두세요.`,
+        `${targets.map((key) => supplierNames[key]).join(", ")}의 스마트스토어 등록 상품만 변경 여부를 확인할까요? Chrome 수집 도매처는 이 화면을 열어 두세요.`,
       )
     )
       return;
@@ -252,7 +252,7 @@ export function SupplierBatchControl() {
           disabled={running || !selected.length}
           onClick={() => void start()}
         >
-          선택 도매처 신규·변경 확인 ({selected.length})
+          선택 도매처 등록 상품 변경 확인 ({selected.length})
         </button>
         {running && (
           <button type="button" onClick={() => controller.current?.abort()}>
@@ -277,7 +277,7 @@ export function SupplierBatchControl() {
         </button>
       </div>
       <p>
-        직감·이불삼촌은 Chrome 확장 프로그램 0.5.19 이상과 로그인 상태 또는 잠금
+        직감·이불삼촌은 Chrome 확장 프로그램 0.5.20 이상과 로그인 상태 또는 잠금
         해제한 보관함이 필요합니다.
       </p>
       <div aria-live="polite">

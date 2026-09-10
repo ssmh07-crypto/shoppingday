@@ -34,6 +34,7 @@ interface CatalogProgressDetail {
     failed: number;
   };
   progress?: {
+    scope?: "registered" | "all";
     listPages?: number;
     currentPage?: number;
     lastPage?: number;
@@ -42,7 +43,8 @@ interface CatalogProgressDetail {
     current?: number;
     discoveredProducts?: number;
     displayedTotal?: number | null;
-    verificationSource?: "empty_page" | "empty_page_and_site_total";
+    verificationSource?:
+      "registered_products" | "empty_page" | "empty_page_and_site_total";
     hasNextPage?: boolean;
     processed?: number;
     captured?: number;
@@ -115,10 +117,19 @@ export function ZicgamFullImport({
     function onProgress(event: Event) {
       const detail = (event as CustomEvent<CatalogProgressDetail>).detail;
       if (detail?.provider && detail.provider !== provider) return;
-      if (!detail || (requestId && detail.requestId !== requestId && detail.phase !== "starting")) return;
+      if (
+        !detail ||
+        (requestId &&
+          detail.requestId !== requestId &&
+          detail.phase !== "starting")
+      )
+        return;
       if (detail.requestId) setRequestId(detail.requestId);
       if (detail.phase === "starting") captureActive.current = true;
-      if (["queued", "complete", "failed", "stopped"].includes(detail.phase ?? "")) captureActive.current = false;
+      if (
+        ["queued", "complete", "failed", "stopped"].includes(detail.phase ?? "")
+      )
+        captureActive.current = false;
       setLastActivityAt(detail.updatedAt ?? Date.now());
       if (detail.counts) setCounts(detail.counts);
       if (detail.progress) setProgress(detail.progress);
@@ -141,7 +152,9 @@ export function ZicgamFullImport({
       if (detail.phase === "discovery_complete") {
         setPhase("discovering");
         setMessage(
-          `${supplierLabel} 전체상품 ${detail.progress?.listPages ?? 0}페이지에서 상품 ${detail.progress?.discoveredProducts ?? 0}개를 확인했고 ${detail.progress?.terminalEmptyPage ?? 0}페이지가 비어 있어 목록의 끝으로 판정했습니다.`,
+          detail.progress?.scope === "registered"
+            ? `${supplierLabel} 스마트스토어 등록 상품 ${detail.progress.discoveredProducts ?? 0}개의 상세 정보를 확인합니다.`
+            : `${supplierLabel} 전체상품 ${detail.progress?.listPages ?? 0}페이지에서 상품 ${detail.progress?.discoveredProducts ?? 0}개를 확인했고 ${detail.progress?.terminalEmptyPage ?? 0}페이지가 비어 있어 목록의 끝으로 판정했습니다.`,
         );
       }
       if (detail.phase === "importing") {
@@ -231,8 +244,14 @@ export function ZicgamFullImport({
         );
       }
     }
-    const initial = window.setTimeout(() => void refreshJob().catch(() => undefined), 0);
-    const interval = window.setInterval(() => void refreshJob().catch(() => undefined), 5_000);
+    const initial = window.setTimeout(
+      () => void refreshJob().catch(() => undefined),
+      0,
+    );
+    const interval = window.setInterval(
+      () => void refreshJob().catch(() => undefined),
+      5_000,
+    );
     return () => {
       window.clearTimeout(initial);
       window.clearInterval(interval);
@@ -240,7 +259,7 @@ export function ZicgamFullImport({
   }, [provider, supplierLabel]);
 
   const extensionReady =
-    extension.available && isMinimumVersion(extension.version, "0.5.18");
+    extension.available && isMinimumVersion(extension.version, "0.5.20");
   const running = [
     "starting",
     "discovering",
@@ -273,25 +292,72 @@ export function ZicgamFullImport({
     );
   }, [importStartedAt, now, progress]);
 
-  function start() {
+  async function start(scope: "registered" | "all" = "registered") {
     if (!extensionReady || running) return;
     if (
       !confirm(
-        `${supplierLabel}의 신규·변경 상품을 확인할까요? 전체 목록을 비교하므로 작업 중에는 Shoppingday와 ${supplierLabel} 탭을 닫지 마세요.`,
+        scope === "registered"
+          ? `${supplierLabel}에서 스마트스토어에 등록된 상품만 변경 여부를 확인할까요? 작업 중에는 Shoppingday와 ${supplierLabel} 탭을 닫지 마세요.`
+          : `${supplierLabel} 전체 상품을 다시 가져올까요? 최초 연결 또는 누락 복구 때만 사용하세요.`,
       )
     )
       return;
     const id = crypto.randomUUID();
     setRequestId(id);
     setPhase("starting");
-    setMessage(`${supplierLabel} 카테고리와 상품 주소를 찾고 있습니다.`);
+    setMessage(
+      scope === "registered"
+        ? "스마트스토어 등록 상품 목록을 준비하고 있습니다."
+        : `${supplierLabel} 카테고리와 상품 주소를 찾고 있습니다.`,
+    );
     setProgress(undefined);
     setCounts({ created: 0, updated: 0, unchanged: 0, failed: 0 });
     setLastActivityAt(Date.now());
     setImportStartedAt(null);
-    window.dispatchEvent(
-      new CustomEvent(START_EVENT, { detail: { requestId: id, provider } }),
-    );
+    try {
+      const targets =
+        scope === "registered"
+          ? await fetch(
+              `/api/suppliers/${provider}/products/registered-targets`,
+              { cache: "no-store" },
+            ).then(async (response) => {
+              const body = await response.json().catch(() => null);
+              if (!response.ok || !body?.success) {
+                throw new Error(
+                  body?.error?.message ??
+                    "등록 상품 목록을 불러오지 못했습니다.",
+                );
+              }
+              return body.targets as {
+                externalProductId: string;
+                url: string;
+              }[];
+            })
+          : [];
+      if (scope === "registered" && !targets.length) {
+        setPhase("complete");
+        setMessage("스마트스토어에 등록된 상품이 없어 확인을 생략했습니다.");
+        return;
+      }
+      window.dispatchEvent(
+        new CustomEvent(START_EVENT, {
+          detail: {
+            requestId: id,
+            provider,
+            scope,
+            targets,
+            batchConfirmed: scope === "registered",
+          },
+        }),
+      );
+    } catch (error) {
+      setPhase("failed");
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : "등록 상품 목록을 불러오지 못했습니다.",
+      );
+    }
   }
 
   function stop() {
@@ -315,17 +381,17 @@ export function ZicgamFullImport({
             <span className="supplier-import-badge browser">Chrome 수집</span>
           </div>
           <p>
-            전체 목록을 비교해 새 상품을 추가하고 기존 원본 정보를 갱신합니다.
+            스마트스토어에 등록된 상품만 공급 상태·가격·상세 변경을 확인합니다.
           </p>
         </div>
       </header>
       <div className="supplier-import-primary-action">
         <button
           type="button"
-          onClick={start}
+          onClick={() => void start("registered")}
           disabled={!extensionReady || running || batchLocked}
         >
-          {running ? "신규·변경 상품 확인 중…" : "신규·변경 상품 확인"}
+          {running ? "등록 상품 변경 확인 중…" : "등록 상품 변경 확인"}
         </button>
         {running && phase !== "queued" && (
           <button type="button" className="secondary" onClick={stop}>
@@ -338,17 +404,25 @@ export function ZicgamFullImport({
       >
         {extensionReady
           ? `Chrome 확장 프로그램 ${extension.version ?? ""} 연결됨`
-          : `Chrome 확장 프로그램 0.5.18 이상이 필요합니다${extension.version ? ` (현재 ${extension.version})` : ""}. 확장을 다시 로드하고 이 페이지를 강력 새로고침해 주세요.`}
+          : `Chrome 확장 프로그램 0.5.20 이상이 필요합니다${extension.version ? ` (현재 ${extension.version})` : ""}. 확장을 다시 로드하고 이 페이지를 강력 새로고침해 주세요.`}
       </p>
       {phase === "discovering" && (
         <p className="notice">
-          전체상품 목록 {progress?.currentPage ?? progress?.listPages ?? 0}
-          페이지 확인 · 현재 페이지 {progress?.pageItemCount ?? 0}개 · 고유 상품{" "}
-          {progress?.discoveredProducts ?? 0}개
-          {progress?.displayedTotal !== null &&
-          progress?.displayedTotal !== undefined
-            ? ` · 사이트 표시 전체 ${progress.displayedTotal}개`
-            : ""}
+          {progress?.scope === "registered" ? (
+            <>
+              스마트스토어 등록 상품 {progress.discoveredProducts ?? 0}개 확인
+            </>
+          ) : (
+            <>
+              전체상품 목록 {progress?.currentPage ?? progress?.listPages ?? 0}
+              페이지 확인 · 현재 페이지 {progress?.pageItemCount ?? 0}개 · 고유
+              상품 {progress?.discoveredProducts ?? 0}개
+              {progress?.displayedTotal !== null &&
+              progress?.displayedTotal !== undefined
+                ? ` · 사이트 표시 전체 ${progress.displayedTotal}개`
+                : ""}
+            </>
+          )}
         </p>
       )}
       {phase === "capturing" && (
@@ -401,9 +475,23 @@ export function ZicgamFullImport({
           {message}
         </p>
       )}
+      <details className="supplier-import-more">
+        <summary>초기 연결·누락 복구</summary>
+        <p>
+          전체 상품 목록은 최초 연결하거나 누락된 원본을 복구할 때만 확인합니다.
+        </p>
+        <button
+          type="button"
+          className="secondary"
+          disabled={!extensionReady || running || batchLocked}
+          onClick={() => void start("all")}
+        >
+          전체 상품 다시 가져오기
+        </button>
+      </details>
       <footer className="supplier-import-card-foot">
-        전체 목록을 비교하므로 상품 수에 따라 오래 걸릴 수 있습니다. 가져온
-        상품은 스마트스토어에 자동 등록되지 않습니다.
+        평소 변경 확인은 등록 상품 상세주소만 순회합니다. 전체 목록 확인은 위
+        복구 도구를 선택했을 때만 실행합니다.
       </footer>
     </article>
   );

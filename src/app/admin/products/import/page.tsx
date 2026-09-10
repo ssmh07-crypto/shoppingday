@@ -21,22 +21,24 @@ export default async function ImportProductPage() {
           <span className="inventory-eyebrow">SUPPLIER IMPORTS</span>
           <h1>위탁상품 가져오기</h1>
           <p>
-            도매처별로 신규·변경 상품을 확인하고, 가져온 상품 중 등록할 상품만
-            선별합니다.
+            새 상품은 전체 가져오기에서 선별하고, 평소에는 스마트스토어 등록
+            상품의 공급처 변경만 확인합니다.
           </p>
         </header>
 
         <SupplierBatchControl />
-        <Link href="/admin/products/changes">공급가·품절·상세페이지 변경 이력 확인</Link>
+        <Link href="/admin/products/changes">
+          공급가·품절·상세페이지 변경 이력 확인
+        </Link>
         <section
           className="supplier-import-summary"
           aria-label="가져오기 운영 안내"
         >
           <strong>운영 기준</strong>
           <p>
-            평소에는 각 도매처의 <strong>신규·변경 상품 확인</strong>만
-            실행하세요. 전체 가져오기는 최초 연결이나 데이터 복구가 필요할 때
-            사용합니다.
+            평소에는 각 도매처의 <strong>등록 상품 변경 확인</strong>만
+            실행하세요. 전체 가져오기는 새 상품을 찾거나 최초 연결·데이터 복구가
+            필요할 때 사용합니다.
           </p>
         </section>
 
@@ -61,7 +63,8 @@ export default async function ImportProductPage() {
                   <span className="supplier-import-badge api">API 연동</span>
                 </div>
                 <p>
-                  마지막 확인 이후 추가되거나 바뀐 상품만 빠르게 가져옵니다.
+                  마지막 확인 이후 바뀐 상품 중 스마트스토어 등록 상품만
+                  갱신합니다.
                 </p>
               </div>
             </header>
@@ -69,7 +72,7 @@ export default async function ImportProductPage() {
               <ProductSyncControl
                 mode="changes"
                 variant="card"
-                actionLabel="신규·변경 상품 확인"
+                actionLabel="등록 상품 변경 확인"
               />
             </div>
             <p className="supplier-import-connection ready">
@@ -94,8 +97,8 @@ export default async function ImportProductPage() {
             </details>
             <SupplierSyncSchedule />
             <footer className="supplier-import-card-foot">
-              신규 상품은 추가하고 기존 상품은 공급처 원본만 갱신합니다.
-              사용자가 편집한 판매 정보는 유지됩니다.
+              등록 연결된 기존 상품의 공급처 원본만 갱신합니다. 신규 상품은 전체
+              가져오기에서 추가하며, 사용자가 편집한 판매 정보는 유지됩니다.
             </footer>
           </article>
         </section>

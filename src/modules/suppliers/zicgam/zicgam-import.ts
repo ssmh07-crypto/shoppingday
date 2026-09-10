@@ -1,9 +1,7 @@
 import { z } from "zod";
 import type { Database } from "@/lib/db";
 import { suppliers } from "@/lib/db/schema";
-import {
-  DrizzleProductRepository,
-} from "@/modules/products/product-repository";
+import { DrizzleProductRepository } from "@/modules/products/product-repository";
 import { supplierProductChanged } from "@/modules/products/product-domain";
 import type { SupplierProduct } from "@/modules/suppliers/core/types";
 
@@ -29,9 +27,7 @@ export const zicgamCapturedProductSchema = z.object({
   evidence: z.array(z.string().max(500)).max(20).default([]),
 });
 
-export type ZicgamCapturedProduct = z.infer<
-  typeof zicgamCapturedProductSchema
->;
+export type ZicgamCapturedProduct = z.infer<typeof zicgamCapturedProductSchema>;
 
 export class ZicgamImportService {
   private readonly products: DrizzleProductRepository;
@@ -40,7 +36,11 @@ export class ZicgamImportService {
     this.products = new DrizzleProductRepository(database);
   }
 
-  async importCaptured(input: ZicgamCapturedProduct, ownerId: string) {
+  async importCaptured(
+    input: ZicgamCapturedProduct,
+    ownerId: string,
+    options?: { registeredOnly?: boolean },
+  ) {
     await this.database
       .insert(suppliers)
       .values({
@@ -55,9 +55,21 @@ export class ZicgamImportService {
     const existing = await this.products.findImported(
       product.supplierCode,
       product.externalProductId,
+      options?.registeredOnly ? { registeredOnly: true, ownerId } : undefined,
     );
     if (!existing) {
-      const imported = await this.products.importSupplierProduct(product, ownerId);
+      if (options?.registeredOnly) {
+        return {
+          success: true as const,
+          action: "unchanged" as const,
+          productId: null,
+          externalProductId: product.externalProductId,
+        };
+      }
+      const imported = await this.products.importSupplierProduct(
+        product,
+        ownerId,
+      );
       return {
         success: true as const,
         action: "created" as const,
