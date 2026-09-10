@@ -2,10 +2,11 @@ import Link from "next/link";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { requireAdminPage } from "@/lib/auth/admin";
 import { withDbReadRecovery } from "@/lib/db";
-import { productAuditLogs, products, supplierPriceApplications } from "@/lib/db/schema";
+import { productAuditLogs, products, supplierPriceApplications, supplierChangeApplications } from "@/lib/db/schema";
 import "../import/product-import.css";
 import { PriceApplicationControl } from "./price-application-control";
 import { SupplierStatusControl } from "./supplier-status-control";
+import { ChangeApplicationControl } from "./change-application-control";
 
 export const dynamic = "force-dynamic";
 const labels: Record<string, string> = {
@@ -42,6 +43,7 @@ export default async function SupplierChangesPage({
   );
   return withDbReadRecovery(async (database) => {
     const user = await requireAdminPage(database);
+    const changes = await database.select({ id: supplierChangeApplications.id, title: products.title, kind: supplierChangeApplications.kind, status: supplierChangeApplications.status, error: supplierChangeApplications.errorMessage }).from(supplierChangeApplications).innerJoin(products, eq(products.id, supplierChangeApplications.productId)).where(eq(products.ownerId, user.id)).orderBy(desc(supplierChangeApplications.createdAt)).limit(30);
     const applications = await database.select({ id: supplierPriceApplications.id, title: products.title, price: supplierPriceApplications.targetPrice, status: supplierPriceApplications.status, error: supplierPriceApplications.errorMessage }).from(supplierPriceApplications).innerJoin(products, eq(products.id, supplierPriceApplications.productId)).where(eq(products.ownerId, user.id)).orderBy(desc(supplierPriceApplications.createdAt)).limit(30);
     const rows = await database
       .select({
@@ -87,6 +89,8 @@ export default async function SupplierChangesPage({
         </section>
         {!rows.length && <p>기록된 공급처 변경이 없습니다.</p>}
       <PriceApplicationControl />
+      <ChangeApplicationControl />
+      {!!changes.length && <section className="supplier-import-card"><h2>최근 공급 상태·상세 반영</h2><ul>{changes.map(change => <li key={change.id}>{change.title} · {({ sold_out: "품절", discontinued: "판매 중지", description: "상세페이지" })[change.kind]} · {({ pending: "반영 대기", succeeded: "반영 확인 완료", failed: "반영 실패", superseded: "최신값 변경으로 제외" })[change.status]}{change.error && <p>{change.error}</p>}</li>)}</ul></section>}
       {!!applications.length && <section className="supplier-import-card"><h2>최근 판매가 반영 상태</h2><ul>{applications.map((application) => <li key={application.id}>{application.title} · {application.price.toLocaleString("ko-KR")}원 · {({ pending: "반영 대기", running: "진행 중", succeeded: "실제 가격 확인 완료", failed: "반영 실패", superseded: "새 편집값으로 대체됨" })[application.status]}{application.error && <p>{application.error}</p>}</li>)}</ul></section>}
         {rows.slice(0, 30).map((row) => (
           <article className="supplier-import-card" key={row.id}>

@@ -51,6 +51,17 @@ function json(value: unknown, status = 200) {
 }
 
 describe("네이버 커머스API 클라이언트", () => {
+  it("상세 자동 반영은 현재 원격 필드를 보존하고 상세만 바꾼다", async () => {
+    const remote = { originProductNo: "123", originProduct: { name: "seller title", leafCategoryId: "500", detailContent: "old", detailAttribute: { customField: "preserve" }, customField: { preserve: true } }, smartstoreChannelProduct: { channelField: "keep" } };
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(json({ access_token: "token", expires_in: 10800, token_type: "Bearer" })).mockResolvedValueOnce(json(remote)).mockResolvedValueOnce(json({})).mockResolvedValueOnce(json({ ...remote, originProduct: { ...remote.originProduct, detailContent: "new" } }));
+    await new NaverCommerceClient(config, fetcher).changeSupplierDescription("123", { channelProductNo: "456", previousValue: "old", targetValue: "new" });
+    expect(JSON.parse(String(fetcher.mock.calls[2]![1]?.body))).toEqual({ originProduct: { ...remote.originProduct, detailContent: "new" }, smartstoreChannelProduct: remote.smartstoreChannelProduct });
+  });
+  it("원격 상세가 편집됐으면 자동 수정 요청을 보내지 않는다", async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(json({ access_token: "token", expires_in: 10800, token_type: "Bearer" })).mockResolvedValueOnce(json({ originProductNo: "123", originProduct: { name: "name", leafCategoryId: "500", detailContent: "seller edit", detailAttribute: {} } }));
+    await expect(new NaverCommerceClient(config, fetcher).changeSupplierDescription("123", { channelProductNo: "456", previousValue: "old", targetValue: "new" })).rejects.toThrow("편집");
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
   it("판매가만 절대 금액으로 변경해 재시도 시 중복 인상을 막는다", async () => {
     const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(json({ access_token: "token", expires_in: 10800, token_type: "Bearer" })).mockResolvedValueOnce(json({ code: "SUCCESS" }));
     const client = new NaverCommerceClient(config, fetcher);

@@ -774,6 +774,26 @@ export class NaverCommerceClient {
     return { success: true as const };
   }
 
+  async changeSupplierDescription(originProductNo: string, input: { channelProductNo: string; previousValue: string; targetValue: string }) {
+    assertNaverProductNo(originProductNo, "원상품");
+    assertNaverProductNo(input.channelProductNo, "채널 상품");
+    if (!input.previousValue || !input.targetValue || input.targetValue.length > 3_000_000) throw new NaverCommerceError("request_failed", "상세페이지 변경 내용을 확인해 주세요.");
+    const response = await this.authorizedFetch(new URL(`${this.config.apiUrl}/v2/products/channel-products/${input.channelProductNo}`));
+    const raw = await response.json();
+    const remote = channelProductSchema.parse(raw);
+    if (remote.originProductNo !== originProductNo) throw new NaverCommerceError("request_failed", "등록 상품 연결이 달라졌습니다.");
+    if (remote.originProduct.detailContent === input.targetValue) return { success: true as const };
+    if (remote.originProduct.detailContent !== input.previousValue) throw new NaverCommerceError("request_failed", "스마트스토어 상세페이지가 편집되어 자동 반영을 중단했습니다.");
+    // Preserve the full current remote payload, including fields outside our draft model.
+    await this.authorizedJsonRequest("PUT", new URL(`${this.config.apiUrl}/v2/products/origin-products/${originProductNo}`), {
+      originProduct: { ...raw.originProduct, detailContent: input.targetValue },
+      ...(raw.smartstoreChannelProduct ? { smartstoreChannelProduct: raw.smartstoreChannelProduct } : {}),
+    });
+    const verified = await this.fetchChannelProduct(input.channelProductNo);
+    if (verified.originProductNo !== originProductNo || verified.originProduct.detailContent !== input.targetValue) throw new NaverCommerceError("request_failed", "상세페이지 반영 결과를 확인하지 못했습니다.");
+    return { success: true as const };
+  }
+
   async changeSalePrice(originProductNo: string, salePrice: number) {
     assertNaverProductNo(originProductNo, "원상품");
     if (!Number.isSafeInteger(Number(originProductNo)) || !Number.isInteger(salePrice) || salePrice <= 0 || salePrice > 2147483647) {

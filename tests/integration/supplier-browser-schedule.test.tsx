@@ -5,6 +5,23 @@ import { SupplierBrowserSchedule } from "@/app/admin/products/import/supplier-br
 
 afterEach(() => { cleanup(); localStorage.clear(); vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 describe("Chrome supplier scheduling", () => {
+  it("저장한 반영 항목만 전달하고 예약 해제 즉시 다음 반영을 차단한다", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    vi.stubGlobal("navigator", { locks: { request: async (_name: string, _options: object, callback: (lock: object) => unknown) => callback({}) } });
+    let getKinds: (() => string[]) | undefined;
+    const run = vi.fn(async (_providers: unknown, read?: () => string[]) => { getKinds = read; });
+    render(<SupplierBrowserSchedule selected={["zicgam"]} running={false} extensionReady onRun={run} />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    fireEvent.click(screen.getByLabelText("확인된 품절"));
+    fireEvent.click(screen.getByText("선택한 Chrome 도매처로 예약 저장"));
+    const stored = JSON.parse(localStorage.getItem("shoppingday:browser-supplier-schedule")!);
+    vi.setSystemTime(stored.nextAt);
+    await act(async () => { await vi.advanceTimersByTimeAsync(60000); });
+    expect(getKinds?.()).toEqual(["sold_out"]);
+    fireEvent.click(screen.getByText("예약 해제"));
+    expect(getKinds?.()).toEqual([]);
+  });
   it("is opt-in and runs only the saved browser suppliers when due", async () => {
     vi.useFakeTimers(); vi.setSystemTime(new Date("2026-09-08T00:00:00Z"));
     vi.spyOn(window, "confirm").mockReturnValue(true);

@@ -7,6 +7,8 @@ import {
 } from "@/modules/suppliers/core/sync-job-repository";
 import { ProductProcessingSettingsRepository } from "@/modules/products/product-processing-settings-repository";
 import { applyNextSupplierPrice } from "@/modules/suppliers/core/price-application-service";
+import { applyNextSupplierChange } from "@/modules/suppliers/core/change-application-service";
+import { enabledChangeKinds } from "@/modules/suppliers/core/change-application-policy";
 
 async function main() {
   const database = getDb();
@@ -54,6 +56,14 @@ async function main() {
           : reject(new Error(`예약 동기화 실행 실패 (${code})`)),
       );
     });
+    for (let count = 0; count < 1000 && enabledChangeKinds(schedule).length; count++) {
+      const current = await new SyncScheduleRepository(database).get(schedule.ownerId);
+      if (!current?.enabled) break;
+      const kinds = enabledChangeKinds(current).filter(kind => enabledChangeKinds(schedule).includes(kind));
+      const applied = await applyNextSupplierChange(database, schedule.ownerId, kinds, "dome");
+      console.info(`공급처 변경 반영: ${applied.status}`);
+      if (["idle", "busy", "failed"].includes(applied.status)) break;
+    }
     if (schedule.applyPrices) {
       for (let count = 0; count < 1000; count++) {
         const current = await new SyncScheduleRepository(database).get(schedule.ownerId);

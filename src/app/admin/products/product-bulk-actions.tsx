@@ -27,6 +27,15 @@ export function ProductBulkActions({ productIds }: { productIds: string[] }) {
   const mounted = useRef(true);
 
   useEffect(() => {
+    if (!background) return;
+    const timer = setTimeout(() => {
+      setBackground(false);
+      setMessage("서버 실행 확인 시간이 지났습니다. 진행 상태를 확인하고 남은 작업을 다시 계속할 수 있습니다.");
+    }, 45 * 60_000);
+    return () => clearTimeout(timer);
+  }, [background]);
+
+  useEffect(() => {
     const controller = new AbortController();
     mounted.current = true;
     void fetch("/api/products/bulk-jobs", {
@@ -66,32 +75,72 @@ export function ProductBulkActions({ productIds }: { productIds: string[] }) {
     };
   }, []);
 
+  const activeJobId =
+    job && ["queued", "running"].includes(job.status) ? job.id : null;
   useEffect(() => {
-    if (!background || !job || !["queued", "running"].includes(job.status)) return;
+    if (!activeJobId || processing) return;
     const controller = new AbortController();
-    const timer = setInterval(() => {
-      void fetch("/api/products/bulk-jobs", { cache: "no-store", signal: controller.signal })
-        .then(response => { if (!response.ok) throw new Error(); return response.json(); })
-        .then(body => {
-          const current = (body.jobs as BulkJob[]).find(item => item.id === job.id);
-          if (current) setJob(current);
-        }).catch(() => { if (!controller.signal.aborted) setMessage("진행 상태 조회에 실패했습니다. 서버 작업은 계속될 수 있습니다."); });
-    }, 5000);
-    return () => { clearInterval(timer); controller.abort(); };
-  }, [background, job]);
+    let pending = false;
+    const refresh = async () => {
+      if (pending || document.visibilityState === "hidden") return;
+      pending = true;
+      try {
+        const response = await fetch("/api/products/bulk-jobs", {
+          cache: "no-store",
+          signal: controller.signal,
+        });
+        if (!response.ok) throw new Error();
+        const body = await response.json();
+        if (controller.signal.aborted) return;
+        const current = (body.jobs as BulkJob[]).find(
+          (item) => item.id === activeJobId,
+        );
+        if (current) {
+          setJob(current);
+          if (!["queued", "running"].includes(current.status))
+            setBackground(false);
+        }
+      } catch {
+        if (!controller.signal.aborted)
+          setMessage(
+            "진행 상태 조회에 실패했습니다. 서버 작업은 계속될 수 있습니다.",
+          );
+      } finally {
+        pending = false;
+      }
+    };
+    const timer = setInterval(() => void refresh(), 5000);
+    const onVisible = () => void refresh();
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      clearInterval(timer);
+      controller.abort();
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [activeJobId, processing]);
 
   async function runInBackground(jobId: string) {
     if (running.current) return;
     setRequesting(true);
     try {
-      const response = await fetch(`/api/products/bulk-jobs/${encodeURIComponent(jobId)}/background`, { method: "POST" });
+      const response = await fetch(
+        `/api/products/bulk-jobs/${encodeURIComponent(jobId)}/background`,
+        { method: "POST" },
+      );
       const body = await response.json();
-      if (!response.ok) throw new Error(body.error?.message ?? "서버 실행 접수 실패");
+      if (!response.ok)
+        throw new Error(body.error?.message ?? "서버 실행 접수 실패");
       setBackground(true);
-      setMessage("서버 실행을 접수했습니다. 화면을 닫아도 이어서 처리합니다. 네이버 릴레이 PC는 켜 두세요.");
+      setMessage(
+        "서버 실행을 접수했습니다. 화면을 닫아도 이어서 처리합니다. 네이버 릴레이 PC는 켜 두세요.",
+      );
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "서버 실행 접수 실패");
-    } finally { setRequesting(false); }
+      setMessage(
+        error instanceof Error ? error.message : "서버 실행 접수 실패",
+      );
+    } finally {
+      setRequesting(false);
+    }
   }
 
   async function create(type: BulkJob["type"], requestedIds = productIds) {
@@ -123,7 +172,11 @@ export function ProductBulkActions({ productIds }: { productIds: string[] }) {
       const response = await fetch("/api/products/bulk-jobs", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ confirmed: true, type, productIds: requestedIds }),
+        body: JSON.stringify({
+          confirmed: true,
+          type,
+          productIds: requestedIds,
+        }),
       });
       const body = await response.json().catch(() => null);
       if (!response.ok || !body?.job) {
@@ -167,10 +220,14 @@ export function ProductBulkActions({ productIds }: { productIds: string[] }) {
         setJob(next);
         if (next.status === "completed" || next.status === "partial_failed") {
           if (next.failed) {
-            const summaryResponse = await fetch("/api/products/bulk-jobs", { cache: "no-store" });
+            const summaryResponse = await fetch("/api/products/bulk-jobs", {
+              cache: "no-store",
+            });
             if (summaryResponse.ok) {
               const summary = await summaryResponse.json();
-              const completed = (summary.jobs as BulkJob[]).find(item => item.id === jobId);
+              const completed = (summary.jobs as BulkJob[]).find(
+                (item) => item.id === jobId,
+              );
               if (completed) setJob(completed);
             }
           }
@@ -199,7 +256,15 @@ export function ProductBulkActions({ productIds }: { productIds: string[] }) {
   const active = job?.status === "queued" || job?.status === "running";
   return (
     <div className="inventory-bulk-actions">
-      <label><input type="checkbox" checked={useServer} disabled={active || requesting || loading} onChange={event => setUseServer(event.target.checked)} /> 화면을 닫아도 서버에서 처리</label>
+      <label>
+        <input
+          type="checkbox"
+          checked={useServer}
+          disabled={active || requesting || loading}
+          onChange={(event) => setUseServer(event.target.checked)}
+        />{" "}
+        화면을 닫아도 서버에서 처리
+      </label>
       <button
         type="button"
         disabled={
@@ -219,7 +284,11 @@ export function ProductBulkActions({ productIds }: { productIds: string[] }) {
         선택 상품 스마트스토어 등록
       </button>
       {job && active && (
-        <button type="button" disabled={processing || requesting || background} onClick={() => void runInBackground(job.id)}>
+        <button
+          type="button"
+          disabled={processing || requesting || background}
+          onClick={() => void runInBackground(job.id)}
+        >
           {background ? "서버 실행 접수됨" : "서버에서 계속"}
         </button>
       )}
@@ -239,10 +308,37 @@ export function ProductBulkActions({ productIds }: { productIds: string[] }) {
         </span>
       )}
       {message && <small>{message}</small>}
-      {!!job?.failures?.length && <div><ul>{job.failures.map(item => <li key={item.productId}><a href={`/admin/products/${item.productId}/edit`}>{item.title}</a> · {item.message}</li>)}</ul><button type="button" disabled={active || requesting || processing} onClick={() => void create(job.type, job.failures!.map(item => item.productId))}>실패한 {job.failures.length}개만 다시 처리</button></div>}
+      {!!job?.failures?.length && (
+        <div>
+          <ul>
+            {job.failures.map((item) => (
+              <li key={item.productId}>
+                <a href={`/admin/products/${item.productId}/edit`}>
+                  {item.title}
+                </a>{" "}
+                · {item.message}
+              </li>
+            ))}
+          </ul>
+          <button
+            type="button"
+            disabled={active || requesting || processing}
+            onClick={() =>
+              void create(
+                job.type,
+                job.failures!.map((item) => item.productId),
+              )
+            }
+          >
+            실패한 {job.failures.length}개만 다시 처리
+          </button>
+        </div>
+      )}
       {active && (
         <small>
-          화면에서 처리하거나 서버에서 계속할 수 있습니다. 서버 실행에는 연결 설정과 릴레이 PC 가동이 필요합니다.
+          진행 상황은 자동 갱신됩니다. 서버 실행은 최대 40분이며 이후 남은
+          작업을 다시 계속할 수 있습니다. 연결 설정과 릴레이 PC 가동이
+          필요합니다.
         </small>
       )}
     </div>

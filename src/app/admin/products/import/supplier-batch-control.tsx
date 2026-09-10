@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { SupplierBrowserSchedule } from "./supplier-browser-schedule";
+import type { SupplierChangeKind } from "@/modules/suppliers/core/change-application-policy";
 import {
   runSupplier,
   supplierNames,
@@ -67,7 +68,11 @@ export function SupplierBatchControl() {
       /* Optional. */
     }
   }
-  async function start(targets = selected, scheduled = false) {
+  async function start(
+    targets = selected,
+    scheduled = false,
+    getKinds?: () => SupplierChangeKind[],
+  ) {
     if (controller.current || !targets.length) return;
     if (targets.some((key) => key !== "dome") && !extensionReady) {
       alert(
@@ -75,7 +80,8 @@ export function SupplierBatchControl() {
       );
       return;
     }
-    if (!scheduled &&
+    if (
+      !scheduled &&
       !confirm(
         `${targets.map((key) => supplierNames[key]).join(", ")}의 신규·변경 상품을 확인할까요? Chrome 수집 도매처는 이 화면을 열어 두세요.`,
       )
@@ -116,6 +122,43 @@ export function SupplierBatchControl() {
               [provider]: { status: "running", message: update.message },
             })),
           );
+          if (getKinds) {
+            for (
+              let count = 0;
+              count < 1000 && !current.signal.aborted;
+              count++
+            ) {
+              const kinds = getKinds();
+              if (!kinds.length) break;
+              const response = await fetch(
+                "/api/products/supplier-change-applications",
+                {
+                  method: "POST",
+                  headers: { "content-type": "application/json" },
+                  body: JSON.stringify({
+                    confirmed: true,
+                    kinds,
+                    supplierCode: provider,
+                  }),
+                  signal: current.signal,
+                },
+              );
+              const body = await response.json();
+              if (!response.ok || body.result?.status === "failed")
+                throw new Error(
+                  body.result?.message ??
+                    "수집 완료 · 스마트스토어 변경 반영 실패",
+                );
+              if (["idle", "busy"].includes(body.result.status)) break;
+              setStates((previous) => ({
+                ...previous,
+                [provider]: {
+                  status: "running",
+                  message: `수집 완료 · 변경 반영 ${count + 1}건 처리`,
+                },
+              }));
+            }
+          }
           setStates((previous) => ({
             ...previous,
             [provider]: { status: "done", message },
@@ -161,11 +204,16 @@ export function SupplierBatchControl() {
       <div>
         <span className="inventory-eyebrow">한 번에 확인</span>
         <h2>확인할 도매처를 선택하세요</h2>
-    <p>
+        <p>
           선택한 순서로 수집·저장합니다. 실패한 도매처가 있어도 나머지는 계속
           진행합니다.
-    </p>
-    <SupplierBrowserSchedule selected={selected} running={running} extensionReady={extensionReady} onRun={(providers) => start(providers, true)} />
+        </p>
+        <SupplierBrowserSchedule
+          selected={selected}
+          running={running}
+          extensionReady={extensionReady}
+          onRun={(providers, getKinds) => start(providers, true, getKinds)}
+        />
       </div>
       <div className="supplier-batch-options">
         <label>

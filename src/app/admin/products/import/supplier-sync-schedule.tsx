@@ -5,12 +5,18 @@ import { useEffect, useState } from "react";
 type Schedule = {
   enabled: boolean;
   applyPrices: boolean;
+  applySoldOut: boolean;
+  applyDiscontinued: boolean;
+  applyDescriptions: boolean;
   intervalHours: number;
   nextRunAt: string | null;
 };
 const initial: Schedule = {
   enabled: false,
   applyPrices: false,
+  applySoldOut: false,
+  applyDiscontinued: false,
+  applyDescriptions: false,
   intervalHours: 24,
   nextRunAt: null,
 };
@@ -56,6 +62,9 @@ export function SupplierSyncSchedule() {
         body: JSON.stringify({
           enabled: schedule.enabled,
           applyPrices: schedule.applyPrices,
+          applySoldOut: schedule.applySoldOut,
+          applyDiscontinued: schedule.applyDiscontinued,
+          applyDescriptions: schedule.applyDescriptions,
           intervalHours: schedule.intervalHours,
         }),
       });
@@ -81,10 +90,61 @@ export function SupplierSyncSchedule() {
     <section className="supplier-schedule" aria-label="친구도매 변경 확인 예약">
       <h3>변경 확인 예약</h3>
       <p>
-        공급처 원본의 변경을 정기적으로 가져옵니다. 아래 옵션을 켜면 재계산한 판매가도 스마트스토어에 반영합니다. 네이버 릴레이가 실행 중이어야 합니다.
+        공급처 원본의 변경을 정기적으로 가져옵니다. 선택한 판매가·공급 상태·상세
+        변경도 스마트스토어에 반영합니다. 네이버 릴레이가 실행 중이어야 합니다.
       </p>
       <fieldset disabled={loading || saving || !loaded}>
-        <label><input type="checkbox" checked={schedule.applyPrices ?? false} onChange={(event) => setSchedule({ ...schedule, applyPrices: event.target.checked })} />재계산한 판매가도 자동 반영</label>
+        <label>
+          <input
+            type="checkbox"
+            checked={schedule.applyPrices ?? false}
+            onChange={(event) =>
+              setSchedule({ ...schedule, applyPrices: event.target.checked })
+            }
+          />
+          재계산한 판매가도 자동 반영
+        </label>
+        <label>
+          <input
+            type="checkbox"
+            checked={schedule.applySoldOut ?? false}
+            onChange={(event) =>
+              setSchedule({ ...schedule, applySoldOut: event.target.checked })
+            }
+          />
+          확인된 품절 자동 반영
+        </label>
+        <label>
+          <input
+            type="checkbox"
+            checked={schedule.applyDiscontinued ?? false}
+            onChange={(event) =>
+              setSchedule({
+                ...schedule,
+                applyDiscontinued: event.target.checked,
+              })
+            }
+          />
+          명시된 단종을 판매 중지로 자동 반영
+        </label>
+        <label>
+          <input
+            type="checkbox"
+            checked={schedule.applyDescriptions ?? false}
+            onChange={(event) =>
+              setSchedule({
+                ...schedule,
+                applyDescriptions: event.target.checked,
+              })
+            }
+          />
+          편집하지 않은 공급처 상세페이지 자동 반영
+        </label>
+        <p>
+          선택한 항목만 등록된 스토어에 반영합니다. 조회 실패는 품절·단종으로
+          처리하지 않습니다. 판매자가 편집한 상세페이지는 유지하며 판매 재개는
+          직접 검토합니다.
+        </p>
         <label>
           <input
             type="checkbox"

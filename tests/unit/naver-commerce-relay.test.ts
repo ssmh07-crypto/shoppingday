@@ -169,6 +169,18 @@ async function signedJsonRequest(path: string, value: unknown, method = "POST") 
 }
 
 describe("네이버 커머스API 중계 인증", () => {
+  it("상세 교체의 비교 기준과 대상 값도 서명하고 추가 필드는 거부한다", async () => {
+    const client = { ...metadataClientMocks(), fetchCategories: vi.fn(), fetchProductModels: vi.fn(), changeSupplierDescription: vi.fn().mockResolvedValue({ success: true }) };
+    const input = { channelProductNo: "456", previousValue: "old", targetValue: "new" };
+    const handler = createNaverCommerceRelayHandler({ sharedSecret, client, now: () => now });
+    const response = await handler(await signedJsonRequest("/v1/products/origin-products/123/supplier-description", input, "PUT"));
+    expect(response.status).toBe(200);
+    expect(client.changeSupplierDescription).toHaveBeenCalledWith("123", input);
+    const fresh = createNaverCommerceRelayHandler({ sharedSecret, client, now: () => now });
+    const rejected = await fresh(await signedJsonRequest("/v1/products/origin-products/123/supplier-description", { ...input, salePrice: 100 }, "PUT"));
+    expect(rejected.status).toBe(400);
+    expect(client.changeSupplierDescription).toHaveBeenCalledTimes(1);
+  });
   it("서명된 판매가 변경만 허용하고 다른 상품 필드는 전달하지 않는다", async () => {
     const client = { ...metadataClientMocks(), fetchCategories: vi.fn(), fetchProductModels: vi.fn(), changeSalePrice: vi.fn().mockResolvedValue({ success: true }) };
     const handler = createNaverCommerceRelayHandler({ sharedSecret, client, now: () => now });

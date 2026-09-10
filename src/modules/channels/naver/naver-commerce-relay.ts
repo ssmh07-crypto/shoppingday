@@ -59,6 +59,7 @@ export type NaverCommerceRelayConfig = {
 };
 
 export interface NaverCategoriesClient {
+  changeSupplierDescription?(originProductNo: string, input: { channelProductNo: string; previousValue: string; targetValue: string }): Promise<{ success: true }>;
   changeSalePrice?(originProductNo: string, salePrice: number): Promise<{ success: true }>;
   fetchCategories(options?: {
     last?: boolean;
@@ -107,6 +108,12 @@ export interface NaverCategoriesClient {
 }
 
 export class NaverCommerceRelayClient implements NaverCategoriesClient {
+  async changeSupplierDescription(originProductNo: string, input: { channelProductNo: string; previousValue: string; targetValue: string }) {
+    assertProductNo(originProductNo);
+    await this.request(this.relayUrl(`v1/products/origin-products/${originProductNo}/supplier-description`), { method: "PUT", contentType: "application/json;charset=UTF-8", body: new TextEncoder().encode(JSON.stringify(input)) });
+    return { success: true as const };
+  }
+
   async changeSalePrice(originProductNo: string, salePrice: number) {
     if (!/^\d{1,20}$/.test(originProductNo) || !Number.isInteger(salePrice) || salePrice <= 0 || salePrice > 2147483647) throw new NaverCommerceError("request_failed", "판매가 변경 요청이 올바르지 않습니다.");
     await this.request(this.relayUrl(`v1/products/origin-products/${originProductNo}/sale-price`), { method: "PUT", contentType: "application/json;charset=UTF-8", body: new TextEncoder().encode(JSON.stringify({ salePrice })) });
@@ -693,6 +700,7 @@ export function createNaverCommerceRelayHandler(
     const isProductStatusChange =
       request.method === "PUT" && PRODUCT_STATUS_PATH.test(url.pathname);
     const isProductPriceChange = request.method === "PUT" && /^\/v1\/products\/origin-products\/\d{1,20}\/sale-price$/.test(url.pathname);
+    const isSupplierDescriptionChange = request.method === "PUT" && /^\/v1\/products\/origin-products\/\d{1,20}\/supplier-description$/.test(url.pathname);
     const isProductOrdersQuery =
       request.method === "POST" &&
       url.pathname === PRODUCT_ORDERS_QUERY_PATH;
@@ -710,6 +718,7 @@ export function createNaverCommerceRelayHandler(
       !isProductUpdate &&
       !isProductStatusChange &&
       !isProductPriceChange &&
+      !isSupplierDescriptionChange &&
       !isProductOrdersQuery &&
       !isShoppingRankObserve &&
       !isProductDelete
@@ -757,6 +766,7 @@ export function createNaverCommerceRelayHandler(
       isProductUpdate ||
       isProductStatusChange ||
       isProductPriceChange ||
+      isSupplierDescriptionChange ||
       isProductOrdersQuery ||
       isShoppingRankObserve
       ? new Uint8Array(await request.arrayBuffer())
@@ -768,6 +778,7 @@ export function createNaverCommerceRelayHandler(
           isProductUpdate ||
           isProductStatusChange ||
           isProductPriceChange ||
+          isSupplierDescriptionChange ||
           isProductOrdersQuery ||
           isShoppingRankObserve) &&
           body.byteLength > MAX_PRODUCT_BODY_BYTES))
@@ -957,6 +968,15 @@ async function handleRelayRequest(
     );
   }
   const statusMatch = PRODUCT_STATUS_PATH.exec(url.pathname);
+  const descriptionMatch = /^\/v1\/products\/origin-products\/(\d{1,20})\/supplier-description$/.exec(url.pathname);
+  if (descriptionMatch) {
+    if (url.search || request.method !== "PUT") return relayJson(400, "invalid_request", "상세페이지 변경 요청을 확인해 주세요.");
+    const input = parseRelayJsonBody(request, body);
+    if (input instanceof Response) return input;
+    const parsed = z.object({ channelProductNo: z.string().regex(/^\d{1,20}$/), previousValue: z.string().min(1).max(3_000_000), targetValue: z.string().min(1).max(3_000_000) }).strict().safeParse(input);
+    if (!parsed.success || !client.changeSupplierDescription) return relayJson(400, "invalid_request", "상세페이지 변경 기능을 확인해 주세요.");
+    return client.changeSupplierDescription(descriptionMatch[1]!, parsed.data);
+  }
   const priceMatch = /^\/v1\/products\/origin-products\/(\d{1,20})\/sale-price$/.exec(url.pathname);
   if (priceMatch) {
     if (url.search || request.method !== "PUT") return relayJson(400, "invalid_request", "판매가 변경 요청을 확인해 주세요.");

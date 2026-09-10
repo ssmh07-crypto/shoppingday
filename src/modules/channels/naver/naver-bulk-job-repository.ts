@@ -62,7 +62,7 @@ export class NaverBulkJobRepository {
       .select()
       .from(naverBulkJobs)
       .where(eq(naverBulkJobs.ownerId, ownerId))
-      .orderBy(desc(naverBulkJobs.createdAt))
+      .orderBy(sql`case when ${naverBulkJobs.status} in ('queued', 'running') then 0 else 1 end`, desc(naverBulkJobs.createdAt))
       .limit(limit);
     if (!jobs.length) return [];
     const failures = await this.database.select({ jobId: naverBulkJobItems.jobId, productId: naverBulkJobItems.productId, message: naverBulkJobItems.lastError, title: products.title })

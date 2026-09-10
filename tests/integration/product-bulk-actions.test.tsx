@@ -2,6 +2,7 @@
 import "@testing-library/jest-dom/vitest";
 import {
   cleanup,
+  act,
   fireEvent,
   render,
   screen,
@@ -14,9 +15,22 @@ afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
+  vi.useRealTimers();
 });
 
 describe("상품 대량 작업", () => {
+  it("화면 재진입 후에도 진행 작업을 자동 조회하고 완료를 표시한다", async () => {
+    vi.useFakeTimers();
+    const job = { id: "restored", type: "publish", status: "running", total: 2, processed: 1, succeeded: 1, failed: 0 };
+    const fetchMock = vi.fn().mockResolvedValueOnce(Response.json({ jobs: [job] })).mockResolvedValueOnce(Response.json({ jobs: [{ ...job, status: "completed", processed: 2, succeeded: 2 }] }));
+    vi.stubGlobal("fetch", fetchMock);
+    await act(async () => { render(<ProductBulkActions productIds={[]} />); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+    expect(screen.getByRole("status")).toHaveTextContent("2/2");
+    await act(async () => { await vi.advanceTimersByTimeAsync(10000); });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls.every(call => call[1].method === undefined)).toBe(true);
+  });
   it("서버 실행 선택 시 화면의 다음 상품 실행 요청 없이 서버에 접수한다", async () => {
     vi.spyOn(window, "confirm").mockReturnValue(true);
     const job = { id: "server-job", type: "publish", status: "queued", total: 1, processed: 0, succeeded: 0, failed: 0 };

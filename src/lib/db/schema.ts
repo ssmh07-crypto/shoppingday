@@ -141,6 +141,9 @@ export const supplierSyncSchedules = pgTable("supplier_sync_schedules", {
   enabled: boolean("enabled").notNull().default(false),
   intervalHours: integer("interval_hours").notNull().default(24),
   applyPrices: boolean("apply_prices").notNull().default(false),
+  applySoldOut: boolean("apply_sold_out").notNull().default(false),
+  applyDiscontinued: boolean("apply_discontinued").notNull().default(false),
+  applyDescriptions: boolean("apply_descriptions").notNull().default(false),
   nextRunAt: timestamp("next_run_at", { withTimezone: true }),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
@@ -1444,6 +1447,25 @@ export const supplierPriceApplications = pgTable("supplier_price_applications", 
   completedAt: timestamp("completed_at", { withTimezone: true }),
 }, (table) => [index("supplier_price_applications_pending_idx").on(table.status, table.createdAt), check("supplier_price_applications_price_positive", sql`${table.targetPrice} > 0`), check("supplier_price_applications_status_check", sql`${table.status} in ('pending','running','succeeded','failed','superseded')`)]);
 export type ProductPublicationRow = typeof productPublications.$inferSelect;
+
+export const supplierChangeApplications = pgTable("supplier_change_applications", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  productId: uuid("product_id").notNull().references(() => products.id, { onDelete: "cascade" }),
+  publicationId: uuid("publication_id").notNull().references(() => productPublications.id, { onDelete: "cascade" }),
+  supplierProductId: uuid("supplier_product_id").notNull().references(() => supplierProducts.id, { onDelete: "cascade" }),
+  kind: text("kind").$type<"sold_out" | "discontinued" | "description">().notNull(),
+  previousValue: text("previous_value").notNull(),
+  targetValue: text("target_value").notNull(),
+  status: text("status").$type<"pending" | "succeeded" | "failed" | "superseded">().notNull().default("pending"),
+  attempts: integer("attempts").notNull().default(0),
+  errorMessage: text("error_message"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  completedAt: timestamp("completed_at", { withTimezone: true }),
+}, (table) => [
+  index("supplier_change_applications_pending_idx").on(table.status, table.createdAt),
+  check("supplier_change_applications_kind_check", sql`${table.kind} in ('sold_out','discontinued','description')`),
+  check("supplier_change_applications_status_check", sql`${table.status} in ('pending','succeeded','failed','superseded')`),
+]);
 
 export type SupplierProductRow = typeof supplierProducts.$inferSelect;
 

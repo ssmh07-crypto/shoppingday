@@ -8,6 +8,9 @@ try {
   console.info(await database.unsafe("select count(*)::int as applied_migrations from drizzle.__drizzle_migrations"));
   console.info(await database.unsafe("select column_name from information_schema.columns where table_name = 'keyword_managed_products' and column_name in ('research_draft', 'research_version') order by column_name"));
   console.info(await database.unsafe("select relrowsecurity as price_queue_rls from pg_class where relname = 'supplier_price_applications'"));
+  console.info(await database.unsafe("select relrowsecurity as change_queue_rls from pg_class where relname = 'supplier_change_applications'"));
+  console.info(await database.unsafe("select count(*)::int as change_tasks from supplier_change_applications"));
+  console.info(await database.unsafe("select count(*)::int as automatic_change_schedules from supplier_sync_schedules where enabled and (apply_sold_out or apply_discontinued or apply_descriptions)"));
   console.info(await database.unsafe("select count(*)::int as price_tasks from supplier_price_applications"));
   console.info(await database.unsafe("select count(*)::int as running_publications from product_publications where status in ('publishing','deleting')"));
   console.info(await database.unsafe("select count(*)::int as active_bulk_jobs from naver_bulk_jobs where status in ('queued','running')"));

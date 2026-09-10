@@ -1,5 +1,5 @@
 import "server-only";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { getDb, type Database } from "@/lib/db";
 import {
   products,
@@ -9,10 +9,12 @@ import {
   productAuditLogs,
   productPublications,
   supplierPriceApplications,
+  supplierChangeApplications,
   type SupplierProductRow,
 } from "@/lib/db/schema";
 import type { SupplierProduct } from "@/modules/suppliers/core/types";
 import { preserveMarginPrice } from "@/modules/pricing/preserve-margin";
+import { supplierChangeTargets } from "@/modules/suppliers/core/change-application-policy";
 import {
   productSyncProtectedFields,
   type ProductSyncProtectedField,
@@ -211,6 +213,42 @@ export class DrizzleProductRepository implements ProductRepository {
                 targetPrice: sellingPrice,
               })),
             );
+      }
+      // Keep unapplied description tasks current across repeated supplier refreshes.
+      // Their previous value remains the remote baseline, so a remote seller edit is still protected.
+      const nextDescription = sanitizeDescription(supplierProduct.rawDescription ?? "");
+      const carriedPublicationIds = new Set<string>();
+      if (previousSupplier.rawDescription !== supplierProduct.rawDescription && nextDescription) {
+        const pendingDescriptions = await tx.select().from(supplierChangeApplications).where(and(
+          eq(supplierChangeApplications.productId, imported.productId),
+          eq(supplierChangeApplications.supplierProductId, supplierProductId),
+          eq(supplierChangeApplications.kind, "description"),
+          inArray(supplierChangeApplications.status, ["pending", "failed"]),
+        ));
+        for (const task of pendingDescriptions) {
+          if (![task.previousValue, task.targetValue].includes(currentProduct.description)) continue;
+          await tx.update(supplierChangeApplications).set({ targetValue: nextDescription, status: "pending", errorMessage: null }).where(eq(supplierChangeApplications.id, task.id));
+          carriedPublicationIds.add(task.publicationId);
+        }
+      }
+      const changeTargets = supplierChangeTargets({
+        previousAvailability: previousSupplier.availability,
+        availability: supplierProduct.availability,
+        previousDescription: previousSupplier.rawDescription,
+        description: supplierProduct.rawDescription,
+        editedDescription: currentProduct.description,
+      });
+      if (changeTargets.length) {
+        const publications = await tx.select({ id: productPublications.id }).from(productPublications).where(and(
+          eq(productPublications.productId, imported.productId),
+          sql`${productPublications.originProductNo} is not null`,
+          sql`${productPublications.status} <> 'deleted'`,
+          sql`${productPublications.remoteStatusType} is distinct from 'DELETE'`,
+        ));
+        const tasks = publications.flatMap(publication => changeTargets.filter(target => target.kind !== "description" || !carriedPublicationIds.has(publication.id)).map(target => ({
+          ...target, productId: imported.productId, supplierProductId, publicationId: publication.id,
+        })));
+        if (tasks.length) await tx.insert(supplierChangeApplications).values(tasks);
       }
       if (Object.keys(productUpdates).length) {
         await tx
