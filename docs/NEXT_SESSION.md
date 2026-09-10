@@ -38,6 +38,17 @@
 
 상세 수정 API 근거: [네이버 v2 원상품 수정](https://apicenter.commerce.naver.com/docs/commerce-api/current/update-origin-product-product).
 
+### 종료 반영 상태
+
+- 기능 커밋 `01bbec9`를 `main`에 커밋하고 `origin/main`에 푸시했다.
+- DB 0036 적용 및 새 대기열 RLS, 작업/예약 0개 확인 완료.
+- Cloudflare 운영 배포 버전 `afa81537-9667-44c1-9447-37f857259b35`.
+  운영 홈 URL HTTP 200 확인 완료.
+  최종 번들 gzip 1895.95 KiB, Worker 시작 시간 31ms(배포 도구 측정이며 사용자 응답시간이 아님).
+- 로컬 릴레이 supervisor를 숨김 재기동했다(당시 PID 27704). 새 코드 healthz=ok와
+  Worker 연결값 및 기존 승인된 GitHub Secrets 갱신 완료를 확인했다.
+- 실제 상품 생성·변경·삭제, 예약 활성화는 하지 않았다. 위 남은 실사용 확인 항목은 계속 미완료다.
+
 ## 2026-09-09 후속 구현 — 이 절을 우선
 
 ### 세션 종료 확정 상태 (사용량 절약 요청으로 추가 구현 중단)
