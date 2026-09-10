@@ -89,7 +89,7 @@ export interface SourcingRelatedKeyword {
   normalizedKeyword: string;
   monthlySearchVolume: number | null;
   placement: SourcingKeywordPlacement;
-  source: "itemscout-xlsx" | "manual";
+  source: "itemscout-xlsx" | "manual" | "naver-search-ad";
   importedAt: string;
   officialTag?: {
     code: number;

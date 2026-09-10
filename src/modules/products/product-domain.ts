@@ -162,7 +162,7 @@ export const draftStorageInputSchema = z.object({
         normalizedKeyword: z.string().trim().min(1).max(100),
         monthlySearchVolume: z.number().int().nonnegative().nullable(),
         placement: z.enum(["unclassified", "product_name", "tag"]),
-        source: z.literal("itemscout-xlsx"),
+        source: z.enum(["itemscout-xlsx", "naver-search-ad"]),
         importedAt: z.iso.datetime(),
       }),
     )

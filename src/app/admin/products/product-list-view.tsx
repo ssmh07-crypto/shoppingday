@@ -9,6 +9,7 @@ import { ProductEditorDrawer } from "./[id]/edit/product-editor-drawer";
 import { ProductTitleInlineEditor } from "./product-title-inline-editor";
 import { ProductBulkActions } from "./product-bulk-actions";
 import { ProductKeywordReuse } from "./product-keyword-reuse";
+import { ProductNaverKeywordBulk } from "./product-naver-keyword-bulk";
 import { SupplierProductNumberSettings } from "./supplier-product-number-settings";
 import { ProductGrowthButton } from "./product-growth-button";
 
@@ -250,6 +251,7 @@ export function ProductListView({
               <span>선택은 현재 페이지에만 적용됩니다.</span>
             </div>
             <ProductBulkActions productIds={selectedIds} />
+            <ProductNaverKeywordBulk key={`naver-${selectedIds.join(",")}`} productIds={selectedIds} />
             <ProductKeywordReuse key={selectedIds.join(",")} products={result.items.filter((item) => selectedIds.includes(item.id)).map((item) => ({ id: item.id, title: item.title }))} />
           </div>
 

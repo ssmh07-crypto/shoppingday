@@ -266,7 +266,7 @@ export interface ProductKeywordDraft {
   normalizedKeyword: string;
   monthlySearchVolume: number | null;
   placement: "unclassified" | "product_name" | "tag";
-  source: "itemscout-xlsx";
+  source: "itemscout-xlsx" | "naver-search-ad";
   importedAt: string;
 }
 
@@ -1174,7 +1174,7 @@ export interface SourcingRelatedKeywordData {
   normalizedKeyword: string;
   monthlySearchVolume: number | null;
   placement: "unclassified" | "product_name" | "tag" | "attribute" | "category";
-  source: "itemscout-xlsx" | "manual";
+  source: "itemscout-xlsx" | "manual" | "naver-search-ad";
   importedAt: string;
   officialTag?: {
     code: number;
