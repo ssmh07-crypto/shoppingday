@@ -13,6 +13,12 @@ const navigation = [
   },
   { href: "/admin/products", label: "위탁상품관리", icon: "box", group: null },
   {
+    href: "/admin/products/registered",
+    label: "등록상품관리",
+    icon: "registered",
+    group: null,
+  },
+  {
     href: "/admin/keywords",
     label: "성장상품관리",
     icon: "trend",
@@ -96,7 +102,9 @@ function isActive(pathname: string, href: string) {
     return (
       pathname === href ||
       (pathname.startsWith("/admin/products/") &&
-        pathname !== "/admin/products/import")
+        pathname !== "/admin/products/import" &&
+        pathname !== "/admin/products/registered" &&
+        pathname !== "/admin/products/changes")
     );
   }
   return pathname === href || pathname.startsWith(`${href}/`);
@@ -156,6 +164,12 @@ function AdminIcon({
       <>
         <rect x="5" y="4" width="14" height="17" rx="2" />
         <path d="M9 4.5V3h6v1.5M8 10h8M8 14h8M8 18h5" />
+      </>
+    ),
+    registered: (
+      <>
+        <rect x="4" y="4" width="16" height="16" rx="3" />
+        <path d="m8 12 2.5 2.5L16 9" />
       </>
     ),
     settings: (

@@ -27,8 +27,8 @@ export default async function ImportProductPage() {
         </header>
 
         <SupplierBatchControl />
-        <Link href="/admin/products/changes">
-          공급가·품절·상세페이지 변경 이력 확인
+        <Link href="/admin/products/registered">
+          스마트스토어 등록상품 변경 관리
         </Link>
         <section
           className="supplier-import-summary"

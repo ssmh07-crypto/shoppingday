@@ -19,6 +19,7 @@ export async function applyNextSupplierChange(
   ownerId: string,
   kinds: SupplierChangeKind[],
   supplierCode?: string,
+  productIds?: string[],
 ) {
   if (!kinds.length) return { status: "idle" as const };
   const [candidate] = await database
@@ -44,6 +45,7 @@ export async function applyNextSupplierChange(
         inArray(supplierChangeApplications.status, ["pending", "failed"]),
         inArray(supplierChangeApplications.kind, kinds),
         supplierCode ? eq(suppliers.code, supplierCode) : undefined,
+        productIds?.length ? inArray(products.id, productIds) : undefined,
       ),
     )
     .orderBy(

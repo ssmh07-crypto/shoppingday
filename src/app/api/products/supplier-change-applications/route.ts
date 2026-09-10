@@ -13,6 +13,7 @@ export async function POST(request: Request) {
           .min(1)
           .max(3),
         supplierCode: z.enum(["dome", "zicgam", "ebulsamchon"]).optional(),
+        productIds: z.array(z.uuid()).min(1).max(100).optional(),
       })
       .strict()
       .parse(await request.json());
@@ -23,6 +24,7 @@ export async function POST(request: Request) {
         user.id,
         input.kinds,
         input.supplierCode,
+        input.productIds,
       ),
     });
   });

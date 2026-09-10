@@ -13,24 +13,40 @@ export async function applyNextSupplierPrice(
   database: Database,
   ownerId: string,
   supplierCode?: "dome" | "zicgam" | "ebulsamchon",
+  productIds?: string[],
 ) {
   const [candidate] = await database
-    .select({ id: supplierPriceApplications.id, productId: products.id, storeConnectionId: productPublications.storeConnectionId })
+    .select({
+      id: supplierPriceApplications.id,
+      productId: products.id,
+      storeConnectionId: productPublications.storeConnectionId,
+    })
     .from(supplierPriceApplications)
     .innerJoin(products, eq(products.id, supplierPriceApplications.productId))
-    .innerJoin(productPublications, eq(productPublications.id, supplierPriceApplications.publicationId))
+    .innerJoin(
+      productPublications,
+      eq(productPublications.id, supplierPriceApplications.publicationId),
+    )
     .where(
       and(
         eq(products.ownerId, ownerId),
         inArray(supplierPriceApplications.status, ["pending", "failed"]),
-        supplierCode ? sql`exists (select 1 from product_supplier_links l join supplier_products sp on sp.id = l.supplier_product_id join suppliers s on s.id = sp.supplier_id where l.product_id = ${products.id} and s.code = ${supplierCode})` : undefined,
+        supplierCode
+          ? sql`exists (select 1 from product_supplier_links l join supplier_products sp on sp.id = l.supplier_product_id join suppliers s on s.id = sp.supplier_id where l.product_id = ${products.id} and s.code = ${supplierCode})`
+          : undefined,
+        productIds?.length ? inArray(products.id, productIds) : undefined,
       ),
     )
     .orderBy(asc(supplierPriceApplications.createdAt))
     .limit(1);
   if (!candidate) return { status: "idle" as const };
   // Resolve configuration before opening a transaction: local DB pools use one connection.
-  const client = await createConfiguredNaverClientForUser(database, ownerId, undefined, candidate.storeConnectionId).catch(() => null);
+  const client = await createConfiguredNaverClientForUser(
+    database,
+    ownerId,
+    undefined,
+    candidate.storeConnectionId,
+  ).catch(() => null);
   return database.transaction(async (tx) => {
     // Same order as supplier import: product first, then application/publication.
     const [product] = await tx
@@ -87,14 +103,15 @@ export async function applyNextSupplierPrice(
     try {
       if (!publication.channelProductNo)
         throw new Error("등록된 채널 상품번호가 필요합니다.");
-      if (!client || publication.storeConnectionId !== candidate.storeConnectionId) throw new Error("스토어 연결을 확인해 주세요.");
+      if (
+        !client ||
+        publication.storeConnectionId !== candidate.storeConnectionId
+      )
+        throw new Error("스토어 연결을 확인해 주세요.");
       const remote = await client.fetchChannelProduct(
         publication.channelProductNo,
       );
-      if (
-        remote.originProductNo !==
-        publication.originProductNo
-      )
+      if (remote.originProductNo !== publication.originProductNo)
         throw new Error("등록 상품 연결이 달라졌습니다.");
       if (remote.originProduct.salePrice !== task.targetPrice) {
         await client.changeSalePrice(
@@ -104,7 +121,10 @@ export async function applyNextSupplierPrice(
         const verified = await client.fetchChannelProduct(
           publication.channelProductNo,
         );
-        if (verified.originProductNo !== publication.originProductNo || verified.originProduct.salePrice !== task.targetPrice)
+        if (
+          verified.originProductNo !== publication.originProductNo ||
+          verified.originProduct.salePrice !== task.targetPrice
+        )
           throw new Error(
             "네이버 판매가 반영을 확인하지 못했습니다. 다시 확인해 주세요.",
           );
