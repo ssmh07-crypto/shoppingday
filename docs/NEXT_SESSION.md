@@ -14,6 +14,8 @@
 - 전체 Vitest 80개 파일 / 454개 테스트, TypeScript·ESLint·Next 빌드가 통과했다.
   브라우저 연결은 기존 플러그인의 누락된 `browser-service.mjs` 참조 때문에 사용할 수
   없어 실제 로그인 화면 시각 검수와 외부 상품 반영은 실행하지 않았다.
+- 기능 커밋 `00afea7`을 `main`과 `origin/main`에 반영했다. Cloudflare 운영 배포 버전은
+  `c559a5d6-32d6-41a3-9c64-b9aef9f0d16c`이다.
 
 ## 2026-09-10 스마트스토어 등록 상품만 변경 확인 — 최신
 
