@@ -30,8 +30,9 @@ export default async function RegisteredProductsPage({
   )
     ? (params.supplier as RegisteredSupplierCode)
     : undefined;
-  const need = registeredNeeds.includes(params.need as RegisteredNeed)
-    ? (params.need as RegisteredNeed)
+  const requestedNeed = params.need === "stock" ? "sold_out" : params.need;
+  const need = registeredNeeds.includes(requestedNeed as RegisteredNeed)
+    ? (requestedNeed as RegisteredNeed)
     : "all";
   const search = params.q?.trim().slice(0, 100) || undefined;
   const page = Math.min(
@@ -64,6 +65,7 @@ export default async function RegisteredProductsPage({
         </header>
 
         <form className="registered-filter" method="get">
+          <input type="hidden" name="need" value={need} />
           <label className="registered-search">
             <span>상품 검색</span>
             <input
@@ -82,17 +84,62 @@ export default async function RegisteredProductsPage({
               <option value="ebulsamchon">이불삼촌</option>
             </select>
           </label>
-          <label>
-            <span>필요 작업</span>
-            <select name="need" defaultValue={need}>
-              <option value="all">전체 등록 상품</option>
-              <option value="stock">품절·단종 필요</option>
-              <option value="price">가격 변경 필요</option>
-              <option value="description">상세 변경 필요</option>
-            </select>
-          </label>
           <button type="submit">조회</button>
         </form>
+
+        <nav className="registered-query-tabs" aria-label="등록 상품 조회 종류">
+          <Link
+            className={need === "all" ? "active" : undefined}
+            href={filterHref(supplier, "all", search)}
+          >
+            <strong>등록상품 조회</strong>
+            <span>스마트스토어 등록 상품 전체</span>
+          </Link>
+          <Link
+            className={need === "sold_out" ? "active" : undefined}
+            href={filterHref(supplier, "sold_out", search)}
+          >
+            <strong>품절상품 조회</strong>
+            <span>품절·단종 처리가 필요한 상품</span>
+          </Link>
+          <Link
+            className={
+              ["changes", "price", "description"].includes(need)
+                ? "active"
+                : undefined
+            }
+            href={filterHref(supplier, "changes", search)}
+          >
+            <strong>변동상품 조회</strong>
+            <span>가격·상세페이지 변경 상품</span>
+          </Link>
+        </nav>
+
+        {["changes", "price", "description"].includes(need) && (
+          <nav
+            className="registered-change-tabs"
+            aria-label="변동 상품 세부 조회"
+          >
+            <Link
+              className={need === "changes" ? "active" : undefined}
+              href={filterHref(supplier, "changes", search)}
+            >
+              가격·상세 전체
+            </Link>
+            <Link
+              className={need === "price" ? "active" : undefined}
+              href={filterHref(supplier, "price", search)}
+            >
+              가격 변경
+            </Link>
+            <Link
+              className={need === "description" ? "active" : undefined}
+              href={filterHref(supplier, "description", search)}
+            >
+              상세페이지 변경
+            </Link>
+          </nav>
+        )}
 
         <section className="registered-summary" aria-label="조회 결과 요약">
           <div>
@@ -147,6 +194,17 @@ function pageHref(
   page: number,
 ) {
   const params = new URLSearchParams({ need, page: String(page) });
+  if (supplier) params.set("supplier", supplier);
+  if (search) params.set("q", search);
+  return `?${params.toString()}`;
+}
+
+function filterHref(
+  supplier: RegisteredSupplierCode | undefined,
+  need: RegisteredNeed,
+  search: string | undefined,
+) {
+  const params = new URLSearchParams({ need });
   if (supplier) params.set("supplier", supplier);
   if (search) params.set("q", search);
   return `?${params.toString()}`;

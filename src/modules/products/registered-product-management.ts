@@ -19,7 +19,8 @@ export const registeredSupplierCodes = [
 export type RegisteredSupplierCode = (typeof registeredSupplierCodes)[number];
 export const registeredNeeds = [
   "all",
-  "stock",
+  "sold_out",
+  "changes",
   "price",
   "description",
 ] as const;
@@ -101,13 +102,15 @@ export async function listRegisteredProductManagement(
           ilike(productPublications.originProductNo, `%${input.search}%`),
         )
       : undefined,
-    input.need === "stock"
+    input.need === "sold_out"
       ? sql`(${soldOutExists} or ${discontinuedExists})`
-      : input.need === "price"
-        ? priceExists
-        : input.need === "description"
-          ? descriptionExists
-          : undefined,
+      : input.need === "changes"
+        ? sql`(${priceExists} or ${descriptionExists})`
+        : input.need === "price"
+          ? priceExists
+          : input.need === "description"
+            ? descriptionExists
+            : undefined,
   );
   const [{ total }] = await database
     .select({ total: count() })

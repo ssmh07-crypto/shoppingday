@@ -17,8 +17,9 @@ const supplierLabels: Record<RegisteredSupplierCode, string> = {
   ebulsamchon: "이불삼촌",
 };
 const needLabels: Record<RegisteredNeed, string> = {
-  all: "전체 등록 상품",
-  stock: "품절·단종 필요",
+  all: "등록 상품",
+  sold_out: "품절 상품",
+  changes: "변동 상품",
   price: "가격 변경 필요",
   description: "상세 변경 필요",
 };
@@ -273,7 +274,8 @@ async function drain(
 }
 
 function kindsForNeed(need: RegisteredNeed): ApplyKind[] {
-  if (need === "stock") return ["sold_out", "discontinued"];
+  if (need === "sold_out") return ["sold_out", "discontinued"];
+  if (need === "changes") return ["price", "description"];
   if (need === "price") return ["price"];
   if (need === "description") return ["description"];
   return ["price", "sold_out", "discontinued", "description"];
